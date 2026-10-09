@@ -80,6 +80,13 @@ Examples, one per kind:
 - `latency`: `roundTripMedianMs` 80, `roundTripP99Ms` 400, `bytesPerSecond` 8000000, `baseMs` 150, `perItemMs` 3, `scanPer10kRowsMs` 20, `loadThreshold` 20, `loadPercentPerRequest` 2, `batchParallelism` 10, `batchPartMs` 40, `capMs` 2000.
 - `telemetry`: `recentReports` 1.
 
+## Control API safety
+
+The control API accepts a `Host` header of `localhost`, `127.0.0.1`, `[::1]`, or `admin-sdk-mock`, each with any port. It answers 403 to any other.
+A POST, PUT, or DELETE that carries a body must send `content-type: application/json`, or the API answers 415.
+Together these block a web page from driving the mock with a cross-origin `text/plain` post or a rebound DNS name.
+`GET /domains` lists each domain with its `counts` of `orgUnits`, `users`, and `devices`.
+
 ## Run in Docker
 
 ```sh
@@ -96,6 +103,17 @@ Combine the overlay with a rendered Campus Commander all-docker Compose file:
 ```sh
 docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overlay.yml up --detach --wait
 ```
+
+The default image is private. It is not published until CI runs on `main`.
+Until then, build it locally and point the overlay at it:
+
+```sh
+docker build -t admin-sdk-mock:local .
+ADMIN_SDK_MOCK_IMAGE=admin-sdk-mock:local docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overlay.yml up --detach --wait
+```
+
+A plain `docker run` needs `--sysctl net.ipv4.ip_unprivileged_port_start=0` to bind port 443.
+Seeding an `xlarge` domain blocks the mock for about 15 seconds. Seed before you connect Campus Commander.
 
 The overlay adds no file to Campus Commander. It routes the four Google hostnames to the mock inside the `internal` network.
 

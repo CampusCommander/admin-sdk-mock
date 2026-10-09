@@ -76,3 +76,8 @@ All 10 tests passed. The proxy accepted 20 connections and refused none.
    The delegation-not-authorized outcome is unreachable for token errors. See `libs/google-connection/src/lib/provider.ts`.
 3. The Easton fixture does not grant the device read scopes. Device, user, and telemetry parity waits for the owner.
    The owner must add `admin.directory.device.chromeos.readonly`, `admin.directory.user.readonly`, and `chrome.management.telemetry.readonly` to the Easton delegation grant.
+
+## Seed deviations
+
+- The spec estimates about 13,000 org units for the `xlarge` tier. The seed produces about 8,561. The layout is unchanged.
+- The owner decides whether to add a layer, such as homerooms, to close the gap.

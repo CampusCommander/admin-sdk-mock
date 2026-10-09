@@ -49,6 +49,9 @@ jobs:
           docker compose $files run --rm -T workers
           docker compose $files exec -T admin-sdk-mock node bin/mockctl.ts domain create --tier small --seed smoke
           docker compose $files down --volumes
+      - name: Show the Compose logs after a smoke failure
+        if: failure()
+        run: docker compose -f compose/smoke.yml -f compose/campus-commander.overlay.yml logs
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
