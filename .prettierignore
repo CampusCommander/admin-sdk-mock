@@ -3,3 +3,5 @@ data
 test/contract/discovery
 parity/evidence
 package-lock.json
+docs/plans
+.superpowers
