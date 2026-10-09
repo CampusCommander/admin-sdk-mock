@@ -1,6 +1,7 @@
 import { handleToken } from './auth/token.ts';
 import { handleTokenInfo } from './auth/tokeninfo.ts';
 import { SCOPES } from './auth/scopes.ts';
+import { getTelemetry, listTelemetry } from './chrome/telemetry.ts';
 import { getCustomer } from './directory/customers.ts';
 import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
@@ -105,5 +106,26 @@ export function buildRoutes(mock: Mock): Route[] {
       getUser,
       false,
     ),
+    {
+      id: 'chrome.telemetry.devices.list',
+      api: 'chrome',
+      hosts: ['chromemanagement.googleapis.com'],
+      methods: ['GET'],
+      pattern: /^\/v1\/customers\/(?<customer>[^/]+)\/telemetry\/devices$/,
+      scopes: SCOPES.telemetry,
+      admin: true,
+      handler: listTelemetry,
+    },
+    {
+      id: 'chrome.telemetry.devices.get',
+      api: 'chrome',
+      hosts: ['chromemanagement.googleapis.com'],
+      methods: ['GET'],
+      pattern:
+        /^\/v1\/customers\/(?<customer>[^/]+)\/telemetry\/devices\/(?<deviceId>[^/]+)$/,
+      scopes: SCOPES.telemetry,
+      admin: true,
+      handler: getTelemetry,
+    },
   ];
 }
