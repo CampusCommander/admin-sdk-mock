@@ -163,3 +163,14 @@ test('student address styles vary across domains', () => {
   }
   assert.ok(styles.size >= 2, [...styles].join(', '));
 });
+
+test('no user signs in before the account exists', () => {
+  const { db } = seed(INPUT);
+  assert.equal(
+    count(
+      db,
+      'SELECT count(*) AS n FROM users WHERE last_login_time < creation_time',
+    ),
+    0,
+  );
+});

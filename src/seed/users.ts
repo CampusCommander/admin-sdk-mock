@@ -78,6 +78,8 @@ export function seedUsers(ctx: SeedContext): UserIndex {
     createdDaysAgo: number;
   }): string => {
     const id = newId();
+    const creationTime = seededAt - user.createdDaysAgo * DAY_MS;
+    const drawnLogin = lastLogin(user.suspended);
     insert.run(
       id,
       user.email,
@@ -91,8 +93,8 @@ export function seedUsers(ctx: SeedContext): UserIndex {
       user.externalId,
       user.role,
       user.school,
-      seededAt - user.createdDaysAgo * DAY_MS,
-      lastLogin(user.suspended),
+      creationTime,
+      drawnLogin === null ? null : Math.max(drawnLogin, creationTime),
       ord++,
     );
     return id;
