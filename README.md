@@ -57,3 +57,21 @@ Map the four Google hostnames to `127.0.0.1` in `/etc/hosts`.
 Start each client with `NODE_EXTRA_CA_CERTS` set to the file that `mockctl ca --out <file>` writes.
 The `api` and `workers` containers trust the mock CA through `NODE_EXTRA_CA_CERTS`.
 See [docs/campus-commander.md](docs/campus-commander.md) for the full procedure.
+
+## Status
+
+Milestone 1 is built. The acceptance run against Campus Commander awaits the owner.
+
+- Calibration record: [docs/calibration.md](docs/calibration.md)
+- Campus Commander procedure and record: [docs/campus-commander.md](docs/campus-commander.md)
+
+Acceptance items:
+
+| Item                                   | Result                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------- |
+| Live parity against the Easton fixture | 19 of 19 probes match. Device, user, and telemetry parity awaits scopes.        |
+| Client library compatibility           | 10 of 10 tests pass through a CONNECT proxy.                                    |
+| Scale                                  | The xlarge tier seeds in 14.9 s and serves 400,000 devices in 1,334 pages.      |
+| Campus Commander shows 60,000 devices  | Pending owner run: Docker Desktop WSL integration is off.                       |
+| Campus Commander repository unchanged  | Verified. `git status --short` is empty.                                        |
+| Open calibration values                | Seven values remain open or need an owner decision. See the calibration record. |
