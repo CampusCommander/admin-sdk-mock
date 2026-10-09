@@ -28,6 +28,7 @@ import {
   type Route,
 } from './http/types.ts';
 import { openPipeline, type Pipeline } from './pipeline.ts';
+import { createLimits, type Limits } from './quota/limits.ts';
 import { createRandom, type Random } from './random.ts';
 import { buildRoutes } from './routes.ts';
 import { applyFields, FieldsError, parseFields } from './store/fields.ts';
@@ -50,6 +51,7 @@ export interface Mock {
   readonly clock: Clock;
   readonly timing: Timing;
   readonly random: Random;
+  readonly limits: Limits;
   readonly routes: Route[];
   pipeline: Pipeline;
   overrides: Overrides;
@@ -103,17 +105,21 @@ export function createMock(options: MockOptions): Mock {
   const certificates = ensureCertificates(join(options.dataDir, 'ca'));
   const domains = createDomains(options.dataDir, registry);
   const servers = new Set<https.Server>();
+  const clock = options.clock ?? systemClock;
+  const timing = options.timing ?? { scale: 1, delays: true };
+  const limits = createLimits({ clock, timing });
 
   const mock: Mock = {
     dataDir: options.dataDir,
     registry,
     domains,
     certificates,
-    clock: options.clock ?? systemClock,
-    timing: options.timing ?? { scale: 1, delays: true },
+    clock,
+    timing,
     random: options.random ?? createRandom(`mock/${Date.now()}`),
+    limits,
     routes: [],
-    pipeline: openPipeline(),
+    pipeline: { ...openPipeline(), admit: (call) => limits.admit(call) },
     overrides: NO_OVERRIDES,
     authenticator: {
       authenticate: () =>
