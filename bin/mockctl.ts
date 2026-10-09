@@ -180,7 +180,11 @@ async function main(argv: string[]): Promise<void> {
     case 'clock': {
       const body: Record<string, unknown> = {};
       if (values.scale !== undefined) body.scale = Number(values.scale);
-      if (values.delays !== undefined) body.delays = values.delays === 'on';
+      if (values.delays !== undefined) {
+        if (values.delays !== 'on' && values.delays !== 'off')
+          throw new CliError('--delays must be on or off.');
+        body.delays = values.delays === 'on';
+      }
       return print(
         await call(
           Object.keys(body).length > 0 ? 'PUT' : 'GET',

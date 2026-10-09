@@ -73,7 +73,14 @@ export function parseBatchRequest(
       throw new BatchFormatError(
         `Batch part ${index} has an invalid request line.`,
       );
-    const url = new URL(line[2], 'https://admin.googleapis.com');
+    let url: URL;
+    try {
+      url = new URL(line[2], 'https://admin.googleapis.com');
+    } catch {
+      throw new BatchFormatError(
+        `Batch part ${index} has an invalid request target.`,
+      );
+    }
     parts.push({
       contentId:
         (parseHeaders(outer)['content-id'] ?? '').replace(/^<|>$/g, '') || null,

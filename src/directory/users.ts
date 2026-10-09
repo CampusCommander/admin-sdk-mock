@@ -186,7 +186,7 @@ export function listUsers(call: Call): ApiResponse {
   if (pageToken) {
     let cursor: (string | number)[];
     try {
-      cursor = decodePageToken(pageToken, fp);
+      cursor = decodePageToken(pageToken, fp, 2);
     } catch {
       throw invalidArgument(call, 'Invalid Input: pageToken');
     }

@@ -51,6 +51,7 @@ export function encodePageToken(
 export function decodePageToken(
   token: string,
   fp: string,
+  length: number,
 ): (string | number)[] {
   let parsed: unknown;
   try {
@@ -63,6 +64,7 @@ export function decodePageToken(
   if (
     f !== fp ||
     !Array.isArray(c) ||
+    c.length !== length ||
     !c.every((value) => typeof value === 'string' || typeof value === 'number')
   )
     throw new PageTokenError();

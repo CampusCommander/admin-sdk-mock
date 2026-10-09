@@ -1,5 +1,5 @@
 import type { SeedSpec } from '../seed/spec.ts';
-import type { DomainSettings } from '../settings.ts';
+import { withDefaults, type DomainSettings } from '../settings.ts';
 import { openDatabase, row, rows, transaction } from './sqlite.ts';
 
 export interface StoredDomain {
@@ -102,7 +102,7 @@ const toDomain = (value: DomainRow): StoredDomain => ({
   customerId: value.customer_id,
   primaryDomain: value.primary_domain,
   spec: JSON.parse(value.spec) as SeedSpec,
-  settings: JSON.parse(value.settings) as DomainSettings,
+  settings: withDefaults(JSON.parse(value.settings)),
   seededAt: value.seeded_at,
   createdAt: value.created_at,
 });

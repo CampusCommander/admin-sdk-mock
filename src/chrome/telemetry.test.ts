@@ -206,3 +206,25 @@ test('another customer fails with PERMISSION_DENIED', async (t) => {
   assert.equal(response.status, 403);
   assert.equal(response.json().error.status, 'PERMISSION_DENIED');
 });
+
+function forge(token: string, cursor: unknown): string {
+  const { f } = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
+  return Buffer.from(JSON.stringify({ f, c: cursor })).toString('base64url');
+}
+
+test('a forged page token with a wrong cursor length answers 400, not 500', async (t) => {
+  const { request } = await setup(t);
+  const query = { readMask: 'deviceId', pageSize: 5 };
+  const token = (await request(LIST, query)).json().nextPageToken;
+  assert.equal(
+    (await request(LIST, { ...query, pageToken: token })).status,
+    200,
+  );
+  for (const cursor of [[], ['x', 'y']]) {
+    const response = await request(LIST, {
+      ...query,
+      pageToken: forge(token, cursor),
+    });
+    assert.equal(response.status, 400, response.text);
+  }
+});

@@ -133,6 +133,14 @@ test('an xlarge layout adds regions and stays inside the Google limits', () => {
   assert.ok(layout.units.every((unit) => unit.depth <= MAX_DEPTH));
 });
 
+test('an xlarge layout is identical for the same seed, regions included', () => {
+  const build = () =>
+    JSON.stringify(buildLayout(resolveSpec({ tier: 'xlarge', seed: 'twice' })));
+  const first = build();
+  assert.equal(build(), first);
+  assert.match(first, /"region":"/);
+});
+
 test('school names are unique', () => {
   const layout = buildLayout(resolveSpec({ tier: 'xlarge', seed: 'names' }));
   const names = new Set(layout.schools.map((school) => school.name));

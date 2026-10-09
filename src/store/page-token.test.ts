@@ -11,7 +11,7 @@ const params = (text: string) => new URLSearchParams(text);
 
 test('a token round-trips its cursor', () => {
   const fp = fingerprint('/x', params('query=a'), 1);
-  assert.deepEqual(decodePageToken(encodePageToken(fp, ['b', 2]), fp), [
+  assert.deepEqual(decodePageToken(encodePageToken(fp, ['b', 2]), fp, 2), [
     'b',
     2,
   ]);
@@ -41,7 +41,7 @@ test('a token from another query or a garbled token fails', () => {
   const fp = fingerprint('/x', params('query=a'), 1);
   const other = fingerprint('/x', params('query=b'), 1);
   assert.throws(
-    () => decodePageToken(encodePageToken(other, ['b', 2]), fp),
+    () => decodePageToken(encodePageToken(other, ['b', 2]), fp, 2),
     PageTokenError,
   );
   for (const token of [
@@ -49,5 +49,5 @@ test('a token from another query or a garbled token fails', () => {
     'garbage',
     Buffer.from('{"f":1}').toString('base64url'),
   ])
-    assert.throws(() => decodePageToken(token, fp), PageTokenError);
+    assert.throws(() => decodePageToken(token, fp, 2), PageTokenError);
 });

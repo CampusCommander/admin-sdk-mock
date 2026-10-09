@@ -229,3 +229,22 @@ test('fields trims each device', async (t) => {
     'serialNumber',
   ]);
 });
+
+function forge(token: string, cursor: unknown): string {
+  const { f } = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
+  return Buffer.from(JSON.stringify({ f, c: cursor })).toString('base64url');
+}
+
+test('a forged page token with a short cursor answers 400, not 500', async (t) => {
+  const { list } = await setup(t);
+  const first = await list({ maxResults: 5 });
+  const token = first.json().nextPageToken;
+  assert.equal((await list({ maxResults: 5, pageToken: token })).status, 200);
+  for (const cursor of [[], ['x'], ['x', 'y', 'z']]) {
+    const response = await list({
+      maxResults: 5,
+      pageToken: forge(token, cursor),
+    });
+    assert.equal(response.status, 400, response.text);
+  }
+});

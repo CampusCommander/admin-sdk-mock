@@ -98,3 +98,20 @@ test('service accounts and tokens round-trip', () => {
   registry.saveToken(token);
   assert.deepEqual(registry.token('ya29.y'), token);
 });
+
+test('stored settings that lack a newer key read back with its default', () => {
+  const registry = openRegistry(':memory:');
+  registry.addDomain(domain(), ['c0abc1234.test']);
+  const { telemetry: _telemetry, ...older } = DEFAULT_SETTINGS;
+  registry.setSettings('C0abc1234', {
+    ...older,
+    concurrency: { perMethod: 7 },
+  } as unknown as typeof DEFAULT_SETTINGS);
+  const settings = registry.getDomain('C0abc1234')?.settings;
+  assert.deepEqual(settings?.telemetry, DEFAULT_SETTINGS.telemetry);
+  assert.deepEqual(settings?.concurrency, {
+    perMethod: 7,
+    perCustomer: DEFAULT_SETTINGS.concurrency.perCustomer,
+  });
+  assert.deepEqual(settings?.quota, DEFAULT_SETTINGS.quota);
+});

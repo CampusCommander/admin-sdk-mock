@@ -59,6 +59,22 @@ test('mockctl creates a domain, issues a credential file, and sets the clock', a
     scale: 60,
     delays: false,
   });
+  for (const bad of ['yes', 'ON', 'true', ''])
+    await assert.rejects(
+      ctl('clock', '--delays', bad),
+      (error: { code?: number; stderr?: string }) =>
+        error.code === 1 &&
+        /--delays must be on or off/.test(error.stderr ?? ''),
+      bad,
+    );
+  assert.equal(
+    JSON.parse((await ctl('clock', '--delays', 'on')).stdout).delays,
+    true,
+  );
+  assert.equal(
+    JSON.parse((await ctl('clock', '--delays', 'off')).stdout).delays,
+    false,
+  );
   await assert.rejects(ctl('domain', 'show', 'C0missing'), /404/);
   await assert.rejects(ctl('nonsense'), /Usage: mockctl/);
 });

@@ -168,6 +168,11 @@ test('oversized and malformed batches fail with 400', async (t) => {
   );
   assert.equal((await send(many, { bearer: token })).status, 400);
   assert.equal(
+    (await send(body([{ id: 'p1', line: 'GET http://' }]), { bearer: token }))
+      .status,
+    400,
+  );
+  assert.equal(
     (await send('{}', { bearer: token, contentType: 'application/json' }))
       .status,
     400,

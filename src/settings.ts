@@ -60,6 +60,24 @@ export const DEFAULT_SETTINGS: DomainSettings = Object.freeze({
   telemetry: { recentReports: 1 },
 }) as DomainSettings;
 
+/** Fill any key that a stored row lacks from the defaults. */
+export function withDefaults(stored: unknown): DomainSettings {
+  const fill = (base: unknown, value: unknown): unknown => {
+    if (typeof base !== 'object' || base === null) return value ?? base;
+    const given =
+      typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    return Object.fromEntries(
+      Object.entries(base).map(([key, inner]) => [
+        key,
+        fill(inner, given[key]),
+      ]),
+    );
+  };
+  return fill(DEFAULT_SETTINGS, stored) as DomainSettings;
+}
+
 export class SettingsError extends Error {
   constructor(message: string) {
     super(message);

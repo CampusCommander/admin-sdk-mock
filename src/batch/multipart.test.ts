@@ -86,6 +86,20 @@ test('a missing boundary or a bad request line fails', () => {
   );
 });
 
+test('an unparseable request target is a format error', () => {
+  for (const target of ['http://', 'https://[bad', 'http://a b/']) {
+    assert.throws(
+      () =>
+        parseBatchRequest(
+          'multipart/mixed; boundary=b',
+          `--b\r\nContent-Type: application/http\r\n\r\nGET ${target}\r\n\r\n--b--`,
+        ),
+      BatchFormatError,
+      target,
+    );
+  }
+});
+
 test('a response echoes each Content-ID with the response- prefix', () => {
   const text = buildBatchResponse(
     [

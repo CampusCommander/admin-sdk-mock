@@ -4,3 +4,4 @@ data/
 *.sqlite-wal
 *.sqlite-shm
 .env
+*credential*.json

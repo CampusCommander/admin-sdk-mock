@@ -107,7 +107,7 @@ export function listTelemetry(call: Call): ApiResponse {
   if (pageToken) {
     let cursor: (string | number)[];
     try {
-      cursor = decodePageToken(pageToken, fp);
+      cursor = decodePageToken(pageToken, fp, 1);
     } catch {
       throw invalidArgument(call, 'Invalid page token.');
     }
