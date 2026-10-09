@@ -15,9 +15,9 @@ import {
   rpcError,
   transientError,
 } from './http/errors.ts';
+import { createFaults, type Faults } from './faults/faults.ts';
 import { matchRoute } from './http/router.ts';
 import {
-  NO_OVERRIDES,
   type Access,
   type ApiRequest,
   type ApiResponse,
@@ -28,7 +28,7 @@ import {
   type Route,
 } from './http/types.ts';
 import { createDelays } from './latency/delays.ts';
-import { openPipeline, type Pipeline } from './pipeline.ts';
+import { type Pipeline } from './pipeline.ts';
 import { createLimits, type Limits } from './quota/limits.ts';
 import { createRandom, type Random } from './random.ts';
 import { buildRoutes } from './routes.ts';
@@ -53,6 +53,7 @@ export interface Mock {
   readonly timing: Timing;
   readonly random: Random;
   readonly limits: Limits;
+  readonly faults: Faults;
   readonly routes: Route[];
   pipeline: Pipeline;
   overrides: Overrides;
@@ -111,6 +112,7 @@ export function createMock(options: MockOptions): Mock {
   const limits = createLimits({ clock, timing });
   const random = options.random ?? createRandom(`mock/${Date.now()}`);
   const delays = createDelays({ clock, timing, random, limits });
+  const faults = createFaults({ clock, timing, random });
 
   const mock: Mock = {
     dataDir: options.dataDir,
@@ -121,13 +123,14 @@ export function createMock(options: MockOptions): Mock {
     timing,
     random,
     limits,
+    faults,
     routes: [],
     pipeline: {
-      ...openPipeline(),
+      before: (call) => faults.before(call),
       admit: (call) => limits.admit(call),
       delay: (call, response) => delays.delay(call, response),
     },
-    overrides: NO_OVERRIDES,
+    overrides: faults,
     authenticator: {
       authenticate: () =>
         directoryError(401, 'authError', 'Invalid Credentials'),
