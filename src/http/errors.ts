@@ -91,3 +91,64 @@ export function notFoundPage(path: string): ApiResponse {
     raw: `<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <title>Error 404 (Not Found)!!1</title>\n  <p><b>404.</b> <ins>That's an error.</ins>\n  <p>The requested URL <code>${escapeHtml(path)}</code> was not found on this server.  <ins>That's all we know.</ins>\n`,
   };
 }
+
+const SIGN_IN_HELP =
+  'Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.';
+
+/** 401 for a missing or unusable bearer token. */
+export function unauthenticated(
+  api: Api,
+  kind: 'missing' | 'invalid',
+): ApiResponse {
+  const message =
+    kind === 'missing'
+      ? `Request is missing required authentication credential. ${SIGN_IN_HELP}`
+      : `Request had invalid authentication credentials. ${SIGN_IN_HELP}`;
+  if (api === 'chrome') return rpcError(401, 'UNAUTHENTICATED', message);
+  return directoryError(
+    401,
+    kind === 'missing' ? 'required' : 'authError',
+    message,
+    {
+      itemMessage:
+        kind === 'missing' ? 'Login Required.' : 'Invalid Credentials',
+      item: { location: 'Authorization', locationType: 'header' },
+      extra: { status: 'UNAUTHENTICATED' },
+    },
+  );
+}
+
+/** 403 for a token without any accepted scope. */
+export function insufficientScopes(api: Api): ApiResponse {
+  const message = 'Request had insufficient authentication scopes.';
+  const details = [
+    {
+      '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+      reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT',
+      domain: 'googleapis.com',
+      metadata: {
+        service:
+          api === 'chrome'
+            ? 'chromemanagement.googleapis.com'
+            : 'admin.googleapis.com',
+      },
+    },
+  ];
+  if (api === 'chrome')
+    return rpcError(403, 'PERMISSION_DENIED', message, details);
+  return directoryError(403, 'insufficientPermissions', message, {
+    itemMessage: 'Insufficient Permission',
+    extra: { status: 'PERMISSION_DENIED', details },
+  });
+}
+
+/** 403 for a subject without administrator rights or another customer's data. */
+export function notAuthorized(api: Api): ApiResponse {
+  return api === 'chrome'
+    ? rpcError(403, 'PERMISSION_DENIED', 'The caller does not have permission')
+    : directoryError(
+        403,
+        'forbidden',
+        'Not Authorized to access this resource/api',
+      );
+}

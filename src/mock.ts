@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import https from 'node:https';
 import { join } from 'node:path';
+import { createAuthenticator } from './auth/access.ts';
 import { ensureCertificates, type Certificates } from './ca.ts';
 import { systemClock, type Clock, type Timing } from './clock.ts';
 import { createDomains, type Domains } from './domains.ts';
@@ -218,6 +219,7 @@ export function createMock(options: MockOptions): Mock {
       registry.close();
     },
   };
+  mock.authenticator = createAuthenticator(mock);
   mock.routes.push(...(options.routes ?? buildRoutes(mock)));
   return mock;
 }

@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import type { IncomingHttpHeaders } from 'node:http';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { OpenDomain } from '../http/types.ts';
 import { createMock, type Mock, type MockOptions } from '../mock.ts';
 
 export interface HarnessResponse {
@@ -97,4 +99,41 @@ export async function startHarness(
       rmSync(dataDir, { recursive: true, force: true });
     },
   };
+}
+
+export const TEST_SPEC = {
+  tier: 'small',
+  seed: 'harness',
+  counts: { schools: 2, students: 120, staff: 20, devices: 150 },
+};
+
+/** Seed a small domain for HTTP tests. */
+export function seedTestDomain(
+  harness: Harness,
+  input: Record<string, unknown> = TEST_SPEC,
+): OpenDomain {
+  return harness.mock.domains.create(input, harness.mock.clock.now()).domain;
+}
+
+export const adminOf = (domain: OpenDomain): string =>
+  `admin@${domain.spec.primaryDomain}`;
+
+/** Store an access token directly, without the token endpoint. */
+export function grantToken(
+  harness: Harness,
+  domain: OpenDomain,
+  scopes: readonly string[],
+  subject = adminOf(domain),
+): string {
+  const token = `ya29.test.${randomUUID()}`;
+  harness.mock.registry.saveToken({
+    token,
+    clientId: '100000000000000000001',
+    projectId: 'harness-project',
+    subject,
+    customerId: domain.customerId,
+    scopes: [...scopes],
+    expiresAt: harness.mock.clock.now() + 3_599_000,
+  });
+  return token;
 }
