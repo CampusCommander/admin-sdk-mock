@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock, Timing } from '../clock.ts';
-import { directoryError, rpcError, transientError } from '../http/errors.ts';
+import {
+  directoryError,
+  internalError,
+  rpcError,
+  transientError,
+} from '../http/errors.ts';
 import type { Api, ApiResponse, Call, Overrides } from '../http/types.ts';
 import type { Random } from '../random.ts';
 
@@ -220,7 +225,9 @@ export function createFaults(deps: {
             break;
           case 'error-rate':
             if (deps.random.chance(rule.rate))
-              return transientError(call.route.api);
+              return deps.random.chance(0.5)
+                ? internalError(call.route.api)
+                : transientError(call.route.api);
             break;
         }
       }

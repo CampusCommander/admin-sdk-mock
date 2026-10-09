@@ -89,7 +89,9 @@ test('a hang fault holds the response for the scaled duration', async (t) => {
 test('an error rate of 1 always fails and 0 never fails', async (t) => {
   const { get, add, harness, domain } = await setup(t);
   add({ kind: 'error-rate', rate: 1 });
-  assert.equal((await get()).status, 503);
+  const statuses = new Set<number>();
+  for (let i = 0; i < 60; i++) statuses.add((await get()).status);
+  assert.deepEqual([...statuses].sort(), [500, 503]);
   harness.mock.faults.clear(domain.customerId);
   add({ kind: 'error-rate', rate: 0 });
   assert.equal((await get()).status, 200);
