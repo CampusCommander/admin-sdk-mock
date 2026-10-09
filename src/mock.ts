@@ -124,7 +124,15 @@ export function createMock(options: MockOptions): Mock {
   const limits = createLimits({ clock, timing });
   const random = options.random ?? createRandom(`mock/${Date.now()}`);
   const delays = createDelays({ clock, timing, random, limits });
-  const faults = createFaults({ clock, timing, random });
+  const faults = createFaults({
+    clock,
+    timing,
+    random,
+    methods: () =>
+      mock.routes
+        .filter((route) => route.api === 'directory' || route.api === 'chrome')
+        .map((route) => route.id),
+  });
 
   const mock: Mock = {
     dataDir: options.dataDir,

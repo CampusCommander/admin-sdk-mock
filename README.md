@@ -33,6 +33,53 @@ Delegate to the `adminEmail` that `domain create` prints.
 `mockctl quota <customerId>` shows the quota buckets and the flag state.
 `mockctl fault add <customerId> --json '{"kind":"status","status":503,"reason":"backendError","count":3}'` injects faults.
 
+## Faults
+
+Add a fault with `mockctl fault add <customerId> --json '<rule>'`.
+List them with `mockctl fault list <customerId>` and remove them with `mockctl fault clear <customerId>`.
+A rule is a JSON object with a `kind` and the fields below. Unknown fields are rejected.
+The `method` field is optional on the four request kinds. Without it the rule applies to every Directory and Chrome route.
+With it, `method` must be one of these route IDs. Any other value, including `oauth.token` and `batch.directory`, is rejected.
+
+- `directory.customers.get`, `directory.domains.list`
+- `directory.orgunits.list`, `directory.orgunits.get`
+- `directory.chromeosdevices.list`, `directory.chromeosdevices.get`
+- `directory.users.list`, `directory.users.get`
+- `chrome.telemetry.devices.list`, `chrome.telemetry.devices.get`
+
+| Kind                | Fields                                 | Effect                                                  |
+| ------------------- | -------------------------------------- | ------------------------------------------------------- |
+| `error-rate`        | `method?`, `rate` (0 to 1)             | Fails that share of calls with a 500 or a 503.          |
+| `status`            | `method?`, `status`, `reason`, `count` | Answers the next `count` calls with the given error.    |
+| `reset`             | `method?`, `count`                     | Closes the connection on the next `count` calls.        |
+| `hang`              | `method?`, `ms`, `count`               | Holds the next `count` calls for `ms` before answering. |
+| `revoke-delegation` | `clientId`                             | Fails token exchange for that client.                   |
+| `remove-scope`      | `clientId`, `scope`                    | Drops that scope from the client's grant.               |
+| `demote-subject`    | `subject`                              | Makes that user lose super administrator access.        |
+| `remove-entity`     | `entityId`                             | Hides the device or user with that ID or email.         |
+
+Examples, one per kind:
+
+```json
+{ "kind": "error-rate", "method": "directory.users.list", "rate": 0.1 }
+{ "kind": "status", "method": "directory.orgunits.list", "status": 503, "reason": "backendError", "count": 3 }
+{ "kind": "reset", "count": 2 }
+{ "kind": "hang", "method": "chrome.telemetry.devices.list", "ms": 30000, "count": 1 }
+{ "kind": "revoke-delegation", "clientId": "100000000000000000001" }
+{ "kind": "remove-scope", "clientId": "100000000000000000001", "scope": "https://www.googleapis.com/auth/admin.directory.user.readonly" }
+{ "kind": "demote-subject", "subject": "admin@example.test" }
+{ "kind": "remove-entity", "entityId": "device-id-or-user-email" }
+```
+
+### Settings
+
+`PUT /domains/<customerId>/settings` merges a partial object into the domain settings. These keys exist, with their defaults.
+
+- `quota` and `chromeQuota`: `perMinute` 2400, `ceiling` 1.25, `heavyRatio` 1.125, `overMinutesToFlag` 30, `heavyMinutesToFlag` 10, `flagMinutes` 60, `retryAfter` false.
+- `concurrency`: `perMethod` 40, `perCustomer` 120.
+- `latency`: `roundTripMedianMs` 80, `roundTripP99Ms` 400, `bytesPerSecond` 8000000, `baseMs` 150, `perItemMs` 3, `scanPer10kRowsMs` 20, `loadThreshold` 20, `loadPercentPerRequest` 2, `batchParallelism` 10, `batchPartMs` 40, `capMs` 2000.
+- `telemetry`: `recentReports` 1.
+
 ## Run in Docker
 
 ```sh

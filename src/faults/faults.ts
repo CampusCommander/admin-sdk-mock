@@ -80,7 +80,7 @@ const wholeNumber = (value: unknown, min: number, max: number) =>
   value >= min &&
   value <= max;
 
-function validate(input: unknown): FaultRule {
+function validate(input: unknown, methods: readonly string[]): FaultRule {
   check(
     input !== null && typeof input === 'object' && !Array.isArray(input),
     'A fault must be an object.',
@@ -95,8 +95,8 @@ function validate(input: unknown): FaultRule {
     check(FIELDS[kind].includes(key), `Unknown fault field: ${key}.`);
   if ('method' in rule)
     check(
-      typeof rule.method === 'string' && rule.method.length > 0,
-      'method must be a route ID.',
+      typeof rule.method === 'string' && methods.includes(rule.method),
+      `method must be one of: ${methods.join(', ')}.`,
     );
   if ('count' in rule || ['status', 'reset', 'hang'].includes(kind))
     check(
@@ -171,6 +171,8 @@ export function createFaults(deps: {
   clock: Clock;
   timing: Timing;
   random: Random;
+  /** The IDs of the routes that faults can target. Read on each add. */
+  methods: () => readonly string[];
 }): Faults {
   const store = new Map<string, StoredFault[]>();
   const rulesOf = (customerId: string) => store.get(customerId) ?? [];
@@ -182,7 +184,7 @@ export function createFaults(deps: {
       );
   return {
     add(customerId, input) {
-      const rule = validate(input);
+      const rule = validate(input, deps.methods());
       const id = randomUUID();
       const remaining = 'count' in rule ? rule.count : null;
       store.set(customerId, [...rulesOf(customerId), { id, rule, remaining }]);

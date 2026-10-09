@@ -180,3 +180,32 @@ test('invalid rules fail and the list shows stored rules', async (t) => {
   harness.mock.faults.clear(domain.customerId);
   assert.deepEqual(harness.mock.faults.list(domain.customerId), []);
 });
+
+test('a fault must name a directory or Chrome route ID', async (t) => {
+  const { add } = await setup(t);
+  for (const method of [
+    'chromeosdevices.list',
+    'oauth.token',
+    'batch.directory',
+    'oauth.tokeninfo',
+  ])
+    assert.throws(
+      () => add({ kind: 'status', method, status: 503, reason: 'x', count: 1 }),
+      /method must be one of: .*directory\.orgunits\.list/,
+      method,
+    );
+  assert.throws(
+    () => add({ kind: 'hang', method: 'batch.directory', ms: 5, count: 1 }),
+    FaultError,
+  );
+  assert.doesNotThrow(() =>
+    add({
+      kind: 'status',
+      method: 'chrome.telemetry.devices.list',
+      status: 503,
+      reason: 'x',
+      count: 1,
+    }),
+  );
+  assert.doesNotThrow(() => add({ kind: 'reset', count: 1 }));
+});
