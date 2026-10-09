@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-09T20:06:17.846Z",
+  "recordedAt": "2026-10-09T20:16:05.594Z",
   "fixture": "approved Easton read-only fixture",
   "scopes": [
     "https://www.googleapis.com/auth/admin.directory.customer.readonly",
@@ -336,6 +336,60 @@
     },
     {
       "probe": "orgunits.list.otherCustomer",
+      "google": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Bad Request",
+          "reason": "badRequest",
+          "domain": "global",
+          "itemMessage": "Bad Request",
+          "keys": "code,errors,message"
+        }
+      },
+      "mock": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Bad Request",
+          "reason": "badRequest",
+          "domain": "global",
+          "itemMessage": "Bad Request",
+          "keys": "code,errors,message"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "customers.get.otherCustomer",
+      "google": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Bad Request",
+          "reason": "badRequest",
+          "domain": "global",
+          "itemMessage": "Bad Request",
+          "keys": "code,errors,message"
+        }
+      },
+      "mock": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Bad Request",
+          "reason": "badRequest",
+          "domain": "global",
+          "itemMessage": "Bad Request",
+          "keys": "code,errors,message"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "domains.list.otherCustomer",
       "google": {
         "status": 400,
         "error": {

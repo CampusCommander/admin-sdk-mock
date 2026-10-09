@@ -12,7 +12,7 @@
   },
   "scripts": {
     "start": "node src/main.ts",
-    "test": "node --test \"src/**/*.test.ts\"",
+    "test": "node --test \"src/**/*.test.ts\" \"parity/**/*.test.ts\"",
     "test:contract": "node --test \"test/contract/*.test.ts\"",
     "test:compat": "node test/compat/run.ts",
     "test:scale": "node test/scale/scale.ts",

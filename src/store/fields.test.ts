@@ -48,14 +48,32 @@ test('missing fields are left out', () => {
   assert.deepEqual(pick('missing,kind'), { kind: 'list' });
 });
 
-test('unknown fields are found unless Google defines them as optional', () => {
-  const unknown = (fields: string) => unknownField(SAMPLE, parseFields(fields));
+test('a selection is valid when a Google schema declares every name', () => {
+  const unknown = (fields: string) => unknownField(parseFields(fields));
   assert.equal(unknown('kind,items/id'), null);
-  assert.equal(unknown('items/name/givenName'), null);
+  assert.equal(unknown('*'), null);
   assert.equal(unknown('bogusField'), 'bogusField');
-  assert.equal(unknown('items(id,bogus)'), 'bogus');
-  assert.equal(unknown('items/name/bogus'), 'bogus');
-  assert.equal(unknown('notes,nextPageToken'), null);
+  assert.equal(unknown('chromeosdevices(deviceId,bogus)'), 'bogus');
+  assert.equal(
+    unknown('chromeosdevices(deviceId,recentUsers),nextPageToken'),
+    null,
+  );
+  assert.equal(unknown('chromeosdevices(deviceId,meid)'), null);
+  assert.equal(unknown('users(primaryEmail,thumbnailPhotoUrl)'), null);
+  assert.equal(unknown('devices(deviceId,batteryInfo),nextPageToken'), null);
+});
+
+test('the Campus Commander device selection is valid for an empty device', () => {
+  const fields =
+    'nextPageToken,chromeosdevices(deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,notes,status)';
+  assert.equal(unknownField(parseFields(fields)), null);
+  assert.deepEqual(
+    applyFields(
+      { chromeosdevices: [{ deviceId: 'd', serialNumber: 's' }] },
+      parseFields(fields),
+    ),
+    { chromeosdevices: [{ deviceId: 'd', serialNumber: 's' }] },
+  );
 });
 
 test('malformed selections fail', () => {
@@ -91,6 +109,23 @@ test('the mock trims 2xx bodies and rejects bad selections', async (t) => {
   });
   assert.equal(bad.status, 400);
   assert.equal(bad.json().error.errors[0].reason, 'invalidParameter');
+  for (const fields of [
+    'chromeosdevices(deviceId,recentUsers)',
+    'chromeosdevices(deviceId,meid)',
+    'users(primaryEmail,thumbnailPhotoUrl)',
+    'devices(deviceId,batteryInfo),nextPageToken',
+  ])
+    assert.equal(
+      (
+        await harness.request({
+          host: 'oauth2.googleapis.com',
+          path: '/sample',
+          query: { fields },
+        })
+      ).status,
+      200,
+      fields,
+    );
   const unknown = await harness.request({
     host: 'oauth2.googleapis.com',
     path: '/sample',

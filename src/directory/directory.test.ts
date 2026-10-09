@@ -39,6 +39,7 @@ test('customers.get answers for my_customer and the customer ID only', async (t)
   assert.equal(mine.json().id, domain.customerId);
   assert.equal(mine.json().customerDomain, domain.spec.primaryDomain);
   assert.equal((await get(`/customers/${domain.customerId}`)).status, 200);
+  assert.equal(typeof mine.json().postalAddress.addressLine2, 'string');
   const other = await get('/customers/C0zzzzzzz');
   assert.equal(other.status, 400);
   assert.equal(other.json().error.errors[0].reason, 'badRequest');
@@ -157,4 +158,15 @@ test('the root row exists in the database', async (t) => {
     )?.n,
     1,
   );
+});
+
+test('every OU resource carries a description', async (t) => {
+  const { get } = await setup(t);
+  const units = (
+    await get('/customer/my_customer/orgunits', {
+      type: 'all_including_parent',
+    })
+  ).json().organizationUnits as { description?: unknown }[];
+  assert.ok(units.length > 1);
+  for (const unit of units) assert.equal(typeof unit.description, 'string');
 });

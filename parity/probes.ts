@@ -123,6 +123,24 @@ export const PROBES: readonly Probe[] = [
       }),
   },
   {
+    name: 'customers.get.otherCustomer',
+    run: async (t) =>
+      t.request({
+        host: ADMIN,
+        path: `${D}/customers/C00000000`,
+        token: await bearer(t, PARITY_SCOPES.customer),
+      }),
+  },
+  {
+    name: 'domains.list.otherCustomer',
+    run: async (t) =>
+      t.request({
+        host: ADMIN,
+        path: `${D}/customer/C00000000/domains`,
+        token: await bearer(t, PARITY_SCOPES.domain),
+      }),
+  },
+  {
     name: 'orgunits.list.noToken',
     run: (t) =>
       t.request({ host: ADMIN, path: `${D}/customer/my_customer/orgunits` }),

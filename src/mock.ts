@@ -87,7 +87,7 @@ export function finalize(
   if (fields && response.status >= 200 && response.status < 300) {
     try {
       const tree = parseFields(fields);
-      const unknown = unknownField(body, tree);
+      const unknown = unknownField(tree);
       if (unknown !== null)
         throw new FieldsError(`Invalid field selection ${unknown}`);
       body = applyFields(body, tree);
