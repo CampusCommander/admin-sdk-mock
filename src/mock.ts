@@ -27,6 +27,7 @@ import {
   type Overrides,
   type Route,
 } from './http/types.ts';
+import { createDelays } from './latency/delays.ts';
 import { openPipeline, type Pipeline } from './pipeline.ts';
 import { createLimits, type Limits } from './quota/limits.ts';
 import { createRandom, type Random } from './random.ts';
@@ -108,6 +109,8 @@ export function createMock(options: MockOptions): Mock {
   const clock = options.clock ?? systemClock;
   const timing = options.timing ?? { scale: 1, delays: true };
   const limits = createLimits({ clock, timing });
+  const random = options.random ?? createRandom(`mock/${Date.now()}`);
+  const delays = createDelays({ clock, timing, random, limits });
 
   const mock: Mock = {
     dataDir: options.dataDir,
@@ -116,10 +119,14 @@ export function createMock(options: MockOptions): Mock {
     certificates,
     clock,
     timing,
-    random: options.random ?? createRandom(`mock/${Date.now()}`),
+    random,
     limits,
     routes: [],
-    pipeline: { ...openPipeline(), admit: (call) => limits.admit(call) },
+    pipeline: {
+      ...openPipeline(),
+      admit: (call) => limits.admit(call),
+      delay: (call, response) => delays.delay(call, response),
+    },
     overrides: NO_OVERRIDES,
     authenticator: {
       authenticate: () =>
