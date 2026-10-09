@@ -246,7 +246,8 @@ export function buildLayout(spec: ResolvedSpec): Layout {
     const kind: OuKind = branch % 2 === 0 ? 'devices' : 'users';
     const parents = new Set(units.map((unit) => unit.parentId));
     const leaves = units.filter(
-      (unit) => unit.kind === kind && !parents.has(unit.orgUnitId),
+      (unit) =>
+        unit.kind === kind && unit.depth < 8 && !parents.has(unit.orgUnitId),
     );
     if (leaves.length === 0) continue;
     let node = deep.pick(leaves);

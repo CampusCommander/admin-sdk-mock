@@ -138,3 +138,30 @@ test('school names are unique', () => {
   const names = new Set(layout.schools.map((school) => school.name));
   assert.equal(names.size, layout.schools.length);
 });
+
+test('each deep branch starts from a fresh shallow leaf', () => {
+  for (let i = 0; i < 200; i++) {
+    const layout = buildLayout(
+      resolveSpec({
+        tier: 'small',
+        seed: `unique-${i}`,
+        rates: { deepBranches: 6 },
+      }),
+    );
+    assert.equal(
+      new Set(layout.deepUserOus).size,
+      layout.deepUserOus.length,
+      `unique-${i} user branches`,
+    );
+    assert.equal(
+      new Set(layout.deepDeviceOus).size,
+      layout.deepDeviceOus.length,
+      `unique-${i} device branches`,
+    );
+    assert.equal(
+      layout.deepUserOus.length + layout.deepDeviceOus.length,
+      6,
+      `unique-${i} branch count`,
+    );
+  }
+});
