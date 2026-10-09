@@ -2,6 +2,7 @@ import { handleToken } from './auth/token.ts';
 import { handleTokenInfo } from './auth/tokeninfo.ts';
 import { SCOPES } from './auth/scopes.ts';
 import { getCustomer } from './directory/customers.ts';
+import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
 import { getOrgUnit, listOrgUnits } from './directory/orgunits.ts';
 import type { Route } from './http/types.ts';
@@ -76,6 +77,18 @@ export function buildRoutes(mock: Mock): Route[] {
       /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/orgunits\/(?<orgUnitPath>.+)$/,
       SCOPES.orgunit,
       getOrgUnit,
+    ),
+    directoryRoute(
+      'directory.chromeosdevices.list',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos$/,
+      SCOPES.device,
+      listDevices,
+    ),
+    directoryRoute(
+      'directory.chromeosdevices.get',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/]+)$/,
+      SCOPES.device,
+      getDevice,
     ),
   ];
 }
