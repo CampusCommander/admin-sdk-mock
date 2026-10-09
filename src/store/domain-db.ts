@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { registerTextFunctions } from './text.ts';
 import { openDatabase } from './sqlite.ts';
 
 export const DOMAIN_SCHEMA = `
@@ -93,5 +94,6 @@ CREATE INDEX IF NOT EXISTS devices_asset ON devices (annotated_asset_id);
 export function openDomainDb(path: string): DatabaseSync {
   const db = openDatabase(path);
   db.exec(DOMAIN_SCHEMA);
+  registerTextFunctions(db);
   return db;
 }

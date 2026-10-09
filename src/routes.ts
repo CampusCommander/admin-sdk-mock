@@ -5,6 +5,7 @@ import { getCustomer } from './directory/customers.ts';
 import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
 import { getOrgUnit, listOrgUnits } from './directory/orgunits.ts';
+import { getUser, listUsers } from './directory/users.ts';
 import type { Route } from './http/types.ts';
 import type { Mock } from './mock.ts';
 
@@ -89,6 +90,20 @@ export function buildRoutes(mock: Mock): Route[] {
       /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/]+)$/,
       SCOPES.device,
       getDevice,
+    ),
+    directoryRoute(
+      'directory.users.list',
+      /^\/admin\/directory\/v1\/users$/,
+      SCOPES.user,
+      listUsers,
+      false,
+    ),
+    directoryRoute(
+      'directory.users.get',
+      /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)$/,
+      SCOPES.user,
+      getUser,
+      false,
     ),
   ];
 }
