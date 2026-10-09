@@ -2,7 +2,7 @@ import type { Clock, Timing } from '../clock.ts';
 import { directoryError, rpcError } from '../http/errors.ts';
 import type { Api, ApiResponse, Call } from '../http/types.ts';
 import type { Admission } from '../pipeline.ts';
-import { QuotaBucket, type BucketSnapshot } from './bucket.ts';
+import { QuotaBucket, type BucketSnapshot, type QuotaRules } from './bucket.ts';
 
 export interface QuotaReport {
   buckets: {
@@ -90,8 +90,16 @@ export function createLimits(deps: { clock: Clock; timing: Timing }): Limits {
         return { ok: false, response: concurrencyError(route.api, 'customer') };
       if ((inFlight.get(methodKey) ?? 0) >= settings.concurrency.perMethod)
         return { ok: false, response: concurrencyError(route.api, 'method') };
-      const rules =
+      const quota =
         route.api === 'chrome' ? settings.chromeQuota : settings.quota;
+      const rules: QuotaRules = {
+        perMinute: quota.perMinute,
+        ceiling: quota.ceiling,
+        heavyRatio: quota.heavyRatio,
+        overMinutesToFlag: quota.overMinutesToFlag,
+        heavyMinutesToFlag: quota.heavyMinutesToFlag,
+        flagMinutes: quota.flagMinutes,
+      };
       const minuteMs = 60_000 / deps.timing.scale;
       const key = `${route.api}|${access.customerId}|${access.token.projectId}|${access.subject}`;
       const signature = JSON.stringify([rules, minuteMs]);
@@ -113,7 +121,7 @@ export function createLimits(deps: { clock: Clock; timing: Timing }): Limits {
           ok: false,
           response: quotaError(
             route.api,
-            rules.retryAfter ? entry.bucket.retryAfterMs(now) : null,
+            quota.retryAfter ? entry.bucket.retryAfterMs(now) : null,
           ),
         };
       bump(customerKey, 1);

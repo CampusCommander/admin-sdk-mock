@@ -140,3 +140,15 @@ test('a time-scale change starts fresh buckets', async (t) => {
     1,
   );
 });
+
+test('toggling Retry-After keeps the bucket', async (t) => {
+  const { orgunits, harness, domain } = await setup(t);
+  for (let i = 0; i < 3; i++) await orgunits();
+  harness.mock.domains.updateSettings(domain.customerId, {
+    quota: { retryAfter: true },
+  });
+  await orgunits();
+  const report = harness.mock.limits.report(domain.customerId);
+  assert.equal(report.buckets.length, 1);
+  assert.equal(report.buckets[0].snapshot.count, 4);
+});
