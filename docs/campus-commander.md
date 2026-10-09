@@ -20,6 +20,11 @@ docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overl
 ```sh
 mock() { docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overlay.yml exec -T admin-sdk-mock node bin/mockctl.ts "$@"; }
 mock domain create --tier large --seed acceptance
+```
+
+Note the `customerId` and `adminEmail` that `domain create` prints.
+
+```sh
 mock credential <customerId> > mock-credential.json
 ```
 

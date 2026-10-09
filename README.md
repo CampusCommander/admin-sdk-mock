@@ -67,11 +67,11 @@ Milestone 1 is built. The acceptance run against Campus Commander awaits the own
 
 Acceptance items:
 
-| Item                                   | Result                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------- |
-| Live parity against the Easton fixture | 19 of 19 probes match. Device, user, and telemetry parity awaits scopes.        |
-| Client library compatibility           | 10 of 10 tests pass through a CONNECT proxy.                                    |
-| Scale                                  | The xlarge tier seeds in 14.9 s and serves 400,000 devices in 1,334 pages.      |
-| Campus Commander shows 60,000 devices  | Pending owner run: Docker Desktop WSL integration is off.                       |
-| Campus Commander repository unchanged  | Verified. `git status --short` is empty.                                        |
-| Open calibration values                | Seven values remain open or need an owner decision. See the calibration record. |
+| Item                                   | Result                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Live parity against the Easton fixture | 19 of 19 match in status. Six have shape notes. Device, user, and telemetry parity awaits scopes. |
+| Client library compatibility           | 10 of 10 tests pass through a CONNECT proxy.                                                      |
+| Scale                                  | The xlarge tier seeds in 14.9 s and serves 400,000 devices in 1,334 pages.                        |
+| Campus Commander shows 60,000 devices  | Pending owner run: Docker Desktop WSL integration is off.                                         |
+| Campus Commander repository unchanged  | Verified. `git status --short` is empty.                                                          |
+| Open calibration values                | Seven values remain open or need an owner decision. See the calibration record.                   |

@@ -14,7 +14,7 @@ Updated: 2026-10-09.
 
 ## Parity results
 
-The live run on 2026-10-09 used the approved Easton read-only fixture. It sent 19 probes. All 19 match in status and shape.
+The live run on 2026-10-09 used the approved Easton read-only fixture. It sent 19 probes. All 19 probes match in status. Six probes show shape differences, listed below.
 Source: `parity/evidence/live-2026-10-09.json`.
 
 - `token.granted`: 200 on both. Match.
@@ -41,11 +41,11 @@ Device, user, and telemetry success shapes have no live evidence. The Easton gra
 
 ### Calibration changes from the parity check
 
-- An ungranted-scope token request now returns 401 `unauthorized_client`. It returned 400 before. Live evidence supports this. The spec text now matches (ruling R16). The owner has not yet confirmed it.
+- An ungranted-scope token request now returns 401 `unauthorized_client`. It returned 400 before. Live evidence supports this. The spec text now matches (spec section Token exchange). The owner has not yet confirmed it.
 - `customers.get` now returns `postalAddress.addressLine2`. The value is invented.
 - The mock now always emits the OU `description`. Google's behavior for an empty description is unverified.
 - A foreign customer ID on Directory routes now returns 400 `badRequest` "Bad Request". It returned 403 `forbidden` before. Live evidence covers `orgunits.list`, `customers.get`, and `domains.list`. Other Directory routes extrapolate from those three. Chrome Management keeps 403.
-- An unknown `fields` name now returns 400 `invalidParameter`. The mock checks the name against the union of discovery schema property names (ruling R15). A name valid in another schema passes.
+- An unknown `fields` name now returns 400 `invalidParameter`. The mock checks the name against the union of discovery schema property names (spec section Common behavior). A name valid in another schema passes.
 
 ### Remaining shape notes
 
