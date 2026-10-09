@@ -12,6 +12,7 @@ import {
   directoryError,
   internalError,
   notFoundPage,
+  rpcError,
   transientError,
 } from './http/errors.ts';
 import { matchRoute } from './http/router.ts';
@@ -29,6 +30,7 @@ import {
 import { openPipeline, type Pipeline } from './pipeline.ts';
 import { createRandom, type Random } from './random.ts';
 import { buildRoutes } from './routes.ts';
+import { applyFields, FieldsError, parseFields } from './store/fields.ts';
 import { openRegistry, type Registry } from './store/registry.ts';
 
 export interface MockOptions {
@@ -63,18 +65,35 @@ export interface Mock {
 
 export const BODY_LIMIT = 32 * 1024 * 1024;
 
-/** Serialize the body. Later tasks add the `fields` selector here. */
+/** Apply `fields` to a 2xx JSON body and serialize the body. */
 export function finalize(
   response: ApiResponse,
   request: ApiRequest,
-  _route: Route | null,
+  route: Route | null,
 ): ApiResponse {
   if (response.raw !== undefined) return response;
   if (response.body === undefined) return { ...response, raw: '' };
+  let body: unknown = response.body;
+  const fields = request.query.get('fields');
+  if (fields && response.status >= 200 && response.status < 300) {
+    try {
+      body = applyFields(body, parseFields(fields));
+    } catch (error) {
+      if (!(error instanceof FieldsError)) throw error;
+      return finalize(
+        route?.api === 'chrome'
+          ? rpcError(400, 'INVALID_ARGUMENT', error.message)
+          : directoryError(400, 'invalidParameter', error.message),
+        request,
+        route,
+      );
+    }
+  }
   const pretty = request.query.get('prettyPrint') !== 'false';
   return {
     ...response,
-    raw: JSON.stringify(response.body, null, pretty ? 2 : undefined),
+    body,
+    raw: JSON.stringify(body, null, pretty ? 2 : undefined),
   };
 }
 
