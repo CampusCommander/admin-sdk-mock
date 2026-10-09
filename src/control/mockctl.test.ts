@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { once } from 'node:events';
-import { readFileSync, statSync } from 'node:fs';
+import { chmodSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -50,6 +50,11 @@ test('mockctl creates a domain, issues a credential file, and sets the clock', a
   assert.equal(written.written, file);
   assert.equal(statSync(file).mode & 0o777, 0o600);
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).type, 'service_account');
+  const existing = join(harness.dataDir, 'existing-credential.json');
+  writeFileSync(existing, 'old', { mode: 0o644 });
+  chmodSync(existing, 0o644);
+  await ctl('credential', created.customerId, '--out', existing);
+  assert.equal(statSync(existing).mode & 0o777, 0o600);
   assert.deepEqual(JSON.parse((await ctl('clock', '--scale', '60')).stdout), {
     scale: 60,
     delays: false,

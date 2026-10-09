@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { writeFileSync } from 'node:fs';
+import { chmodSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { READ_SCOPES } from '../src/auth/scopes.ts';
 
@@ -141,6 +141,7 @@ async function main(argv: string[]): Promise<void> {
         writeFileSync(values.out, `${JSON.stringify(account, null, 2)}\n`, {
           mode: 0o600,
         });
+        chmodSync(values.out, 0o600);
         return print({
           written: values.out,
           clientId: account.client_id,
