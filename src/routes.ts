@@ -1,3 +1,4 @@
+import { handleBatch } from './batch/batch.ts';
 import { handleToken } from './auth/token.ts';
 import { handleTokenInfo } from './auth/tokeninfo.ts';
 import { SCOPES } from './auth/scopes.ts';
@@ -126,6 +127,16 @@ export function buildRoutes(mock: Mock): Route[] {
       scopes: SCOPES.telemetry,
       admin: true,
       handler: getTelemetry,
+    },
+    {
+      id: 'batch.directory',
+      api: 'batch',
+      hosts: ['www.googleapis.com', 'admin.googleapis.com'],
+      methods: ['POST'],
+      pattern: /^\/batch(?:\/admin\/directory_v1)?$/,
+      scopes: [],
+      admin: false,
+      handler: handleBatch,
     },
   ];
 }
