@@ -1,0 +1,33 @@
+{
+  "name": "admin-sdk-mock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mock Google Admin SDK API for Campus Commander scale testing",
+  "type": "module",
+  "engines": {
+    "node": ">=24.11"
+  },
+  "bin": {
+    "mockctl": "./bin/mockctl.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "test:contract": "node --test \"test/contract/*.test.ts\"",
+    "test:compat": "node test/compat/run.ts",
+    "test:scale": "node test/scale/scale.ts",
+    "parity": "node parity/live.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.12.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1"
+  }
+}
