@@ -1,6 +1,6 @@
 # Admin SDK mock: design
 
-Status: design approved by the owner on 2026-10-09. Written spec awaits owner review.
+Status: design and written spec approved by the owner on 2026-10-09.
 Source: owner interview with Claude on 2026-10-09.
 Repository: `CampusCommander/admin-sdk-mock`. Local path: `~/projects/admin-sdk-mock`.
 
@@ -288,6 +288,8 @@ The live parity check records Google's response before implementation of that ca
 - Each part carries its own HTTP status and body.
 
 ### Milestone 2: writes
+
+The [milestone 2 writes design](2026-10-09-milestone-2-writes-design.md) holds the detailed rules.
 
 | Resource | Methods                                                                                   |
 | -------- | ----------------------------------------------------------------------------------------- |
