@@ -107,7 +107,7 @@ export function handleToken(
   );
   if (!granted || requested.some((scope) => !granted.includes(scope)))
     return oauthError(
-      400,
+      401,
       'unauthorized_client',
       'Client is unauthorized to retrieve access tokens using this method, or client not authorized for any of the scopes requested.',
     );

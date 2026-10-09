@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Route } from '../http/types.ts';
 import { startHarness } from '../testing/harness.ts';
-import { applyFields, FieldsError, parseFields } from './fields.ts';
+import {
+  applyFields,
+  FieldsError,
+  parseFields,
+  unknownField,
+} from './fields.ts';
 
 const SAMPLE = {
   kind: 'list',
@@ -43,6 +48,16 @@ test('missing fields are left out', () => {
   assert.deepEqual(pick('missing,kind'), { kind: 'list' });
 });
 
+test('unknown fields are found unless Google defines them as optional', () => {
+  const unknown = (fields: string) => unknownField(SAMPLE, parseFields(fields));
+  assert.equal(unknown('kind,items/id'), null);
+  assert.equal(unknown('items/name/givenName'), null);
+  assert.equal(unknown('bogusField'), 'bogusField');
+  assert.equal(unknown('items(id,bogus)'), 'bogus');
+  assert.equal(unknown('items/name/bogus'), 'bogus');
+  assert.equal(unknown('notes,nextPageToken'), null);
+});
+
 test('malformed selections fail', () => {
   for (const text of ['', 'a,', 'a(b', 'a)', 'a//b', '(a)', 'a(b))'])
     assert.throws(() => parseFields(text), FieldsError, text);
@@ -76,4 +91,16 @@ test('the mock trims 2xx bodies and rejects bad selections', async (t) => {
   });
   assert.equal(bad.status, 400);
   assert.equal(bad.json().error.errors[0].reason, 'invalidParameter');
+  const unknown = await harness.request({
+    host: 'oauth2.googleapis.com',
+    path: '/sample',
+    query: { fields: 'bogusField' },
+  });
+  assert.equal(unknown.status, 400);
+  assert.equal(
+    unknown.json().error.message,
+    'Invalid field selection bogusField',
+  );
+  assert.equal(unknown.json().error.status, 'INVALID_ARGUMENT');
+  assert.equal(unknown.json().error.errors[0].location, 'fields');
 });

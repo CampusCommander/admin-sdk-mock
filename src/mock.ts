@@ -32,7 +32,12 @@ import { type Pipeline } from './pipeline.ts';
 import { createLimits, type Limits } from './quota/limits.ts';
 import { createRandom, type Random } from './random.ts';
 import { buildRoutes } from './routes.ts';
-import { applyFields, FieldsError, parseFields } from './store/fields.ts';
+import {
+  applyFields,
+  FieldsError,
+  parseFields,
+  unknownField,
+} from './store/fields.ts';
 import { openRegistry, type Registry } from './store/registry.ts';
 
 export interface MockOptions {
@@ -81,13 +86,20 @@ export function finalize(
   const fields = request.query.get('fields');
   if (fields && response.status >= 200 && response.status < 300) {
     try {
-      body = applyFields(body, parseFields(fields));
+      const tree = parseFields(fields);
+      const unknown = unknownField(body, tree);
+      if (unknown !== null)
+        throw new FieldsError(`Invalid field selection ${unknown}`);
+      body = applyFields(body, tree);
     } catch (error) {
       if (!(error instanceof FieldsError)) throw error;
       return finalize(
         route?.api === 'chrome'
           ? rpcError(400, 'INVALID_ARGUMENT', error.message)
-          : directoryError(400, 'invalidParameter', error.message),
+          : directoryError(400, 'invalidParameter', error.message, {
+              item: { location: 'fields', locationType: 'parameter' },
+              extra: { status: 'INVALID_ARGUMENT' },
+            }),
         request,
         route,
       );

@@ -40,8 +40,9 @@ test('customers.get answers for my_customer and the customer ID only', async (t)
   assert.equal(mine.json().customerDomain, domain.spec.primaryDomain);
   assert.equal((await get(`/customers/${domain.customerId}`)).status, 200);
   const other = await get('/customers/C0zzzzzzz');
-  assert.equal(other.status, 403);
-  assert.equal(other.json().error.errors[0].reason, 'forbidden');
+  assert.equal(other.status, 400);
+  assert.equal(other.json().error.errors[0].reason, 'badRequest');
+  assert.equal(other.json().error.message, 'Bad Request');
 });
 
 test('domains.list nests aliases under their parent', async (t) => {

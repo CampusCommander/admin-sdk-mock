@@ -227,7 +227,7 @@ Every customer path accepts `my_customer`.
 4. The delegated subject `sub` exists in a domain.
 5. That domain's delegation grant for the client ID includes every requested scope.
 
-A failed check returns Google's `400` response with `error: unauthorized_client` or `invalid_grant`.
+A failed check returns Google's response: `401` with `error: unauthorized_client` or `400` with `error: invalid_grant`.
 A success returns an opaque access token with `expires_in: 3599`.
 The token records its client ID, subject, scopes, and expiry.
 Google issues tokens to subjects that are not administrators. The administrator check happens on each API call.

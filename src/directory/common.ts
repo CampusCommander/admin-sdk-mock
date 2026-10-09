@@ -35,7 +35,11 @@ export function resolveCustomer(
   if (!access) throw new Error(`Route ${call.route.id} needs authentication.`);
   if (value === 'my_customer' || value === access.customerId)
     return access.customerId;
-  throw new ApiError(notAuthorized(call.route.api));
+  throw new ApiError(
+    call.route.api === 'chrome'
+      ? notAuthorized('chrome')
+      : directoryError(400, 'badRequest', 'Bad Request'),
+  );
 }
 
 export function invalidArgument(

@@ -23,6 +23,7 @@ export function getCustomer(call: Call): ApiResponse {
         contactName: 'Technology Department',
         organizationName: spec.districtName,
         addressLine1: '100 Main Street',
+        addressLine2: 'Suite 200',
         locality: spec.districtName.split(' ')[0],
         region: 'IL',
         postalCode: '60601',

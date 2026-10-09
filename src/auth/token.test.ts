@@ -65,7 +65,7 @@ test('an ungranted scope fails with unauthorized_client', async (t) => {
       sub: adminOf(domain),
     }),
   );
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 401);
   assert.equal(response.json().error, 'unauthorized_client');
 });
 

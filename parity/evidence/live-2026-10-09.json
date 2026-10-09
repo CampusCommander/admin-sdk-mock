@@ -1,0 +1,615 @@
+{
+  "recordedAt": "2026-10-09T20:06:17.846Z",
+  "fixture": "approved Easton read-only fixture",
+  "scopes": [
+    "https://www.googleapis.com/auth/admin.directory.customer.readonly",
+    "https://www.googleapis.com/auth/admin.directory.domain.readonly",
+    "https://www.googleapis.com/auth/admin.directory.orgunit.readonly"
+  ],
+  "limitations": [
+    "Device, user, and telemetry success shapes need their scopes in the Easton delegation grant.",
+    "The Easton tenant holds few entities. Shapes cover the fields Google returned for its data."
+  ],
+  "results": [
+    {
+      "probe": "token.granted",
+      "google": {
+        "status": 200,
+        "shape": {
+          "access_token": "string",
+          "expires_in": "number",
+          "token_type": "string"
+        }
+      },
+      "mock": {
+        "status": 200,
+        "shape": {
+          "access_token": "string",
+          "expires_in": "number",
+          "token_type": "string"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "token.ungranted",
+      "google": {
+        "status": 401,
+        "error": {
+          "error": "unauthorized_client",
+          "description": "Client is unauthorized to retrieve access tokens using this method, or client not authorized for any of the scopes requested."
+        }
+      },
+      "mock": {
+        "status": 401,
+        "error": {
+          "error": "unauthorized_client",
+          "description": "Client is unauthorized to retrieve access tokens using this method, or client not authorized for any of the scopes requested."
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "tokeninfo",
+      "google": {
+        "status": 200,
+        "shape": {
+          "access_type": "string",
+          "aud": "string",
+          "azp": "string",
+          "exp": "string",
+          "expires_in": "string",
+          "scope": "string"
+        }
+      },
+      "mock": {
+        "status": 200,
+        "shape": {
+          "access_type": "string",
+          "aud": "string",
+          "azp": "string",
+          "exp": "string",
+          "expires_in": "string",
+          "scope": "string"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "customers.get",
+      "google": {
+        "status": 200,
+        "shape": {
+          "alternateEmail": "string",
+          "customerCreationTime": "string",
+          "customerDomain": "string",
+          "etag": "string",
+          "id": "string",
+          "kind": "string",
+          "language": "string",
+          "phoneNumber": "string",
+          "postalAddress": {
+            "addressLine1": "string",
+            "addressLine2": "string",
+            "contactName": "string",
+            "countryCode": "string",
+            "locality": "string",
+            "organizationName": "string",
+            "postalCode": "string",
+            "region": "string"
+          }
+        }
+      },
+      "mock": {
+        "status": 200,
+        "shape": {
+          "alternateEmail": "string",
+          "customerCreationTime": "string",
+          "customerDomain": "string",
+          "etag": "string",
+          "id": "string",
+          "kind": "string",
+          "language": "string",
+          "phoneNumber": "string",
+          "postalAddress": {
+            "addressLine1": "string",
+            "addressLine2": "string",
+            "contactName": "string",
+            "countryCode": "string",
+            "locality": "string",
+            "organizationName": "string",
+            "postalCode": "string",
+            "region": "string"
+          }
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "domains.list",
+      "google": {
+        "status": 200,
+        "shape": {
+          "domains": [
+            {
+              "creationTime": "string",
+              "domainName": "string",
+              "etag": "string",
+              "isPrimary": "boolean",
+              "kind": "string",
+              "verified": "boolean"
+            }
+          ],
+          "etag": "string",
+          "kind": "string"
+        }
+      },
+      "mock": {
+        "status": 200,
+        "shape": {
+          "domains": [
+            {
+              "creationTime": "string",
+              "domainAliases": [
+                {
+                  "creationTime": "string",
+                  "domainAliasName": "string",
+                  "etag": "string",
+                  "kind": "string",
+                  "parentDomainName": "string",
+                  "verified": "boolean"
+                }
+              ],
+              "domainName": "string",
+              "etag": "string",
+              "isPrimary": "boolean",
+              "kind": "string",
+              "verified": "boolean"
+            }
+          ],
+          "etag": "string",
+          "kind": "string"
+        }
+      },
+      "mismatches": [],
+      "notes": [
+        "extra $.domains[].domainAliases"
+      ]
+    },
+    {
+      "probe": "domains.list.badFields",
+      "google": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Invalid field selection bogusField",
+          "status": "INVALID_ARGUMENT",
+          "reason": "invalidParameter",
+          "domain": "global",
+          "itemMessage": "Invalid field selection bogusField",
+          "location": "fields",
+          "locationType": "parameter",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mock": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Invalid field selection bogusField",
+          "status": "INVALID_ARGUMENT",
+          "reason": "invalidParameter",
+          "domain": "global",
+          "itemMessage": "Invalid field selection bogusField",
+          "location": "fields",
+          "locationType": "parameter",
+          "keys": "code,errors,message,status"
+        }
+      },
+      "mismatches": [],
+      "notes": [
+        "error keys code,details,errors,message,status vs code,errors,message,status"
+      ]
+    },
+    {
+      "probe": "orgunits.list.allIncludingParent",
+      "google": {
+        "status": 200,
+        "shape": {
+          "etag": "string",
+          "kind": "string",
+          "organizationUnits": [
+            {
+              "description": "string",
+              "etag": "string",
+              "kind": "string",
+              "name": "string",
+              "orgUnitId": "string",
+              "orgUnitPath": "string",
+              "parentOrgUnitId": "string",
+              "parentOrgUnitPath": "string"
+            }
+          ]
+        }
+      },
+      "mock": {
+        "status": 200,
+        "shape": {
+          "etag": "string",
+          "kind": "string",
+          "organizationUnits": [
+            {
+              "blockInheritance": "boolean",
+              "description": "string",
+              "etag": "string",
+              "kind": "string",
+              "name": "string",
+              "orgUnitId": "string",
+              "orgUnitPath": "string",
+              "parentOrgUnitId": "string",
+              "parentOrgUnitPath": "string"
+            }
+          ]
+        }
+      },
+      "mismatches": [],
+      "notes": [
+        "extra $.organizationUnits[].blockInheritance"
+      ]
+    },
+    {
+      "probe": "orgunits.list.children",
+      "google": {
+        "status": 200,
+        "shape": {
+          "etag": "string",
+          "kind": "string",
+          "organizationUnits": [
+            {
+              "description": "string",
+              "etag": "string",
+              "kind": "string",
+              "name": "string",
+              "orgUnitId": "string",
+              "orgUnitPath": "string",
+              "parentOrgUnitId": "string",
+              "parentOrgUnitPath": "string"
+            }
+          ]
+        }
+      },
+      "mock": {
+        "status": 200,
+        "shape": {
+          "etag": "string",
+          "kind": "string",
+          "organizationUnits": [
+            {
+              "blockInheritance": "boolean",
+              "description": "string",
+              "etag": "string",
+              "kind": "string",
+              "name": "string",
+              "orgUnitId": "string",
+              "orgUnitPath": "string",
+              "parentOrgUnitId": "string",
+              "parentOrgUnitPath": "string"
+            }
+          ]
+        }
+      },
+      "mismatches": [],
+      "notes": [
+        "extra $.organizationUnits[].blockInheritance"
+      ]
+    },
+    {
+      "probe": "orgunits.get.missing",
+      "google": {
+        "status": 404,
+        "error": {
+          "code": 404,
+          "message": "Org unit not found",
+          "reason": "notFound",
+          "domain": "global",
+          "itemMessage": "Org unit not found",
+          "keys": "code,errors,message"
+        }
+      },
+      "mock": {
+        "status": 404,
+        "error": {
+          "code": 404,
+          "message": "Org unit not found",
+          "reason": "notFound",
+          "domain": "global",
+          "itemMessage": "Org unit not found",
+          "keys": "code,errors,message"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "orgunits.list.otherCustomer",
+      "google": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Bad Request",
+          "reason": "badRequest",
+          "domain": "global",
+          "itemMessage": "Bad Request",
+          "keys": "code,errors,message"
+        }
+      },
+      "mock": {
+        "status": 400,
+        "error": {
+          "code": 400,
+          "message": "Bad Request",
+          "reason": "badRequest",
+          "domain": "global",
+          "itemMessage": "Bad Request",
+          "keys": "code,errors,message"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "orgunits.list.noToken",
+      "google": {
+        "status": 401,
+        "error": {
+          "code": 401,
+          "message": "Request is missing required authentication credential. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.",
+          "status": "UNAUTHENTICATED",
+          "reason": "required",
+          "domain": "global",
+          "itemMessage": "Login Required.",
+          "location": "Authorization",
+          "locationType": "header",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mock": {
+        "status": 401,
+        "error": {
+          "code": 401,
+          "message": "Request is missing required authentication credential. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.",
+          "status": "UNAUTHENTICATED",
+          "reason": "required",
+          "domain": "global",
+          "itemMessage": "Login Required.",
+          "location": "Authorization",
+          "locationType": "header",
+          "keys": "code,errors,message,status"
+        }
+      },
+      "mismatches": [],
+      "notes": [
+        "error keys code,details,errors,message,status vs code,errors,message,status"
+      ]
+    },
+    {
+      "probe": "orgunits.list.badToken",
+      "google": {
+        "status": 401,
+        "error": {
+          "code": 401,
+          "message": "Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.",
+          "status": "UNAUTHENTICATED",
+          "reason": "authError",
+          "domain": "global",
+          "itemMessage": "Invalid Credentials",
+          "location": "Authorization",
+          "locationType": "header",
+          "keys": "code,errors,message,status"
+        }
+      },
+      "mock": {
+        "status": 401,
+        "error": {
+          "code": 401,
+          "message": "Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.",
+          "status": "UNAUTHENTICATED",
+          "reason": "authError",
+          "domain": "global",
+          "itemMessage": "Invalid Credentials",
+          "location": "Authorization",
+          "locationType": "header",
+          "keys": "code,errors,message,status"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "customers.get.wrongScope",
+      "google": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "reason": "insufficientPermissions",
+          "domain": "global",
+          "itemMessage": "Insufficient Permission",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mock": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "reason": "insufficientPermissions",
+          "domain": "global",
+          "itemMessage": "Insufficient Permission",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "chromeosdevices.list.wrongScope",
+      "google": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "reason": "insufficientPermissions",
+          "domain": "global",
+          "itemMessage": "Insufficient Permission",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mock": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "reason": "insufficientPermissions",
+          "domain": "global",
+          "itemMessage": "Insufficient Permission",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "users.list.wrongScope",
+      "google": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "reason": "insufficientPermissions",
+          "domain": "global",
+          "itemMessage": "Insufficient Permission",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mock": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "reason": "insufficientPermissions",
+          "domain": "global",
+          "itemMessage": "Insufficient Permission",
+          "keys": "code,details,errors,message,status"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "telemetry.list.wrongScope",
+      "google": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "keys": "code,details,message,status"
+        }
+      },
+      "mock": {
+        "status": 403,
+        "error": {
+          "code": 403,
+          "message": "Request had insufficient authentication scopes.",
+          "status": "PERMISSION_DENIED",
+          "keys": "code,details,message,status"
+        }
+      },
+      "mismatches": [],
+      "notes": []
+    },
+    {
+      "probe": "batch.orgunits",
+      "google": {
+        "status": 200,
+        "shape": {
+          "parts": [
+            {
+              "body": {
+                "description": "string",
+                "error": {
+                  "code": "number",
+                  "errors": [
+                    {
+                      "domain": "string",
+                      "message": "string",
+                      "reason": "string"
+                    }
+                  ],
+                  "message": "string"
+                },
+                "etag": "string",
+                "kind": "string",
+                "name": "string",
+                "orgUnitId": "string",
+                "orgUnitPath": "string",
+                "parentOrgUnitId": "string",
+                "parentOrgUnitPath": "string"
+              },
+              "contentId": "string",
+              "status": "number"
+            }
+          ]
+        }
+      },
+      "mock": {
+        "status": 200,
+        "shape": {
+          "parts": [
+            {
+              "body": {
+                "blockInheritance": "boolean",
+                "description": "string",
+                "error": {
+                  "code": "number",
+                  "errors": [
+                    {
+                      "domain": "string",
+                      "message": "string",
+                      "reason": "string"
+                    }
+                  ],
+                  "message": "string"
+                },
+                "etag": "string",
+                "kind": "string",
+                "name": "string",
+                "orgUnitId": "string",
+                "orgUnitPath": "string",
+                "parentOrgUnitId": "string",
+                "parentOrgUnitPath": "string"
+              },
+              "contentId": "string",
+              "status": "number"
+            }
+          ]
+        }
+      },
+      "mismatches": [],
+      "notes": [
+        "extra $.parts[].body.blockInheritance"
+      ]
+    }
+  ]
+}

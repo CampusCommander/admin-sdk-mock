@@ -104,3 +104,57 @@ export function applyFields(value: unknown, tree: FieldTree): unknown {
   }
   return out;
 }
+
+/** Fields that Google defines but the mock leaves out when a resource has no value. */
+const OPTIONAL_FIELDS: ReadonlySet<string> = new Set([
+  'aliases',
+  'annotatedAssetId',
+  'annotatedLocation',
+  'annotatedUser',
+  'chromeosdevices',
+  'deprovisionReason',
+  'devices',
+  'domainAliases',
+  'domains',
+  'ethernetMacAddress',
+  'externalIds',
+  'lastDeprovisionTimestamp',
+  'nextPageToken',
+  'notes',
+  'orderNumber',
+  'organizationUnits',
+  'parentOrgUnitId',
+  'parentOrgUnitPath',
+  'suspensionReason',
+  'users',
+]);
+
+/**
+ * The first selected field that no resource in the body carries and Google does
+ * not define as optional. Google rejects such a selection with `400`.
+ */
+export function unknownField(value: unknown, tree: FieldTree): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = unknownField(item, tree);
+      if (found === null) continue;
+      if (value.every((other) => unknownField(other, tree) !== null))
+        return found;
+    }
+    return null;
+  }
+  if (value === null || typeof value !== 'object') return null;
+  const source = value as Record<string, unknown>;
+  for (const [key, sub] of tree) {
+    if (key === '*') continue;
+    if (!Object.hasOwn(source, key)) {
+      if (OPTIONAL_FIELDS.has(key)) continue;
+      return key;
+    }
+    if (sub !== true) {
+      const found = unknownField(source[key], sub);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}

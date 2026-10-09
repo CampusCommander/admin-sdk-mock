@@ -21,7 +21,7 @@ export function orgUnitResource(unit: OuRow): Record<string, unknown> {
   return withEtag({
     kind: 'admin#directory#orgUnit',
     name: unit.name,
-    ...(unit.description ? { description: unit.description } : {}),
+    description: unit.description,
     orgUnitPath: unit.path,
     orgUnitId: unit.org_unit_id,
     ...(unit.parent_id
