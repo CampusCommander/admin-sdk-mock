@@ -9,18 +9,22 @@ const key = JSON.parse(readFileSync(process.env.MOCK_SA_FILE!, 'utf8')) as {
   client_email: string;
   private_key: string;
 };
-const expected = JSON.parse(process.env.MOCK_EXPECT!) as { telemetry: number };
+const expected = JSON.parse(process.env.MOCK_EXPECT!) as {
+  telemetry: number;
+  telemetryDeviceId: string;
+};
+
+const management = chromemanagement({
+  version: 'v1',
+  auth: new JWT({
+    email: key.client_email,
+    key: key.private_key,
+    subject: process.env.MOCK_SUBJECT,
+    scopes: [...SCOPES.telemetry],
+  }),
+});
 
 test('telemetry pages through every reporting device', async () => {
-  const management = chromemanagement({
-    version: 'v1',
-    auth: new JWT({
-      email: key.client_email,
-      key: key.private_key,
-      subject: process.env.MOCK_SUBJECT,
-      scopes: [...SCOPES.telemetry],
-    }),
-  });
   let count = 0;
   let pageToken: string | undefined;
   do {
@@ -34,4 +38,12 @@ test('telemetry pages through every reporting device', async () => {
     pageToken = data.nextPageToken ?? undefined;
   } while (pageToken);
   assert.equal(count, expected.telemetry);
+});
+
+test('telemetry devices.get returns one device', async () => {
+  const { data } = await management.customers.telemetry.devices.get({
+    name: `customers/my_customer/telemetry/devices/${expected.telemetryDeviceId}`,
+    readMask: 'deviceId',
+  });
+  assert.equal(data.deviceId, expected.telemetryDeviceId);
 });

@@ -50,6 +50,19 @@ test('orgunits.list returns every OU', async () => {
   assert.equal(data.organizationUnits?.length, expected.orgUnits);
 });
 
+test('orgunits.get returns one OU by path', async () => {
+  const { data } = await directory.orgunits.list({
+    customerId: 'my_customer',
+    type: 'all',
+  });
+  const unit = data.organizationUnits![0];
+  const { data: found } = await directory.orgunits.get({
+    customerId: 'my_customer',
+    orgUnitPath: unit.orgUnitPath!.slice(1),
+  });
+  assert.equal(found.orgUnitId, unit.orgUnitId);
+});
+
 test('chromeosdevices.list pages through every device', async () => {
   let count = 0;
   let pageToken: string | undefined;
@@ -110,6 +123,7 @@ test('a batch request answers each part', async () => {
   const body = [
     `--compat\r\nContent-Type: application/http\r\nContent-ID: <a>\r\n\r\nGET ${devices}/${expected.deviceId}\r\n\r\n`,
     `--compat\r\nContent-Type: application/http\r\nContent-ID: <b>\r\n\r\nGET ${devices}/missing\r\n\r\n`,
+    `--compat\r\nContent-Type: application/http\r\nContent-ID: <c>\r\n\r\nGET /admin/directory/v1/customer/my_customer/orgunits\r\n\r\n`,
     '--compat--\r\n',
   ].join('');
   const response = await auth(READ_SCOPES).request<string>({
@@ -121,4 +135,5 @@ test('a batch request answers each part', async () => {
   });
   assert.match(response.data, /Content-ID: <response-a>\r\n\r\nHTTP\/1\.1 200/);
   assert.match(response.data, /Content-ID: <response-b>\r\n\r\nHTTP\/1\.1 404/);
+  assert.match(response.data, /Content-ID: <response-c>\r\n\r\nHTTP\/1\.1 200/);
 });

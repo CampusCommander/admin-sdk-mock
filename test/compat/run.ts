@@ -46,6 +46,11 @@ const expected = {
   deviceId: row<{ device_id: string }>(
     domain.db.prepare('SELECT device_id FROM devices LIMIT 1').get(),
   )!.device_id,
+  telemetryDeviceId: row<{ device_id: string }>(
+    domain.db
+      .prepare("SELECT device_id FROM devices WHERE status = 'ACTIVE' LIMIT 1")
+      .get(),
+  )!.device_id,
 };
 
 const env: NodeJS.ProcessEnv = {
@@ -67,6 +72,11 @@ const child = spawn(
 );
 const [code] = (await once(child, 'exit')) as [number | null];
 await proxy.close();
+console.log(
+  `proxy accepted ${proxy.accepted.length} CONNECT(s) (${[...new Set(proxy.accepted)].join(', ')}), refused ${proxy.refused.length}`,
+);
+const proxied = proxy.accepted.length > 0 && proxy.refused.length === 0;
+if (!proxied) console.error('compat traffic did not stay on the proxy');
 mock.close();
 rmSync(dataDir, { recursive: true, force: true });
-process.exit(code ?? 1);
+process.exit(code === 0 && proxied ? 0 : 1);

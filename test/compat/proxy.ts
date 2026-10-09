@@ -6,7 +6,14 @@ import net, { type AddressInfo } from 'node:net';
 export async function startConnectProxy(target: {
   host: string;
   port: number;
-}): Promise<{ port: number; close(): Promise<void> }> {
+}): Promise<{
+  port: number;
+  accepted: string[];
+  refused: string[];
+  close(): Promise<void>;
+}> {
+  const accepted: string[] = [];
+  const refused: string[] = [];
   const sockets = new Set<net.Socket>();
   const server = http.createServer((_request, response) =>
     response.writeHead(405).end(),
@@ -15,6 +22,10 @@ export async function startConnectProxy(target: {
     'connect',
     (request: http.IncomingMessage, socket: net.Socket, head: Buffer) => {
       const [host, port] = (request.url ?? '').split(':');
+      (host.endsWith('.googleapis.com') && port === '443'
+        ? accepted
+        : refused
+      ).push(request.url ?? '');
       if (!host.endsWith('.googleapis.com') || port !== '443') {
         socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
         return;
@@ -39,6 +50,8 @@ export async function startConnectProxy(target: {
   await once(server, 'listening');
   return {
     port: (server.address() as AddressInfo).port,
+    accepted,
+    refused,
     async close() {
       for (const socket of sockets) socket.destroy();
       server.close();
