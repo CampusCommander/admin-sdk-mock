@@ -32,3 +32,28 @@ Delegate to the `adminEmail` that `domain create` prints.
 `mockctl clock --delays off` removes all delays.
 `mockctl quota <customerId>` shows the quota buckets and the flag state.
 `mockctl fault add <customerId> --json '{"kind":"status","status":503,"reason":"backendError","count":3}'` injects faults.
+
+## Run in Docker
+
+```sh
+docker compose -f compose/standalone.yml up --detach --wait --build
+docker compose -f compose/standalone.yml exec admin-sdk-mock node bin/mockctl.ts domain create --tier medium --seed demo
+```
+
+The control API listens on `127.0.0.1:18080`. The Google listener answers on `127.0.0.1:18443`.
+
+## Use with Campus Commander
+
+Combine the overlay with a rendered Campus Commander all-docker Compose file:
+
+```sh
+docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overlay.yml up --detach --wait
+```
+
+The overlay adds no file to Campus Commander. It routes the four Google hostnames to the mock inside the `internal` network.
+
+Outside Docker, run the mock with `MOCK_GOOGLE_PORT=443` as a user that may bind port 443.
+Map the four Google hostnames to `127.0.0.1` in `/etc/hosts`.
+Start each client with `NODE_EXTRA_CA_CERTS` set to the file that `mockctl ca --out <file>` writes.
+The `api` and `workers` containers trust the mock CA through `NODE_EXTRA_CA_CERTS`.
+See [docs/campus-commander.md](docs/campus-commander.md) for the full procedure.

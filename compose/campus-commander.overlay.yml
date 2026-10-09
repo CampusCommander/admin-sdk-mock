@@ -1,0 +1,44 @@
+# Combine with a rendered Campus Commander all-docker Compose file:
+#   docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overlay.yml up --detach --wait
+# The api and workers containers then reach this mock for every Google hostname.
+services:
+  admin-sdk-mock:
+    image: ${ADMIN_SDK_MOCK_IMAGE:-ghcr.io/campuscommander/admin-sdk-mock:main}
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    environment:
+      MOCK_TIME_SCALE: ${MOCK_TIME_SCALE:-1}
+      MOCK_DELAYS: ${MOCK_DELAYS:-on}
+      MOCK_CA_EXPORT: /ca-public/ca.pem
+    volumes:
+      - admin-sdk-mock-data:/data
+      - admin-sdk-mock-ca:/ca-public
+    ports:
+      - '127.0.0.1:18080:8080'
+    networks:
+      ingress: {}
+      internal:
+        aliases:
+          - oauth2.googleapis.com
+          - admin.googleapis.com
+          - www.googleapis.com
+          - chromemanagement.googleapis.com
+  api:
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/admin-sdk-mock/ca.pem
+    volumes:
+      - admin-sdk-mock-ca:/run/admin-sdk-mock:ro
+    depends_on:
+      admin-sdk-mock:
+        condition: service_healthy
+  workers:
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/admin-sdk-mock/ca.pem
+    volumes:
+      - admin-sdk-mock-ca:/run/admin-sdk-mock:ro
+    depends_on:
+      admin-sdk-mock:
+        condition: service_healthy
+volumes:
+  admin-sdk-mock-data: {}
+  admin-sdk-mock-ca: {}

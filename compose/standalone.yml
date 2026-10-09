@@ -1,0 +1,20 @@
+name: admin-sdk-mock
+services:
+  admin-sdk-mock:
+    image: ${ADMIN_SDK_MOCK_IMAGE:-ghcr.io/campuscommander/admin-sdk-mock:main}
+    build: ..
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    environment:
+      MOCK_TIME_SCALE: ${MOCK_TIME_SCALE:-1}
+      MOCK_DELAYS: ${MOCK_DELAYS:-on}
+      MOCK_CA_EXPORT: /ca-public/ca.pem
+    volumes:
+      - admin-sdk-mock-data:/data
+      - admin-sdk-mock-ca:/ca-public
+    ports:
+      - '127.0.0.1:18080:8080'
+      - '127.0.0.1:18443:443'
+volumes:
+  admin-sdk-mock-data: {}
+  admin-sdk-mock-ca: {}

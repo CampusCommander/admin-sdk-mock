@@ -29,3 +29,38 @@ jobs:
       - run: npm test
       - run: npm run test:contract
       - run: npm run test:compat
+  image:
+    runs-on: ubuntu-24.04
+    needs: [check]
+    permissions:
+      contents: read
+      packages: write
+    env:
+      ADMIN_SDK_MOCK_IMAGE: admin-sdk-mock:ci
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t admin-sdk-mock:ci .
+      - name: Smoke-test the Campus Commander overlay
+        run: |
+          set -euo pipefail
+          files="-f compose/smoke.yml -f compose/campus-commander.overlay.yml"
+          docker compose $files up --detach --wait admin-sdk-mock
+          docker compose $files run --rm -T api
+          docker compose $files run --rm -T workers
+          docker compose $files exec -T admin-sdk-mock node bin/mockctl.ts domain create --tier small --seed smoke
+          docker compose $files down --volumes
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        name: Publish the image
+        run: |
+          set -euo pipefail
+          for tag in main "${GITHUB_SHA}"; do
+            docker tag admin-sdk-mock:ci "ghcr.io/campuscommander/admin-sdk-mock:${tag}"
+            docker push "ghcr.io/campuscommander/admin-sdk-mock:${tag}"
+          done
+          docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/campuscommander/admin-sdk-mock:main
