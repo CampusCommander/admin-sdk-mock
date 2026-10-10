@@ -18,7 +18,7 @@ ENV NODE_ENV=production \
     MOCK_CONTROL_HOST=0.0.0.0 \
     MOCK_PROXY_HOST=0.0.0.0 \
     MOCK_CONFIG_DEFAULT=/config/admin-sdk-mock.json
-RUN mkdir -p /data /ca-public /config && chown node:node /data /ca-public
+RUN mkdir -p /data /ca-public /config /out && chown node:node /data /ca-public /out
 USER node
 VOLUME ["/data"]
 EXPOSE 443 3128 8080

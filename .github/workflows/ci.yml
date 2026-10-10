@@ -82,6 +82,8 @@ jobs:
         run: docker compose -f compose/smoke.yml -f compose/campus-commander.overlay.yml logs
       - name: Smoke-test a mounted configuration and the proxy
         run: bash scripts/image-smoke.sh admin-sdk-mock:ci
+      - name: Smoke-test the CI guide's remote Docker recipe
+        run: bash scripts/remote-docker-smoke.sh admin-sdk-mock:ci
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         name: Log in to GHCR
         env:

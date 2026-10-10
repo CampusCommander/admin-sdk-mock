@@ -128,24 +128,47 @@ The ready file holds the `ready` event. Its `domains[].customerId` and `domains[
 
 ### Docker on another host
 
-A job that reaches Docker on another host, such as a docker-in-docker service named `docker`, needs these changes:
+A job that reaches Docker on another host, such as a docker-in-docker service named `docker`, cannot mount its own files. A `-v` path names a directory on the Docker host, not in the job.
+Create the container, copy the configuration in, start it, and read its files through `docker exec`:
 
-- Publish the ports on the service network only. The job cannot reach `127.0.0.1` on the Docker host.
-  Publish only the proxy port, on the Docker host's address on that network: `-p <service address>:13128:3128`. Never publish it on every interface.
-- Point clients at the proxy on that host, for example `HTTPS_PROXY=http://docker:13128`. The proxy has no `Host` guard, so the name works.
+```sh
+# The Docker host's address on the job network. Publish the proxy there, never on every interface.
+addr="$(getent hosts docker | awk '{ print $1 }')"
+docker create --name admin-sdk-mock -p "$addr:13128:3128" \
+  -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128 -e MOCK_CONFIG=/config/admin-sdk-mock.json \
+  -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
+  ghcr.io/campuscommander/admin-sdk-mock:1.0.0
+docker cp admin-sdk-mock.json admin-sdk-mock:/config/admin-sdk-mock.json
+docker start admin-sdk-mock
+for _ in $(seq 1 600); do
+  docker exec admin-sdk-mock test -f /out/ready.json 2> /dev/null && break
+  [ "$(docker inspect -f '{{.State.Running}}' admin-sdk-mock)" = true ] \
+    || { echo "The mock exited before it became ready."; docker logs admin-sdk-mock; exit 1; }
+  sleep 1
+done
+docker exec admin-sdk-mock test -f /out/ready.json \
+  || { echo "The mock did not become ready in 600 seconds."; docker logs admin-sdk-mock; exit 1; }
+docker exec admin-sdk-mock cat /out/ca.pem > mock-ca.pem
+docker exec admin-sdk-mock cat /out/ca-bundle.pem > mock-ca-bundle.pem
+docker exec admin-sdk-mock cat /out/credentials/ci.json > ci.json
+export HTTPS_PROXY=http://docker:13128 https_proxy=http://docker:13128 NODE_USE_ENV_PROXY=1
+export NO_PROXY=localhost,127.0.0.1,::1,docker no_proxy=localhost,127.0.0.1,::1,docker
+export NODE_EXTRA_CA_CERTS="$PWD/mock-ca.pem"
+export SSL_CERT_FILE="$PWD/mock-ca-bundle.pem" REQUESTS_CA_BUNDLE="$PWD/mock-ca-bundle.pem"
+export HTTPLIB2_CA_CERTS="$PWD/mock-ca-bundle.pem" CURL_CA_BUNDLE="$PWD/mock-ca-bundle.pem"
+```
+
+- The container runs as the image's `node` user, which owns `/out`. `docker cp` keeps the file's mode, so the configuration must be readable by others.
+- `NO_PROXY` holds the Docker host's name. Without it, a Docker CLI that talks TLS to the host, such as `tcp://docker:2376`, sends its own requests through the mock's proxy, and every later `docker` command fails with `Forbidden`.
+- The proxy has no `Host` guard, so `http://docker:13128` works.
 - Run control commands inside the container, for example `docker exec admin-sdk-mock admin-sdk-mock domain list`.
   The control API answers `403` to `Host: docker`. It accepts only `localhost`, `127.0.0.1`, `[::1]`, and `admin-sdk-mock`, each with any port.
 - Keep passthrough off unless that network is private to the job. With passthrough on, every client on the network can relay through the proxy to any host and port.
   That relay also reaches the control listener at the container's network address. [SECURITY.md](../../SECURITY.md#passthrough) explains the risk.
   With passthrough off, add the job's other hosts to `NO_PROXY`.
+- `docker rm -f -v admin-sdk-mock` removes the container and its data volume.
 
-A `-v` path names a directory on the Docker host, not in the job. Read the ready file and the CA through `docker exec`:
-
-```sh
-docker exec admin-sdk-mock test -f /out/ready.json
-docker exec admin-sdk-mock cat /out/ca.pem > mock-ca.pem
-docker exec admin-sdk-mock cat /out/ca-bundle.pem > mock-ca-bundle.pem
-```
+[scripts/remote-docker-smoke.sh](../../scripts/remote-docker-smoke.sh) runs this block against a docker-in-docker host with TLS in CI.
 
 ### Without Docker
 
