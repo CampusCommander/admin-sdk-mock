@@ -160,5 +160,5 @@ export function deleteMember(call: Call): ApiResponse {
     );
     db.prepare('DELETE FROM group_members WHERE id = ?').run(member.id);
   });
-  return { status: 204 };
+  return { status: 204, scanned: 1 };
 }

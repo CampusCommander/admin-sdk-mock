@@ -6,6 +6,7 @@ import {
   WRITE_SCOPES,
 } from '../auth/scopes.ts';
 import { fakeClock } from '../clock.ts';
+import { NO_OVERRIDES, type Call } from '../http/types.ts';
 import { outsideMemberId } from '../store/group-lookup.ts';
 import { rows } from '../store/sqlite.ts';
 import { addTestGroup, addTestMember } from '../testing/groups.ts';
@@ -15,6 +16,7 @@ import {
   seedTestDomain,
   startHarness,
 } from '../testing/harness.ts';
+import { deleteMember } from './member-writes.ts';
 
 const D = 300_000;
 
@@ -336,4 +338,24 @@ test('member writes need a member write scope and a visible group', async (t) =>
       404,
       `${method} ${target}`,
     );
+});
+
+test('deleteMember reports the removed row count for the latency model', async (t) => {
+  const { domain, u1, team } = await setup(t);
+  addTestMember(domain.db, {
+    groupId: team.id,
+    memberId: u1.id,
+    email: u1.primary_email,
+  });
+  const call = {
+    route: { id: 'test', api: 'directory' },
+    domain,
+    access: { customerId: domain.customerId },
+    overrides: NO_OVERRIDES,
+    now: 0,
+    scale: 1,
+    params: { groupKey: team.id, memberKey: u1.id },
+    request: { body: '' },
+  } as unknown as Call;
+  assert.deepEqual(deleteMember(call), { status: 204, scanned: 1 });
 });
