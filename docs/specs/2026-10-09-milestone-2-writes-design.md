@@ -1,6 +1,6 @@
 # Admin SDK mock: milestone 2 writes design
 
-Status: design approved by the owner on 2026-10-09. Written spec awaits owner review.
+Status: design and written spec approved by the owner on 2026-10-09.
 Source: owner interview with Claude on 2026-10-09.
 Parent: [Admin SDK mock design](2026-10-09-admin-sdk-mock-design.md). Every rule of the parent spec still applies unless this spec changes it.
 
@@ -89,8 +89,9 @@ A domain without recent writes therefore has no before-images, and its lists rea
 
 ### Paging
 
-Writes never change an entity's default paging key. Default-order paging therefore neither skips nor repeats an entity during writes.
-A sort by a written field, such as `familyName`, can move an entity between pages. **Ruling:** this matches Google's search index.
+Device and telemetry lists page by keys that writes never change. Their default order therefore neither skips nor repeats a device during writes.
+Users page by `primaryEmail` by default. A `primaryEmail` change can move a user between pages, like a sort by any other written field.
+**Ruling:** this matches Google's search index.
 
 ### Cascades
 
