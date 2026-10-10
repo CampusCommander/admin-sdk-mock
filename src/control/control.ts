@@ -1,13 +1,17 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AccountError, issueServiceAccount } from '../auth/accounts.ts';
 import { MAX_SCALE } from '../clock.ts';
+import { scopesFor } from '../config/config.ts';
 import { DomainError } from '../domains.ts';
 import { FaultError } from '../faults/faults.ts';
 import type { Mock } from '../mock.ts';
+import type { ServerInfo } from '../server.ts';
 import { settleDueCommands } from '../directory/command-effects.ts';
 import { endGroupDelays } from '../store/group-lookup.ts';
 import { flushLag, pendingLag } from '../store/lag.ts';
 import { row } from '../store/sqlite.ts';
+import { findUser } from '../store/user-lookup.ts';
 
 const BODY_LIMIT = 1024 * 1024;
 
@@ -47,6 +51,11 @@ function carriesBody(request: IncomingMessage): boolean {
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** The client ID and project that tokens minted by the control API carry. */
+const CONTROL_CLIENT_ID = '100000000000000000000';
+const CONTROL_PROJECT_ID = 'admin-sdk-mock-control';
+const MAX_TOKEN_SECONDS = 3600;
 
 /** Read the JSON body. It must be an object unless the caller validates it. */
 async function readJson(
@@ -96,7 +105,10 @@ function send(
 }
 
 /** The control API. It binds to loopback or the container network only. */
-export function createControlHandler(mock: Mock) {
+export function createControlHandler(
+  mock: Mock,
+  options: { info?: () => ServerInfo } = {},
+) {
   const domainOrThrow = (id: string) => {
     const domain = mock.domains.get(id);
     if (!domain) throw new ControlError(404, `Domain ${id} does not exist.`);
@@ -130,6 +142,57 @@ export function createControlHandler(mock: Mock) {
     };
   };
 
+  /** Mint an access token for a domain user without the OAuth token exchange. */
+  const mintToken = (
+    customerId: string,
+    body: Record<string, unknown>,
+  ): Record<string, unknown> => {
+    const domain = domainOrThrow(customerId);
+    const subject = body.subject ?? `admin@${domain.spec.primaryDomain}`;
+    if (typeof subject !== 'string' || !findUser(domain.db, subject))
+      throw new ControlError(400, 'subject must name a user of the domain.');
+    const words = body.scopes ?? 'read-write';
+    if (
+      !(words === 'read' || words === 'read-write') &&
+      !(
+        Array.isArray(words) &&
+        words.every((scope) => typeof scope === 'string')
+      )
+    )
+      throw new ControlError(
+        400,
+        'scopes must be read, read-write, or a list of scope strings.',
+      );
+    const ttl = body.ttlSeconds ?? MAX_TOKEN_SECONDS;
+    if (
+      typeof ttl !== 'number' ||
+      !Number.isInteger(ttl) ||
+      ttl < 1 ||
+      ttl > MAX_TOKEN_SECONDS
+    )
+      throw new ControlError(
+        400,
+        `ttlSeconds must be a whole number from 1 to ${MAX_TOKEN_SECONDS}.`,
+      );
+    const scopes = scopesFor(words as 'read' | 'read-write' | string[]);
+    const token = `ya29.mock.${randomUUID()}`;
+    mock.registry.saveToken({
+      token,
+      clientId: CONTROL_CLIENT_ID,
+      projectId: CONTROL_PROJECT_ID,
+      subject,
+      customerId,
+      scopes,
+      expiresAt: mock.clock.now() + ttl * 1000,
+    });
+    return {
+      access_token: token,
+      token_type: 'Bearer',
+      expires_in: ttl,
+      scope: scopes.join(' '),
+    };
+  };
+
   async function route(
     request: IncomingMessage,
     response: ServerResponse,
@@ -155,6 +218,10 @@ export function createControlHandler(mock: Mock) {
         status: 'ok',
         domains: mock.domains.list().length,
       });
+    if (method === 'GET' && path === '/info') {
+      if (!options.info) throw new ControlError(404, 'Not found.');
+      return send(response, 200, options.info());
+    }
     if (method === 'GET' && path === '/ca.pem')
       return send(
         response,
@@ -241,6 +308,8 @@ export function createControlHandler(mock: Mock) {
             issueServiceAccount(mock.registry, id, body.projectId),
           );
         }
+        case 'POST tokens':
+          return send(response, 200, mintToken(id, await readJson(request)));
         case 'PUT settings':
           return send(
             response,
