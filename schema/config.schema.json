@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CampusCommander/admin-sdk-mock/schema/config.schema.json",
+  "title": "Admin SDK mock configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "An editor hint. The mock ignores it."
+    },
+    "dataDir": {
+      "type": "string",
+      "description": "The data directory. Relative paths resolve against the configuration file.",
+      "default": "./data"
+    },
+    "listen": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "google": {
+          "$ref": "#/$defs/address",
+          "description": "The TLS listener for the Google hostnames.",
+          "default": { "host": "127.0.0.1", "port": 8443 }
+        },
+        "control": {
+          "$ref": "#/$defs/address",
+          "description": "The plain HTTP control listener.",
+          "default": { "host": "127.0.0.1", "port": 8080 }
+        },
+        "proxy": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "host": { "type": "string", "default": "127.0.0.1" },
+                "port": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535,
+                  "default": 3128
+                },
+                "passthrough": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Tunnel targets other than the Google hostnames instead of refusing them."
+                }
+              }
+            }
+          ],
+          "description": "The CONNECT proxy. null turns it off.",
+          "default": null
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scale": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 1,
+          "description": "Divides every quota window, delay, and timeline."
+        },
+        "delays": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether modeled latency applies."
+        }
+      }
+    },
+    "caFile": {
+      "type": "string",
+      "description": "Where to write the CA certificate. The default is <dataDir>/ca/ca.pem."
+    },
+    "readyFile": {
+      "type": "string",
+      "description": "A file written with the started event once every domain is ready."
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "type": "object",
+          "description": "A settings patch applied to every configured domain before its own settings.",
+          "default": {}
+        }
+      }
+    },
+    "domains": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/domain" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": { "type": "string" },
+        "port": { "type": "integer", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spec"],
+      "properties": {
+        "spec": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tier", "seed"],
+          "properties": {
+            "tier": { "enum": ["small", "medium", "large", "xlarge", "empty"] },
+            "seed": { "type": "string" },
+            "name": { "type": "string" },
+            "layout": { "enum": ["role-first", "school-first"] },
+            "counts": { "type": "object" },
+            "rates": { "type": "object" }
+          },
+          "description": "The seed specification. The same specification always yields the same data."
+        },
+        "onStart": { "enum": ["keep", "reset"], "default": "keep" },
+        "settings": { "type": "object", "default": {} },
+        "fixtures": {
+          "type": "string",
+          "description": "A fixtures file, relative to the configuration file."
+        },
+        "serviceAccounts": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["out", "scopes"],
+            "properties": {
+              "out": {
+                "type": "string",
+                "description": "Where to write the key file, with mode 0600."
+              },
+              "scopes": {
+                "anyOf": [
+                  { "enum": ["read", "read-write"] },
+                  { "type": "array", "items": { "type": "string" } }
+                ]
+              },
+              "projectId": { "type": "string" }
+            }
+          }
+        },
+        "faults": {
+          "type": "array",
+          "items": { "type": "object" },
+          "default": []
+        }
+      }
+    }
+  }
+}

@@ -1,8 +1,15 @@
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
 import type { OpenDomain } from './http/types.ts';
-import { seedDomain, type SeedResult } from './seed/seed.ts';
-import { resolveSpec, SpecError, type SeedSpec } from './seed/spec.ts';
+import { applyFixtures, type Fixtures } from './seed/fixtures.ts';
+import { domainCounts, seedDomain, type SeedResult } from './seed/seed.ts';
+import {
+  resolveSpec,
+  SpecError,
+  type ResolvedSpec,
+  type SeedSpec,
+} from './seed/spec.ts';
 import {
   DEFAULT_SETTINGS,
   mergeSettings,
@@ -11,6 +18,7 @@ import {
 } from './settings.ts';
 import { openDomainDb } from './store/domain-db.ts';
 import type { Registry, StoredDomain } from './store/registry.ts';
+import { rows, transaction } from './store/sqlite.ts';
 
 export class DomainError extends Error {
   readonly status: number;
@@ -21,17 +29,60 @@ export class DomainError extends Error {
   }
 }
 
+/** A parsed fixtures file and the name that its errors carry. */
+export interface DomainFixtures {
+  file: string;
+  data: Fixtures;
+}
+
 export interface Domains {
   get(customerId: string): OpenDomain | undefined;
   create(
     input: unknown,
     now: number,
+    options?: { fixtures?: DomainFixtures },
   ): { domain: OpenDomain; result: SeedResult };
   reset(customerId: string, now: number): SeedResult;
   delete(customerId: string): void;
   list(): StoredDomain[];
   updateSettings(customerId: string, patch: unknown): DomainSettings;
   closeAll(): void;
+}
+
+/** Seed a domain, then apply and store its fixtures in one transaction. */
+function seedWithFixtures(
+  db: DatabaseSync,
+  spec: ResolvedSpec,
+  now: number,
+  fixtures: DomainFixtures | undefined,
+): SeedResult {
+  const result = seedDomain(db, spec, now);
+  if (!fixtures) return result;
+  transaction(db, () => {
+    applyFixtures(db, spec, fixtures.data, now, fixtures.file);
+    db.prepare(
+      "INSERT INTO meta (key, value) VALUES ('fixtures', ?), ('fixturesFile', ?)",
+    ).run(JSON.stringify(fixtures.data), fixtures.file);
+  });
+  return { ...result, counts: domainCounts(db) };
+}
+
+/** The fixtures that a domain database stores, if any. */
+function storedFixtures(db: DatabaseSync): DomainFixtures | undefined {
+  const meta = new Map(
+    rows<{ key: string; value: string }>(
+      db
+        .prepare(
+          "SELECT key, value FROM meta WHERE key IN ('fixtures', 'fixturesFile')",
+        )
+        .all(),
+    ).map((entry) => [entry.key, entry.value]),
+  );
+  const data = meta.get('fixtures');
+  const file = meta.get('fixturesFile');
+  return data === undefined || file === undefined
+    ? undefined
+    : { file, data: JSON.parse(data) as Fixtures };
 }
 
 export function createDomains(dataDir: string, registry: Registry): Domains {
@@ -66,7 +117,7 @@ export function createDomains(dataDir: string, registry: Registry): Domains {
       open.set(customerId, domain);
       return domain;
     },
-    create(input, now) {
+    create(input, now, options) {
       let spec;
       try {
         spec = resolveSpec(input);
@@ -91,7 +142,7 @@ export function createDomains(dataDir: string, registry: Registry): Domains {
       const db = openDomainDb(fileFor(spec.customerId));
       let result: SeedResult;
       try {
-        result = seedDomain(db, spec, now);
+        result = seedWithFixtures(db, spec, now, options?.fixtures);
       } catch (error) {
         db.close();
         removeFiles(spec.customerId);
@@ -118,11 +169,13 @@ export function createDomains(dataDir: string, registry: Registry): Domains {
     reset(customerId, now) {
       const record = registry.getDomain(customerId);
       if (!record) throw missing(customerId);
+      const current = domains.get(customerId);
+      const fixtures = current ? storedFixtures(current.db) : undefined;
       close(customerId);
       removeFiles(customerId);
       const spec = resolveSpec(record.spec);
       const db = openDomainDb(fileFor(customerId));
-      const result = seedDomain(db, spec, now);
+      const result = seedWithFixtures(db, spec, now, fixtures);
       registry.setSeededAt(customerId, now);
       open.set(customerId, {
         customerId,

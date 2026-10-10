@@ -1,7 +1,7 @@
 import { createRandom } from '../random.ts';
 import { PLACE_NAMES } from './names.ts';
 
-export type Tier = 'small' | 'medium' | 'large' | 'xlarge';
+export type Tier = 'small' | 'medium' | 'large' | 'xlarge' | 'empty';
 export type LayoutFamily = 'role-first' | 'school-first';
 
 export interface Counts {
@@ -59,6 +59,7 @@ export const TIERS: Readonly<Record<Tier, Counts>> = {
   medium: { schools: 12, students: 6_000, staff: 700, devices: 7_000 },
   large: { schools: 60, students: 50_000, staff: 6_000, devices: 60_000 },
   xlarge: { schools: 640, students: 320_000, staff: 45_000, devices: 400_000 },
+  empty: { schools: 0, students: 0, staff: 0, devices: 0 },
 };
 
 export const DEFAULT_RATES: Readonly<Rates> = {
@@ -132,7 +133,7 @@ export function resolveSpec(input: unknown): ResolvedSpec {
       throw new SpecError(`Unknown seed specification field: ${key}.`);
   const tier = spec.tier;
   if (typeof tier !== 'string' || !Object.hasOwn(TIERS, tier))
-    throw new SpecError('tier must be small, medium, large, or xlarge.');
+    throw new SpecError('tier must be small, medium, large, xlarge, or empty.');
   const seed = spec.seed;
   if (typeof seed !== 'string' || !SEED_PATTERN.test(seed))
     throw new SpecError(
@@ -152,6 +153,11 @@ export function resolveSpec(input: unknown): ResolvedSpec {
   )
     throw new SpecError('layout must be role-first or school-first.');
 
+  if (
+    tier === 'empty' &&
+    (spec.counts !== undefined || spec.rates !== undefined)
+  )
+    throw new SpecError('The empty tier takes no counts or rates.');
   const counts = {
     ...TIERS[tier as Tier],
     ...numbers(
