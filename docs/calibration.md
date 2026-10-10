@@ -1,6 +1,6 @@
 # Calibration record
 
-Updated: 2026-10-09.
+Updated: 2026-10-10.
 
 | Value                                 | Default                         | Evidence                                                                                | Status         |
 | ------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------- | -------------- |
@@ -122,3 +122,62 @@ Each value below follows the milestone 2 spec or a plan ruling. A live write che
 | User paging during writes                 | Users page by primaryEmail, so a primaryEmail change can move a user between pages | unverified             |
 | OU limits                                 | 35 levels and 40,000 OUs per customer, answering 400 invalid                       | unverified             |
 | OU subtree matching                       | By path range, so names outside the Basic Multilingual Plane match                 | verified by unit tests |
+
+## Milestone 3 rulings
+
+Live Google evidence for groups does not exist. Owner decision M3-D4 chose no live check on 2026-10-10.
+Each value below follows Google's documentation, the milestone 3 spec, or a ledger ruling. A live check would replace it with evidence.
+The ruling IDs R5 to R11 come from the execution ledger. The spec section names are in the Source column.
+
+| Value                                              | Mock behavior                                                                                                           | Source          | Status     |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------- | ---------- |
+| `groups.list` with an unknown `userKey`            | `400` for a user or group outside the customer                                                                          | Spec, code      | unverified |
+| `groups.list` with an unknown `memberKey` query    | Returns no groups                                                                                                       | Code            | unverified |
+| `userKey` and `memberKey` matching                 | Direct memberships only                                                                                                 | Spec            | unverified |
+| `groups.list` after a rename (R7)                  | For one search delay, `userKey` and `memberKey` lookups return no groups, because lagged rows hold the old address      | R7, spec Timing | unverified |
+| Quoted prefix query (R5)                           | `name:'Art C'*` is a prefix search                                                                                      | R5              | unverified |
+| Group ID                                           | `0` followed by 14 lower-case letters and digits                                                                        | Spec, code      | unverified |
+| `directMembersCount`                               | Counts every direct member, with a child group counted once                                                             | Spec            | unverified |
+| Group `etag` (R6)                                  | Changes whenever the rendered group changes: its fields, its aliases, or its direct member count                        | R6, spec        | unverified |
+| Group `name` on insert                             | Defaults to the local part of the email                                                                                 | Spec, code      | unverified |
+| Group email change                                 | The old address stays as an alias                                                                                       | Spec, code      | unverified |
+| Outside member ID                                  | Stable 21-digit ID derived from the address                                                                             | Spec, code      | unverified |
+| Member `status`                                    | `SUSPENDED` for a suspended user, `ACTIVE` for every other member                                                       | Spec, code      | unverified |
+| Member list order                                  | Member-email order, with a `CUSTOMER` member first                                                                      | Spec            | unverified |
+| Derived member role                                | Each member appears once, with the highest role in any reached group                                                    | Spec            | unverified |
+| `members.get` of a nested member                   | `404`                                                                                                                   | Spec, code      | unverified |
+| `members.insert` of an unknown customer-domain key | `404 Resource Not Found: memberKey`                                                                                     | Spec, code      | unverified |
+| Duplicate membership                               | `409 Member already exists.`, reason `duplicate`                                                                        | Spec, code      | unverified |
+| Cyclic membership                                  | `400 Cyclic memberships not allowed.`, reason `invalid`, following links inside the nesting delay                       | Spec, code      | unverified |
+| Insert into a young group                          | `404 Resource Not Found: groupKey` until the ready delay passes                                                         | Spec, code      | unverified |
+| `members.hasMember` keys                           | An unknown key answers `404`. A group key, an outside address, or the customer ID answers `400 Invalid Input`           | Spec, code      | unverified |
+| Removed group link (R9)                            | `hasMember` sees it at once. Derived lists drop it after the search delay. The nesting delay applies only to additions  | R9, spec Timing | unverified |
+| Hidden members (R8)                                | `remove-entity` hides a member by ID or email in `get`, both lists, and derived lists. Hidden groups drop their members | R8              | unverified |
+| `members.delete` scanned rows (R10)                | Reports `scanned: 1`, which adds 0.002 ms of modeled latency                                                            | R10             | unverified |
+| Undelete of a user                                 | Restores the memberships the delete removed, except in groups deleted since                                             | Spec, code      | unverified |
+| Group write limit                                  | No per-second limit beyond the quota                                                                                    | Spec            | unverified |
+| Group latency                                      | Existing read, write, and scan costs, with no live calibration                                                          | Spec            | unverified |
+
+### Execution notes
+
+The calibration record holds no process notes for earlier milestones. R1 to R4 concern tests and execution, and R11 concerns a compat test. None changes mock behavior.
+
+- R1: the section test requires each grade-group student in 1 to 4 sections, and 95% of students in exactly 4. A grade of 18 or fewer students has fewer than 4 sections.
+- R2: wave 3 ran tasks 11 and 12 in one lane, because both append to `src/store/group-lookup.ts`.
+- R3: implementers ran in parallel lanes, each in its own worktree.
+- R4: execution started without a separate plan review, because the owner answered the spec with "execute".
+- R11: the compat test for an ungranted scope uses `admin.directory.group.member`, a scope outside the read grant, because milestone 3 added `admin.directory.group.readonly` to the read scopes.
+
+### Milestone 3 scale
+
+The scale test ran on 2026-10-10 on the `xlarge` tier.
+The `small` tier holds 106 groups and 2,713 memberships. The `medium` tier holds 1,159 groups and 32,540 memberships. Both use seed `size`.
+
+- The seed took 26,072 ms with groups.
+- The `xlarge` domain holds 60,301 groups and 1,705,693 memberships.
+- The database file measured 1,022 MB. Milestone 2 measured 546 MB. The spec estimated growth of 300 to 400 MB.
+- `groups.list` took 6 ms per page on average over 302 pages.
+- A sample of 1,000 groups paged 28,782 members in 1,004 pages at 4 ms per page.
+- The derived membership of `all-students` held 317,728 members over 1,589 pages at 31 ms per page.
+- A `hasMember` check down the deep chain took 4 ms and returned `true`.
+- Resident memory peaked at 1,021 MB.

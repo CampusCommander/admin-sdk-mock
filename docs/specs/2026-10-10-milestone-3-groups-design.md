@@ -1,6 +1,6 @@
 # Admin SDK mock: milestone 3 groups design
 
-Status: design approved by the owner on 2026-10-10. Written spec awaiting owner review.
+Status: design and written spec approved by the owner on 2026-10-10.
 Source: owner interview with Claude on 2026-10-10.
 Parent: [Admin SDK mock design](2026-10-09-admin-sdk-mock-design.md). Every rule of the parent spec and of the
 [milestone 2 writes design](2026-10-09-milestone-2-writes-design.md) still applies unless this spec changes it.
@@ -139,7 +139,7 @@ Delivery settings: 85% `ALL_MAIL`, 7% `DIGEST`, 4% `DAILY`, and 4% `NONE`.
 | `xlarge` | ~59,000 | ~1,700,000  |
 
 These are estimates. The seed tests and the scale test record the exact figures.
-An `xlarge` domain is expected to grow by 300 to 400 MB. The scale test records the size.
+The 2026-10-10 `xlarge` run measured 60,301 groups, 1,705,693 memberships, and a 1,022 MB database file. Milestone 2 measured 546 MB.
 
 ## Groups
 
@@ -177,15 +177,15 @@ Any other field or operator returns the `400` response that `users.list` returns
 
 The response is the group resource:
 
-| Field                          | Value                                                                              |
-| ------------------------------ | ---------------------------------------------------------------------------------- |
-| `kind`                         | `admin#directory#group`                                                            |
-| `id`                           | **Ruling:** 15 characters, `0` followed by 14 lowercase letters and digits.        |
-| `email`, `name`, `description` | Stored values.                                                                     |
-| `directMembersCount`           | A string. **Ruling:** counts every direct member, with a child group counted once. |
-| `adminCreated`                 | Stored value.                                                                      |
-| `aliases`                      | The group's aliases in alias order. Omitted when empty.                            |
-| `etag`                         | Changes on every write to the group, its aliases, or its direct members.           |
+| Field                          | Value                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `kind`                         | `admin#directory#group`                                                                                       |
+| `id`                           | **Ruling:** 15 characters, `0` followed by 14 lowercase letters and digits.                                   |
+| `email`, `name`, `description` | Stored values.                                                                                                |
+| `directMembersCount`           | A string. **Ruling:** counts every direct member, with a child group counted once.                            |
+| `adminCreated`                 | Stored value.                                                                                                 |
+| `aliases`                      | The group's aliases in alias order. Omitted when empty.                                                       |
+| `etag`                         | **Ruling:** changes whenever the rendered group changes: its fields, its aliases, or its direct member count. |
 
 ### `insert`
 
@@ -321,7 +321,9 @@ List membership, filters, `query` matching, `userKey` matching, sort keys, and r
 `get`, `hasMember`, writes, and write responses use current data. Cycle checks use current data.
 `includeDerivedMembership` reads lagged memberships and applies the nesting delay on top.
 
-**Ruling:** removing a group link takes effect at once for nested reads. Only additions wait for the nesting delay.
+**Ruling:** a removed group link takes effect at once for `hasMember`.
+Derived lists read lagged memberships, so they drop the link after the search delay. The nesting delay applies only to additions.
+**Ruling:** for one search delay after a group or user email change, `userKey` and `memberKey` lookups in `groups.list` return no groups for that member, because lagged rows still hold the old address.
 
 Groups and members page by email. An email change can move an entry between pages, like a user's `primaryEmail` change.
 

@@ -5,6 +5,7 @@ It answers on the real Google hostnames and serves seeded K-12 domains.
 
 The design is in [docs/specs/2026-10-09-admin-sdk-mock-design.md](docs/specs/2026-10-09-admin-sdk-mock-design.md).
 The milestone 2 writes design is in [docs/specs/2026-10-09-milestone-2-writes-design.md](docs/specs/2026-10-09-milestone-2-writes-design.md).
+The milestone 3 groups design is in [docs/specs/2026-10-10-milestone-3-groups-design.md](docs/specs/2026-10-10-milestone-3-groups-design.md).
 
 ## Develop
 
@@ -28,10 +29,10 @@ node bin/mockctl.ts credential <customerId> --out ./demo-credential.json
 
 The credential grants the read-only milestone 1 scopes. The `--scopes` option replaces that default list.
 Pass full `https://www.googleapis.com/auth/...` URLs, one for each read scope and each write scope that you need.
-The next command grants the six read scopes and the three write scopes.
+The next command grants the seven read scopes and the four write scopes, including the two group scopes.
 
 ```sh
-node bin/mockctl.ts credential <customerId> --out ./demo-credential.json --scopes https://www.googleapis.com/auth/admin.directory.customer.readonly,https://www.googleapis.com/auth/admin.directory.domain.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly,https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/chrome.management.telemetry.readonly,https://www.googleapis.com/auth/admin.directory.device.chromeos,https://www.googleapis.com/auth/admin.directory.user,https://www.googleapis.com/auth/admin.directory.orgunit
+node bin/mockctl.ts credential <customerId> --out ./demo-credential.json --scopes https://www.googleapis.com/auth/admin.directory.customer.readonly,https://www.googleapis.com/auth/admin.directory.domain.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly,https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/admin.directory.group.readonly,https://www.googleapis.com/auth/chrome.management.telemetry.readonly,https://www.googleapis.com/auth/admin.directory.device.chromeos,https://www.googleapis.com/auth/admin.directory.user,https://www.googleapis.com/auth/admin.directory.orgunit,https://www.googleapis.com/auth/admin.directory.group
 ```
 
 Delegate to the `adminEmail` that `domain create` prints.
@@ -50,6 +51,52 @@ Set `writes.searchDelaySeconds` to 0 to remove the lag.
 `GET /domains` reports `pendingWrites` for each domain.
 A device command follows a computed timeline. Online devices execute it within 60 seconds. Offline devices let it expire.
 The time scale divides the search delay, the command timeline, the command expiry, and the undelete window.
+
+## Groups
+
+The mock serves the milestone 3 group methods on `admin.googleapis.com` under `/admin/directory/v1`.
+Every method also runs inside the Directory batch. Group routes require a super administrator subject.
+
+- `groups.list`, `groups.get`, `groups.insert`, `groups.update`, `groups.patch`, `groups.delete`
+- `groups.aliases.list`, `groups.aliases.insert`, `groups.aliases.delete`
+- `members.list`, `members.get`, `members.insert`, `members.update`, `members.patch`, `members.delete`, `members.hasMember`
+
+Group reads accept `admin.directory.group` or `admin.directory.group.readonly`. Group writes need `admin.directory.group`.
+Member reads also accept the two `group.member` scopes. Member writes accept `admin.directory.group.member`.
+
+Every seeded domain holds these group families:
+
+| Family      | Address                                         | Direct members                                                 |
+| ----------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| Staff       | `<school>-staff@<primary domain>`               | The school staff, with one owner.                              |
+| Grade       | `<school>-<grade>@<student domain>`             | The students of one student OU.                                |
+| Students    | `<school>-students@<student domain>`            | The school grade groups.                                       |
+| School-wide | `<school>-all@<primary domain>`                 | The staff group and the students group.                        |
+| Parent      | `<school>-parents@<primary domain>`             | The staff owner and 3 to 12 outside members.                   |
+| Club        | `<club>-<school>@<student domain>`              | A staff owner, other staff, and students.                      |
+| Section     | `<course>-p<period>-<teacher>@<student domain>` | A teacher as owner and about 25 students of one grade.         |
+| District    | `all-staff`, `all-students`, `everyone`, others | School groups, a `CUSTOMER` member, administrators, and board. |
+| Deep chains | Chains of 8 to 10 nested groups                 | The last group holds 3 staff members.                          |
+
+Five rates tune the scenarios. Pass them as JSON with `mockctl domain create --rates '<json>'`.
+
+| Rate                   | Default | Meaning                               |
+| ---------------------- | ------- | ------------------------------------- |
+| `sectionsPerStudent`   | 4       | Section groups per student.           |
+| `externalMemberGroups` | 0.03    | Share of groups with outside members. |
+| `emptyGroups`          | 0.02    | Share of groups without members.      |
+| `groupAliases`         | 0.10    | Share of groups with one alias.       |
+| `deepGroupChains`      | 1       | Chains of 8 to 10 nested groups.      |
+
+Three timing rules apply to groups. The time scale divides each delay.
+
+- Group, member, and alias lists lag a write by the search delay, 300 seconds. A `get` and `hasMember` read current data.
+- A new group link counts for `hasMember` and `includeDerivedMembership` after the nesting delay, 600 seconds.
+- `members.insert` into a group younger than the ready delay, 60 seconds, answers `404`.
+
+`mockctl index flush <customerId>` also ends every pending nesting delay and ready delay.
+Set `nestingDelaySeconds` or `groupReadySeconds` to 0 to remove one delay.
+`GET /domains` reports the group and membership counts of each domain.
 
 ## Faults
 
@@ -97,7 +144,7 @@ Examples, one per kind:
 - `concurrency`: `perMethod` 40, `perCustomer` 120.
 - `latency`: `roundTripMedianMs` 80, `roundTripP99Ms` 400, `bytesPerSecond` 8000000, `baseMs` 150, `perItemMs` 3, `scanPer10kRowsMs` 20, `loadThreshold` 20, `loadPercentPerRequest` 2, `batchParallelism` 10, `batchPartMs` 40, `capMs` 2000.
 - `telemetry`: `recentReports` 1.
-- `writes`: `searchDelaySeconds` 300, `commandExpirySeconds` 432000, `userCreatesPerSecond` 10, `orgUnitWritesPerSecond` 1. `latency` also holds `writeBaseMs` 250 and `perDeviceWriteMs` 10.
+- `writes`: `searchDelaySeconds` 300, `nestingDelaySeconds` 600, `groupReadySeconds` 60, `commandExpirySeconds` 432000, `userCreatesPerSecond` 10, `orgUnitWritesPerSecond` 1. `latency` also holds `writeBaseMs` 250 and `perDeviceWriteMs` 10.
 
 ## Control API safety
 
@@ -144,21 +191,21 @@ See [docs/campus-commander.md](docs/campus-commander.md) for the full procedure.
 
 ## Status
 
-Milestones 1 and 2 are built. The acceptance run against Campus Commander awaits the owner.
+Milestones 1, 2, and 3 are built. The acceptance run against Campus Commander awaits the owner.
 
 - Calibration record: [docs/calibration.md](docs/calibration.md)
 - Campus Commander procedure and record: [docs/campus-commander.md](docs/campus-commander.md)
 
 Acceptance items:
 
-| Item                                   | Result                                                                                            |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Live parity against the Easton fixture | 19 of 19 match in status. Six have shape notes. Device, user, and telemetry parity awaits scopes. |
-| Client library compatibility           | 10 of 10 tests pass through a CONNECT proxy.                                                      |
-| Write contract                         | Every milestone 2 response passes discovery schema validation.                                    |
-| Write compatibility                    | 15 of 15 client tests pass through a CONNECT proxy, writes included.                              |
-| Write scale                            | 60000 devices move in 2037 ms. Lagging pages take 16 ms. The OU rename takes 868 ms.              |
-| Scale                                  | The xlarge tier seeds in 14.9 s and serves 400,000 devices in 1,334 pages.                        |
-| Campus Commander shows 60,000 devices  | Pending owner run: Docker Desktop WSL integration is off.                                         |
-| Campus Commander repository unchanged  | Verified. `git status --short` is empty.                                                          |
-| Open calibration values                | Seven values remain open or need an owner decision. See the calibration record.                   |
+| Item                                   | Result                                                                                                                                                                                                                                                                                          |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Live parity against the Easton fixture | 19 of 19 match in status. Six have shape notes. Device, user, and telemetry parity awaits scopes.                                                                                                                                                                                               |
+| Client library compatibility           | 10 of 10 tests pass through a CONNECT proxy.                                                                                                                                                                                                                                                    |
+| Write contract                         | Every milestone 2 response passes discovery schema validation.                                                                                                                                                                                                                                  |
+| Write compatibility                    | 15 of 15 client tests pass through a CONNECT proxy, writes included.                                                                                                                                                                                                                            |
+| Write scale                            | 60000 devices move in 2037 ms. Lagging pages take 16 ms. The OU rename takes 868 ms.                                                                                                                                                                                                            |
+| Scale                                  | The xlarge tier seeds in 14.9 s and serves 400,000 devices in 1,334 pages. With groups it seeds in 26,072 ms and holds 60,301 groups and 1,705,693 memberships in a 1,022 MB database. Mean page times are 6 ms for `groups.list`, 4 ms for member pages, and 31 ms for derived `all-students`. |
+| Campus Commander shows 60,000 devices  | Pending owner run: Docker Desktop WSL integration is off.                                                                                                                                                                                                                                       |
+| Campus Commander repository unchanged  | Verified. `git status --short` is empty.                                                                                                                                                                                                                                                        |
+| Open calibration values                | Seven values remain open or need an owner decision. See the calibration record.                                                                                                                                                                                                                 |
