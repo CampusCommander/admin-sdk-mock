@@ -9,6 +9,7 @@ export default defineConfig(
       'data/',
       'test/contract/discovery/',
       'parity/evidence/',
+      'dist/',
     ],
   },
   js.configs.recommended,
