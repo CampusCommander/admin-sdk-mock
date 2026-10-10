@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import https from 'node:https';
 import { join } from 'node:path';
 import tls from 'node:tls';
 import test from 'node:test';
 import { admin } from '@googleapis/admin';
 import { JWT } from 'google-auth-library';
-import { READ_SCOPES, READ_WRITE_SCOPES, startMock } from './index.ts';
+import {
+  ConfigError,
+  FixtureError,
+  READ_SCOPES,
+  READ_WRITE_SCOPES,
+  startMock,
+} from './index.ts';
 import { resolveSpec } from './seed/spec.ts';
 
 test('the unmodified Google client reaches an in-process mock', async (t) => {
@@ -214,4 +221,121 @@ test('a repeat createDomain keeps the configured service account', async (t) => 
   await mock.createDomain(spec);
   assert.equal(mock.env().GOOGLE_APPLICATION_CREDENTIALS, out);
   assert.equal(mock.domains.length, 1);
+});
+
+test('createDomain applies defaults.settings, then its own settings', async (t) => {
+  const mock = await startMock({
+    config: {
+      defaults: {
+        settings: { quota: { perMinute: 77 }, latency: { capMs: 900 } },
+      },
+    },
+  });
+  t.after(() => mock.close());
+  const domain = await mock.createDomain(
+    { tier: 'empty', seed: 'api-defaults' },
+    { settings: { quota: { perMinute: 55 } } },
+  );
+  const record = (await mock.control(
+    'GET',
+    `/domains/${domain.customerId}`,
+  )) as {
+    settings: { quota: { perMinute: number }; latency: { capMs: number } };
+  };
+  assert.equal(record.settings.quota.perMinute, 55);
+  assert.equal(record.settings.latency.capMs, 900);
+});
+
+test('useInProcess sets NO_PROXY to the loopback list, so an ambient NO_PROXY cannot bypass the mock', async (t) => {
+  const saved = { upper: process.env.NO_PROXY, lower: process.env.no_proxy };
+  t.after(() => {
+    for (const [name, value] of [
+      ['NO_PROXY', saved.upper],
+      ['no_proxy', saved.lower],
+    ] as const)
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  });
+  process.env.NO_PROXY = '.googleapis.com';
+  process.env.no_proxy = 'googleapis.com';
+  const mock = await startMock({
+    config: { domains: [{ spec: { tier: 'empty', seed: 'api-no-proxy' } }] },
+  });
+  t.after(() => mock.close());
+  const [domain] = mock.domains;
+  const key = mock.credential(domain.customerId, 'read');
+  const restore = mock.useInProcess();
+  try {
+    assert.equal(process.env.NO_PROXY, 'localhost,127.0.0.1,::1');
+    assert.equal(process.env.no_proxy, 'localhost,127.0.0.1,::1');
+    const auth = new JWT({
+      email: key.client_email,
+      key: key.private_key,
+      subject: domain.adminEmail,
+      scopes: [...READ_SCOPES],
+    });
+    assert.match((await auth.getAccessToken()).token ?? '', /^ya29\.mock\./);
+  } finally {
+    restore();
+  }
+  assert.equal(process.env.NO_PROXY, '.googleapis.com');
+  assert.equal(process.env.no_proxy, 'googleapis.com');
+  delete process.env.NO_PROXY;
+  delete process.env.no_proxy;
+  mock.useInProcess()();
+  assert.equal(process.env.NO_PROXY, undefined);
+  assert.equal(process.env.no_proxy, undefined);
+});
+
+/** Ask the mock's tokeninfo route how many seconds a token has left. */
+function secondsLeft(googleUrl: string, ca: string, token: string) {
+  const { hostname, port } = new URL(googleUrl);
+  return new Promise<number>((resolve, reject) => {
+    https
+      .get(
+        {
+          host: hostname,
+          port,
+          path: `/tokeninfo?access_token=${token}`,
+          headers: { host: 'oauth2.googleapis.com' },
+          servername: 'oauth2.googleapis.com',
+          ca,
+        },
+        (response) => {
+          let text = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk: string) => (text += chunk));
+          response.on('end', () =>
+            resolve(
+              Number((JSON.parse(text) as { expires_in: string }).expires_in),
+            ),
+          );
+        },
+      )
+      .on('error', reject);
+  });
+}
+
+test('the package exports ConfigError and FixtureError, and token() takes ttlSeconds', async (t) => {
+  await assert.rejects(
+    startMock({ config: { listen: { proxy: false } } }),
+    ConfigError,
+  );
+  const mock = await startMock();
+  t.after(() => mock.close());
+  await assert.rejects(
+    mock.createDomain(
+      { tier: 'empty', seed: 'api-errors' },
+      { fixtures: { users: 5 } },
+    ),
+    FixtureError,
+  );
+  const domain = await mock.createDomain({ tier: 'empty', seed: 'api-ttl' });
+  const token = await mock.token(domain.customerId, { ttlSeconds: 60 });
+  const left = await secondsLeft(mock.googleUrl, mock.caCert, token);
+  assert.ok(left > 50 && left <= 60, String(left));
+  await assert.rejects(
+    mock.token(domain.customerId, { ttlSeconds: 0 }),
+    /ttlSeconds must be a whole number from 1 to 3600/,
+  );
 });

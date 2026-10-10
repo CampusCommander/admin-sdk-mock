@@ -50,7 +50,8 @@ export interface ServerHandle {
   close(): Promise<void>;
 }
 
-const NO_PROXY = 'localhost,127.0.0.1,::1';
+/** The NO_PROXY value that keeps loopback traffic, such as the control API, off the proxy. */
+export const NO_PROXY = 'localhost,127.0.0.1,::1';
 
 /** The address a client dials for a listener host. A wildcard address becomes loopback. */
 const dialable = (host: string) =>

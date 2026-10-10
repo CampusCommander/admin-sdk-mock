@@ -78,7 +78,7 @@ node my-client.mjs
 Node's built-in `fetch` and `https` modules ignore `HTTPS_PROXY` unless the environment sets `NODE_USE_ENV_PROXY=1`.
 Without it, such a call goes to real Google, which rejects the mock's tokens.
 
-A test that starts the mock in its own process calls `useInProcess()` instead. It sets `HTTPS_PROXY` and adds the mock CA through `tls.setDefaultCACertificates`.
+A test that starts the mock in its own process calls `useInProcess()` instead. It sets `HTTPS_PROXY` and `NO_PROXY`, and adds the mock CA through `tls.setDefaultCACertificates`.
 See the [testing guide](testing.md).
 
 ## Python
