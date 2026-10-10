@@ -1,0 +1,33 @@
+name: Test against the Admin SDK mock
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: mock
+        uses: CampusCommander/admin-sdk-mock@v1.0.0
+        with:
+          config: examples/github-actions/admin-sdk-mock.json
+
+      - name: Run the application tests
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.mock.outputs.workdir }}/out/credentials/ci.json
+          ADMIN_SUBJECT: admin@vernon-school-district.test
+        run: npm test

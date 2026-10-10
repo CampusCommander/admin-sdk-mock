@@ -1,0 +1,11 @@
+{
+  "domains": [
+    {
+      "spec": { "tier": "small", "seed": "ci" },
+      "onStart": "reset",
+      "serviceAccounts": [
+        { "out": "/out/credentials/ci.json", "scopes": "read-write" }
+      ]
+    }
+  ]
+}
