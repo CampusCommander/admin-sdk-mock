@@ -2,6 +2,7 @@ import type { Clock, Timing } from '../clock.ts';
 import { directoryError, rpcError } from '../http/errors.ts';
 import type { Api, ApiResponse, Call } from '../http/types.ts';
 import type { Admission } from '../pipeline.ts';
+import type { WriteSettings } from '../settings.ts';
 import { QuotaBucket, type BucketSnapshot, type QuotaRules } from './bucket.ts';
 
 export interface QuotaReport {
@@ -56,6 +57,34 @@ function concurrencyError(api: Api, scope: 'method' | 'customer'): ApiResponse {
       });
 }
 
+/** Per-second write limits by route ID. */
+const WRITE_LIMITS: Readonly<
+  Record<string, { key: string; perSecond(writes: WriteSettings): number }>
+> = {
+  'directory.users.insert': {
+    key: 'userCreates',
+    perSecond: (writes) => writes.userCreatesPerSecond,
+  },
+  'directory.orgunits.insert': {
+    key: 'orgUnitWrites',
+    perSecond: (writes) => writes.orgUnitWritesPerSecond,
+  },
+  'directory.orgunits.update': {
+    key: 'orgUnitWrites',
+    perSecond: (writes) => writes.orgUnitWritesPerSecond,
+  },
+  'directory.orgunits.patch': {
+    key: 'orgUnitWrites',
+    perSecond: (writes) => writes.orgUnitWritesPerSecond,
+  },
+};
+
+/** Ruling: Google documents the write limits but not their response. */
+const writeLimitError = (): ApiResponse =>
+  directoryError(403, 'rateLimitExceeded', 'Rate Limit Exceeded', {
+    domain: 'usageLimits',
+  });
+
 interface Entry {
   bucket: QuotaBucket;
   signature: string;
@@ -69,6 +98,7 @@ interface Entry {
 export function createLimits(deps: { clock: Clock; timing: Timing }): Limits {
   const buckets = new Map<string, Entry>();
   const inFlight = new Map<string, number>();
+  const writeCounts = new Map<string, { window: number; count: number }>();
   const bump = (key: string, delta: number) => {
     const next = (inFlight.get(key) ?? 0) + delta;
     if (next <= 0) inFlight.delete(key);
@@ -84,12 +114,22 @@ export function createLimits(deps: { clock: Clock; timing: Timing }): Limits {
       )
         return { ok: true, release() {} };
       const settings = domain.record.settings;
+      const now = deps.clock.now();
       const customerKey = access.customerId;
       const methodKey = `${access.customerId}|${route.id}`;
       if ((inFlight.get(customerKey) ?? 0) >= settings.concurrency.perCustomer)
         return { ok: false, response: concurrencyError(route.api, 'customer') };
       if ((inFlight.get(methodKey) ?? 0) >= settings.concurrency.perMethod)
         return { ok: false, response: concurrencyError(route.api, 'method') };
+      const writeLimit = WRITE_LIMITS[route.id];
+      const writeKey = writeLimit
+        ? `${access.customerId}|${writeLimit.key}`
+        : '';
+      const window = Math.floor(now / (1000 / deps.timing.scale));
+      const written = writeCounts.get(writeKey);
+      const used = written && written.window === window ? written.count : 0;
+      if (writeLimit && used >= writeLimit.perSecond(settings.writes))
+        return { ok: false, response: writeLimitError() };
       const quota =
         route.api === 'chrome' ? settings.chromeQuota : settings.quota;
       const rules: QuotaRules = {
@@ -115,7 +155,6 @@ export function createLimits(deps: { clock: Clock; timing: Timing }): Limits {
         };
         buckets.set(key, entry);
       }
-      const now = deps.clock.now();
       if (!entry.bucket.admit(now))
         return {
           ok: false,
@@ -124,6 +163,7 @@ export function createLimits(deps: { clock: Clock; timing: Timing }): Limits {
             quota.retryAfter ? entry.bucket.retryAfterMs(now) : null,
           ),
         };
+      if (writeLimit) writeCounts.set(writeKey, { window, count: used + 1 });
       bump(customerKey, 1);
       bump(methodKey, 1);
       let released = false;
@@ -158,6 +198,7 @@ export function createLimits(deps: { clock: Clock; timing: Timing }): Limits {
     },
     reset() {
       buckets.clear();
+      writeCounts.clear();
     },
   };
 }

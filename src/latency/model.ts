@@ -4,6 +4,8 @@ import type { LatencySettings } from '../settings.ts';
 
 export interface DelayInput {
   api: Api;
+  /** A write uses the write base and the per-device cost. */
+  write?: boolean;
   bytes: number;
   items: number;
   scanned: number;
@@ -34,9 +36,13 @@ export function computeDelayMs(
           settings.batchPartMs
       : input.api === 'oauth'
         ? 30
-        : settings.baseMs +
-          settings.perItemMs * input.items +
-          (settings.scanPer10kRowsMs * input.scanned) / 10_000;
+        : input.write
+          ? settings.writeBaseMs +
+            settings.perDeviceWriteMs * input.items +
+            (settings.scanPer10kRowsMs * input.scanned) / 10_000
+          : settings.baseMs +
+            settings.perItemMs * input.items +
+            (settings.scanPer10kRowsMs * input.scanned) / 10_000;
   const base = Math.min(roundTrip + transfer + compute, settings.capMs);
   const load =
     1 +

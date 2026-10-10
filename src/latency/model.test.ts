@@ -71,3 +71,26 @@ test('the same random stream gives the same delays', () => {
     samples({ ...base, items: 5 }, 20),
   );
 });
+
+test('a write costs the write base, the per-device cost, and the cascade scan', () => {
+  const flat = {
+    ...settings,
+    roundTripMedianMs: 1,
+    roundTripP99Ms: 1,
+  };
+  const random = createRandom('write');
+  const move = computeDelayMs(
+    { ...base, write: true, items: 50 },
+    flat,
+    random,
+  );
+  assert.ok(Math.abs(move - (1 + 250 + 500)) < 0.001, String(move));
+  const cascade = computeDelayMs(
+    { ...base, write: true, scanned: 100_000 },
+    flat,
+    random,
+  );
+  assert.ok(Math.abs(cascade - (1 + 250 + 200)) < 0.001, String(cascade));
+  const read = computeDelayMs({ ...base, items: 50 }, flat, random);
+  assert.ok(Math.abs(read - (1 + 150 + 150)) < 0.001, String(read));
+});
