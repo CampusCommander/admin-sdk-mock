@@ -1,4 +1,4 @@
-import { createRandom } from '../random.ts';
+import { createRandom, type Random } from '../random.ts';
 import { DAY_MS, HEX, weightedIndex, type SeedContext } from './context.ts';
 import type { DeviceCategory } from './layout.ts';
 import {
@@ -111,6 +111,49 @@ export const DEVICE_COLUMNS = [
   'ord',
 ] as const satisfies readonly (keyof StoredDevice)[];
 
+/**
+ * The first enrollment: a purchase in the summer about ten years before the
+ * model's AUE year, then enrollment within 60 days, and never after `latest`.
+ * Draws four numbers.
+ */
+export function enrollmentTime(
+  random: Random,
+  info: ModelInfo,
+  seededAt: number,
+  latest: number,
+): number {
+  const aueYear = Number(info.aue.slice(0, 4));
+  const purchase = Math.min(
+    Date.UTC(
+      aueYear - 10 + random.int(0, 2),
+      random.int(5, 8),
+      random.int(1, 28),
+    ),
+    seededAt - 30 * DAY_MS,
+  );
+  return Math.min(purchase + random.int(1, 60) * DAY_MS, latest);
+}
+
+/** The Wi-Fi MAC address, and an Ethernet MAC address on 30% of devices. */
+export function macAddresses(
+  random: Random,
+): Pick<StoredDevice, 'mac_address' | 'ethernet_mac_address'> {
+  return {
+    mac_address: random.string(12, HEX),
+    ethernet_mac_address: random.chance(0.3) ? random.string(12, HEX) : null,
+  };
+}
+
+/** The platform version string for an OS version on a model's board. Draws nothing. */
+export function platformVersion(osVersion: string, info: ModelInfo): string {
+  return `${PLATFORM_FOR_OS[osVersion]} (Official Build) stable-channel ${info.board}`;
+}
+
+/** A firmware version string for a model's board. Draws two numbers. */
+export function firmwareVersion(random: Random, info: ModelInfo): string {
+  return `Google_${info.board[0].toUpperCase()}${info.board.slice(1)}.${random.int(10_000, 15_999)}.${random.int(0, 500)}.0`;
+}
+
 /** Insert every device. The caller owns the transaction. */
 export function seedDevices(ctx: SeedContext, users: UserIndex): void {
   const { spec, layout, seededAt, db } = ctx;
@@ -183,17 +226,10 @@ export function seedDevices(ctx: SeedContext, users: UserIndex): void {
       );
     if (status === 'DEPROVISIONED') recent = [];
 
-    const aueYear = Number(info.aue.slice(0, 4));
-    const purchase = Math.min(
-      Date.UTC(
-        aueYear - 10 + random.int(0, 2),
-        random.int(5, 8),
-        random.int(1, 28),
-      ),
-      seededAt - 30 * DAY_MS,
-    );
-    const firstEnrollment = Math.min(
-      purchase + random.int(1, 60) * DAY_MS,
+    const firstEnrollment = enrollmentTime(
+      random,
+      info,
+      seededAt,
       seededAt - DAY_MS,
     );
     const syncRoll = random.next();
@@ -243,11 +279,10 @@ export function seedDevices(ctx: SeedContext, users: UserIndex): void {
       last_sync: lastSync,
       first_enrollment_time: firstEnrollment,
       last_enrollment_time: lastEnrollment,
-      mac_address: random.string(12, HEX),
-      ethernet_mac_address: random.chance(0.3) ? random.string(12, HEX) : null,
+      ...macAddresses(random),
       os_version: osVersion,
-      platform_version: `${PLATFORM_FOR_OS[osVersion]} (Official Build) stable-channel ${info.board}`,
-      firmware_version: `Google_${info.board[0].toUpperCase()}${info.board.slice(1)}.${random.int(10_000, 15_999)}.${random.int(0, 500)}.0`,
+      platform_version: platformVersion(osVersion, info),
+      firmware_version: firmwareVersion(random, info),
       boot_mode: random.chance(0.005) ? 'Dev' : 'Verified',
       aue: aueMs(info.aue),
       recent_users: recent.length > 0 ? JSON.stringify(recent) : null,

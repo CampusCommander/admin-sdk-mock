@@ -13,11 +13,15 @@ import {
 } from '../store/group-lookup.ts';
 import { row } from '../store/sqlite.ts';
 import { findUser } from '../store/user-lookup.ts';
-import { DAY_MS, HEX } from './context.ts';
+import { DAY_MS } from './context.ts';
 import {
   DEPROVISION_REASONS,
   DEVICE_COLUMNS,
+  enrollmentTime,
+  firmwareVersion,
   LICENSE_TYPES,
+  macAddresses,
+  platformVersion,
   type StoredDevice,
 } from './devices.ts';
 import { ouId } from './layout.ts';
@@ -28,7 +32,6 @@ import {
   EXPIRED_MODELS,
   frozenOs,
   MODEL_BY_NAME,
-  PLATFORM_FOR_OS,
 } from './models.ts';
 import type { ResolvedSpec } from './spec.ts';
 
@@ -466,17 +469,10 @@ function addDevices(
       device.lastSync === undefined
         ? seededAt - DAY_MS
         : Date.parse(device.lastSync);
-    const aueYear = Number(info.aue.slice(0, 4));
-    const purchase = Math.min(
-      Date.UTC(
-        aueYear - 10 + random.int(0, 2),
-        random.int(5, 8),
-        random.int(1, 28),
-      ),
-      seededAt - 30 * DAY_MS,
-    );
-    const firstEnrollment = Math.min(
-      purchase + random.int(1, 60) * DAY_MS,
+    const firstEnrollment = enrollmentTime(
+      random,
+      info,
+      seededAt,
       lastSync - DAY_MS,
     );
     const currentOs = random.weighted(CURRENT_OS);
@@ -504,11 +500,10 @@ function addDevices(
       last_sync: lastSync,
       first_enrollment_time: firstEnrollment,
       last_enrollment_time: firstEnrollment,
-      mac_address: random.string(12, HEX),
-      ethernet_mac_address: random.chance(0.3) ? random.string(12, HEX) : null,
+      ...macAddresses(random),
       os_version: osVersion,
-      platform_version: `${PLATFORM_FOR_OS[osVersion]} (Official Build) stable-channel ${info.board}`,
-      firmware_version: `Google_${info.board[0].toUpperCase()}${info.board.slice(1)}.${random.int(10_000, 15_999)}.${random.int(0, 500)}.0`,
+      platform_version: platformVersion(osVersion, info),
+      firmware_version: firmwareVersion(random, info),
       boot_mode: 'Verified',
       aue: aueMs(info.aue),
       recent_users: recent.length > 0 ? JSON.stringify(recent) : null,
