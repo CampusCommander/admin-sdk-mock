@@ -12,6 +12,11 @@ import {
 } from './directory/device-writes.ts';
 import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
+import {
+  deleteOrgUnit,
+  insertOrgUnit,
+  updateOrgUnit,
+} from './directory/orgunit-writes.ts';
 import { getOrgUnit, listOrgUnits } from './directory/orgunits.ts';
 import {
   deleteUser,
@@ -71,6 +76,8 @@ export function writeRoute(
 }
 
 const USER = /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)$/;
+const ORGUNIT =
+  /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/orgunits\/(?<orgUnitPath>.+)$/;
 
 /** Every Google route. Later tasks add their routes here. */
 export function buildRoutes(mock: Mock): Route[] {
@@ -115,7 +122,7 @@ export function buildRoutes(mock: Mock): Route[] {
     ),
     directoryRoute(
       'directory.orgunits.get',
-      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/orgunits\/(?<orgUnitPath>.+)$/,
+      ORGUNIT,
       SCOPES.orgunit,
       getOrgUnit,
     ),
@@ -180,6 +187,34 @@ export function buildRoutes(mock: Mock): Route[] {
       /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)\/makeAdmin$/,
       WRITE_SCOPES.user,
       makeAdmin,
+    ),
+    writeRoute(
+      'directory.orgunits.insert',
+      'POST',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/orgunits$/,
+      WRITE_SCOPES.orgunit,
+      insertOrgUnit,
+    ),
+    writeRoute(
+      'directory.orgunits.update',
+      'PUT',
+      ORGUNIT,
+      WRITE_SCOPES.orgunit,
+      updateOrgUnit,
+    ),
+    writeRoute(
+      'directory.orgunits.patch',
+      'PATCH',
+      ORGUNIT,
+      WRITE_SCOPES.orgunit,
+      updateOrgUnit,
+    ),
+    writeRoute(
+      'directory.orgunits.delete',
+      'DELETE',
+      ORGUNIT,
+      WRITE_SCOPES.orgunit,
+      deleteOrgUnit,
     ),
     writeRoute(
       'directory.chromeosdevices.update',
