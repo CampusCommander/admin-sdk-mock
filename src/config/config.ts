@@ -327,7 +327,7 @@ export function resolveConfig(input: {
   const dataDir =
     fromOverride(over.dataDir) ??
     fromFile(file.dataDir) ??
-    resolve(fileDir, 'data');
+    resolve(cwd, 'data');
   const proxy = file.listen?.proxy ?? null;
   const config: MockConfig = {
     dataDir,

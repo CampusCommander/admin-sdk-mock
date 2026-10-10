@@ -90,6 +90,16 @@ test('the file overrides defaults, the environment overrides the file, and flags
   assert.equal(fromFlags.dataDir, '/work/flag-data');
 });
 
+test('the default data directory resolves against cwd, not the configuration file', () => {
+  const config = resolveConfig({
+    cwd: '/work',
+    fileDir: '/conf',
+    file: { timing: { scale: 2 } },
+  });
+  assert.equal(config.dataDir, '/work/data');
+  assert.equal(config.caFile, '/work/data/ca/ca.pem');
+});
+
 test('MOCK_PROXY_PORT alone turns the proxy on', () => {
   const config = resolveConfig({ cwd: '/w', env: { MOCK_PROXY_PORT: '3128' } });
   assert.deepEqual(config.listen.proxy, {
