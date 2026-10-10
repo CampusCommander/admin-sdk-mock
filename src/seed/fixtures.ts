@@ -66,6 +66,8 @@ export interface FixtureMember {
   email?: string;
   id?: string;
   role?: 'OWNER' | 'MANAGER' | 'MEMBER';
+  /** When given, it must equal the type that the key names. An outside address is a USER. */
+  type?: MemberType;
 }
 
 export interface FixtureGroup {
@@ -147,6 +149,7 @@ const FIXTURES_SCHEMA = {
         email: STRING,
         id: STRING,
         role: { enum: ROLES },
+        type: { enum: ['USER', 'GROUP', 'CUSTOMER'] },
       }),
     }),
   },
@@ -610,6 +613,11 @@ function addGroups(
       const target = resolve((member.email ?? member.id)!);
       if (!target)
         out.fail(at, 'names no user, group, customer, or outside address.');
+      else if (member.type !== undefined && member.type !== target.type)
+        out.fail(
+          `${at}.type`,
+          `is ${member.type} but the key names a ${target.type}.`,
+        );
       else if (memberUsed.get(id, target.email, target.id))
         out.fail(at, 'is already a member.');
       // Each link is checked against the links before it, so a cycle fails at the link that closes it.

@@ -423,6 +423,61 @@ test('group fixtures resolve every kind of member', () => {
   );
 });
 
+test('a member type that matches its key is accepted', () => {
+  const { db } = applied((spec) => ({
+    users: [
+      {
+        primaryEmail: `owner@${PRIMARY}`,
+        givenName: 'Olive',
+        familyName: 'Oak',
+      },
+    ],
+    groups: [
+      {
+        email: `team@${PRIMARY}`,
+        members: [
+          { email: `owner@${PRIMARY}`, type: 'USER' },
+          { email: `later@${PRIMARY}`, type: 'GROUP' },
+          { id: spec.customerId, type: 'CUSTOMER' },
+          { email: 'friend@example.com', type: 'USER' },
+        ],
+      },
+      { email: `later@${PRIMARY}` },
+    ],
+  }));
+  assert.deepEqual(
+    plain(db, 'SELECT type FROM group_members ORDER BY id').map(
+      (member) => member.type,
+    ),
+    ['USER', 'GROUP', 'CUSTOMER', 'USER'],
+  );
+});
+
+test('a member type that differs from its key is an error', () => {
+  assert.deepEqual(
+    errorsOf(() =>
+      applied((spec) => ({
+        groups: [
+          {
+            email: `team@${PRIMARY}`,
+            members: [
+              { email: `later@${PRIMARY}`, type: 'USER' },
+              { email: 'friend@example.com', type: 'GROUP' },
+              { id: spec.customerId, type: 'GROUP' },
+            ],
+          },
+          { email: `later@${PRIMARY}` },
+        ],
+      })),
+    ),
+    [
+      `${FILE}: groups[0].members[0].type is USER but the key names a GROUP.`,
+      `${FILE}: groups[0].members[1].type is GROUP but the key names a USER.`,
+      `${FILE}: groups[0].members[2].type is GROUP but the key names a CUSTOMER.`,
+    ],
+  );
+});
+
 test('reference errors name the file, the path, and the problem', () => {
   const user = (primaryEmail: string) => ({
     primaryEmail,
