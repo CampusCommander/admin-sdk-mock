@@ -161,6 +161,18 @@ Fix:
 - Wait for the `ready` event or the ready file before you connect a client. The GitHub Action waits up to 600 seconds.
 - Use a smaller tier, or lower `counts`, when the test does not need Chicago-size data.
 
+## A key file that cannot be written
+
+Symptom: `start` exits with code 2 and prints:
+
+```text
+domains[0].serviceAccounts[0].out: /config/.admin-sdk-mock/credentials/demo.json cannot be written: EACCES. Choose a writable directory.
+```
+
+Cause: the `out` path names a directory that the mock cannot write. In the image, a relative path resolves against `/config`, a read-only mount. The `init` starter uses relative paths.
+
+Fix: write key files under a writable directory. In the image, mount a host directory at `/out` and set `out` to a path such as `/out/credentials/demo.json`.
+
 ## Other errors
 
 | Symptom                                                                | Cause and fix                                                                                      |

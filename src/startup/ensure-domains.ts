@@ -143,8 +143,17 @@ export function ensureDomain(
         issueServiceAccount(mock.registry, customerId, account.projectId),
       );
     mock.registry.setGrant(customerId, file.client_id, scopes);
-    mkdirSync(dirname(account.out), { recursive: true });
-    writeSecret(account.out, `${JSON.stringify(file, null, 2)}\n`);
+    try {
+      mkdirSync(dirname(account.out), { recursive: true });
+      writeSecret(account.out, `${JSON.stringify(file, null, 2)}\n`);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (typeof code !== 'string') throw error;
+      // In the image, a relative path lands under the read-only /config mount.
+      throw new ConfigError([
+        `${path}.serviceAccounts[${n}].out: ${account.out} cannot be written: ${code}. Choose a writable directory.`,
+      ]);
+    }
     return {
       out: account.out,
       clientEmail: file.client_email,

@@ -278,6 +278,27 @@ test('a second run replaces the faults, and an invalid rule names its path', (t)
   );
 });
 
+test('a key file path that cannot be written fails as a configuration error at its out path', (t) => {
+  const { dir, mock, entry } = setup(t);
+  // A file where the key directory belongs fails for every user, root included.
+  writeFileSync(join(dir, 'blocker'), '');
+  const out = join(dir, 'blocker', 'key.json');
+  const errors = configErrors(() =>
+    ensureDomain(
+      mock,
+      entry({ spec: EMPTY, serviceAccounts: [{ out, scopes: 'read' }] }),
+      0,
+      {},
+      NOW,
+    ),
+  );
+  assert.equal(errors.length, 1);
+  assert.match(
+    errors[0],
+    /^domains\[0\]\.serviceAccounts\[0\]\.out: .*blocker\/key\.json cannot be written: E[A-Z]+\. Choose a writable directory\.$/,
+  );
+});
+
 test('a name taken at run time or a bad project ID still fails as a configuration error', (t) => {
   const { mock, entry } = setup(t);
   // A domain from the control API holds the name, so resolveConfig cannot see the clash.
