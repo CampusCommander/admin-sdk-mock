@@ -7,6 +7,9 @@ This procedure changes no file in Campus Commander.
 1. Start the Docker daemon. `docker version` must print a server version.
 2. Build the mock image: `docker build -t admin-sdk-mock:local .`
 3. In Campus Commander, follow `deployment/profiles/all-docker/README.md` to build the release, prepare an installation directory, and render `<install>/docker-compose.yml`.
+   Use a phase 3 configuration. `deployment/examples/all-docker.json` is phase 1, which has no application sign-in and no Google connection.
+   Phase 2 and later require `applicationAuth`, an OIDC issuer with an `https` URL. Phase 3 adds `googleConnection`.
+   The release manifest needs a repository digest for each image, so push locally built images to a registry and pull them back first.
 
 ## Start
 
@@ -35,13 +38,16 @@ mock credential <customerId> > mock-credential.json
 
 ## Record
 
-The Docker daemon is not available in the implementation environment. The demonstration needs the owner in a browser.
+Docker runs in the implementation environment since 2026-10-10. The run still awaits the owner, who chooses the OIDC provider for a phase 3 installation.
 The owner runs the steps above and fills the pending cells. The grid must show 60,000 devices.
 
-| Check                                                        | Result                                                   |
-| ------------------------------------------------------------ | -------------------------------------------------------- |
-| Device count in the grid status bar                          | Pending owner run: Docker Desktop WSL integration is off |
-| Full sync duration                                           | Pending owner run: Docker Desktop WSL integration is off |
-| `mock quota <customerId>` after the sync                     | Pending owner run: Docker Desktop WSL integration is off |
-| `git -C ~/projects/campus-commander status --short` is empty | Verified 2026-10-09: the command printed nothing.        |
-| Owner observation                                            | Pending owner run: Docker Desktop WSL integration is off |
+The overlay routes the four Google hostnames to the mock on the `internal` network. The `api` service also sits on `ingress`, which reaches the internet, and a phase 3 render adds `google-egress` for `workers`.
+Before you import the credential, run `nslookup admin.googleapis.com` inside `api` and `workers`. Both must answer with the mock's address.
+
+| Check                                                        | Result                                            |
+| ------------------------------------------------------------ | ------------------------------------------------- |
+| Device count in the grid status bar                          | Pending owner run: needs a phase 3 installation   |
+| Full sync duration                                           | Pending owner run: needs a phase 3 installation   |
+| `mock quota <customerId>` after the sync                     | Pending owner run: needs a phase 3 installation   |
+| `git -C ~/projects/campus-commander status --short` is empty | Verified 2026-10-09: the command printed nothing. |
+| Owner observation                                            | Pending owner run: needs a phase 3 installation   |
