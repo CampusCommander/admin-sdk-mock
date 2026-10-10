@@ -300,3 +300,110 @@ test('a read-only token cannot write, and a deprovisioned device accepts an upda
   });
   assert.equal(accepted.status, 200, accepted.text);
 });
+
+const ACTION = 'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_';
+
+test('batchChangeStatus disables, re-enables, and deprovisions devices', async (t) => {
+  const { api, active, get } = await setup(t);
+  const [a, b] = active.map((device) => device.device_id);
+  const change = (action: string, ids: string[], extra = {}) =>
+    api('POST', `${DEVICES}:batchChangeStatus`, {
+      body: {
+        deviceIds: ids,
+        changeChromeOsDeviceStatusAction: `${ACTION}${action}`,
+        ...extra,
+      },
+    });
+  const disabled = await change('DISABLE', [a, b]);
+  assert.equal(disabled.status, 200, disabled.text);
+  assert.deepEqual(disabled.json(), {
+    changeChromeOsDeviceStatusResults: [
+      { deviceId: a, response: {} },
+      { deviceId: b, response: {} },
+    ],
+  });
+  assert.equal((await get(a)).status, 'DISABLED');
+  assert.equal((await change('REENABLE', [a])).status, 200);
+  assert.equal((await get(a)).status, 'ACTIVE');
+  const retired = await change('DEPROVISION', [a], {
+    deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+  });
+  assert.equal(retired.status, 200, retired.text);
+  const device = await get(a);
+  assert.equal(device.status, 'DEPROVISIONED');
+  assert.equal(device.deprovisionReason, 'DEPROVISION_REASON_RETIRING_DEVICE');
+  assert.ok(device.lastDeprovisionTimestamp);
+});
+
+test('batchChangeStatus reports each device error in request order', async (t) => {
+  const { api, active } = await setup(t);
+  const [a, b] = active.map((device) => device.device_id);
+  const response = await api('POST', `${DEVICES}:batchChangeStatus`, {
+    body: {
+      deviceIds: ['missing-device', a, b],
+      changeChromeOsDeviceStatusAction: `${ACTION}REENABLE`,
+    },
+  });
+  assert.equal(response.status, 200, response.text);
+  const results = response.json().changeChromeOsDeviceStatusResults;
+  assert.deepEqual(
+    results.map((result: { deviceId: string }) => result.deviceId),
+    ['missing-device', a, b],
+  );
+  assert.equal(results[0].error.code, 5);
+  assert.equal(results[1].error.code, 9);
+  assert.equal(results[2].error.code, 9);
+});
+
+test('batchChangeStatus rejects a malformed request as a whole', async (t) => {
+  const { api, active, get } = await setup(t);
+  const id = active[0].device_id;
+  for (const body of [
+    {
+      deviceIds: Array.from({ length: 51 }, () => id),
+      changeChromeOsDeviceStatusAction: `${ACTION}DISABLE`,
+    },
+    { deviceIds: [id] },
+    {
+      deviceIds: [id],
+      changeChromeOsDeviceStatusAction: `${ACTION}UNSPECIFIED`,
+    },
+    {
+      deviceIds: [id],
+      changeChromeOsDeviceStatusAction: `${ACTION}DEPROVISION`,
+    },
+    {
+      deviceIds: [id],
+      changeChromeOsDeviceStatusAction: `${ACTION}DEPROVISION`,
+      deprovisionReason: 'DEPROVISION_REASON_UNSPECIFIED',
+    },
+  ])
+    assert.equal(
+      (await api('POST', `${DEVICES}:batchChangeStatus`, { body })).status,
+      400,
+      JSON.stringify(body),
+    );
+  assert.equal((await get(id)).status, 'ACTIVE');
+});
+
+test('a status change lags in lists', async (t) => {
+  const { clock, api, active } = await setup(t);
+  const id = active[0].device_id;
+  await api('POST', `${DEVICES}:batchChangeStatus`, {
+    body: {
+      deviceIds: [id],
+      changeChromeOsDeviceStatusAction: `${ACTION}DISABLE`,
+    },
+  });
+  const disabled = async () =>
+    (
+      (
+        await api('GET', DEVICES, {
+          query: { query: 'status:disabled', maxResults: 300 },
+        })
+      ).json().chromeosdevices ?? []
+    ).some((device: { deviceId: string }) => device.deviceId === id);
+  assert.equal(await disabled(), false);
+  await clock.advance(D);
+  assert.equal(await disabled(), true);
+});

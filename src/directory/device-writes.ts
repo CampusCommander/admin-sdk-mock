@@ -132,3 +132,101 @@ export function moveDevicesToOu(call: Call): ApiResponse {
   });
   return { status: 204, items: ids.length };
 }
+
+const ACTIONS: Readonly<
+  Record<string, { from: readonly string[]; to: string }>
+> = {
+  CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE: {
+    from: ['ACTIVE'],
+    to: 'DISABLED',
+  },
+  CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_REENABLE: {
+    from: ['DISABLED'],
+    to: 'ACTIVE',
+  },
+  CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DEPROVISION: {
+    from: ['ACTIVE', 'DISABLED'],
+    to: 'DEPROVISIONED',
+  },
+};
+
+const REASONS = new Set([
+  'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+  'DEPROVISION_REASON_UPGRADE',
+  'DEPROVISION_REASON_DOMAIN_MOVE',
+  'DEPROVISION_REASON_SERVICE_EXPIRATION',
+  'DEPROVISION_REASON_OTHER',
+  'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT',
+  'DEPROVISION_REASON_RETIRING_DEVICE',
+  'DEPROVISION_REASON_UPGRADE_TRANSFER',
+  'DEPROVISION_REASON_NOT_REQUIRED',
+  'DEPROVISION_REASON_REPAIR_CENTER',
+]);
+
+/** google.rpc.Code values in per-device results. */
+const NOT_FOUND = 5;
+const FAILED_PRECONDITION = 9;
+
+/** `customer.devices.chromeos.batchChangeStatus`. Each device succeeds or fails alone. */
+export function batchChangeStatus(call: Call): ApiResponse {
+  const domain = domainOf(call);
+  resolveCustomer(call, call.params.customerId);
+  const body = jsonBody(call);
+  const ids = deviceIdList(call, body.deviceIds);
+  const name = body.changeChromeOsDeviceStatusAction;
+  const action =
+    typeof name === 'string' && Object.hasOwn(ACTIONS, name)
+      ? ACTIONS[name]
+      : undefined;
+  if (!action)
+    throw invalidArgument(
+      call,
+      'Invalid Input: changeChromeOsDeviceStatusAction',
+    );
+  const reason = body.deprovisionReason;
+  const deprovision = action.to === 'DEPROVISIONED';
+  if (deprovision && (typeof reason !== 'string' || !REASONS.has(reason)))
+    throw invalidArgument(call, 'Invalid Input: deprovisionReason');
+  const hidden = call.overrides.hidden(domain.customerId);
+  const select = domain.db.prepare(
+    'SELECT status FROM devices WHERE device_id = ?',
+  );
+  const delay = searchDelayMs(call);
+  const results = transaction(domain.db, () =>
+    ids.map((deviceId) => {
+      const found = hidden.has(deviceId)
+        ? undefined
+        : row<{ status: string }>(select.get(deviceId));
+      if (!found)
+        return {
+          deviceId,
+          error: { code: NOT_FOUND, message: 'Device not found.' },
+        };
+      if (!action.from.includes(found.status))
+        return {
+          deviceId,
+          error: {
+            code: FAILED_PRECONDITION,
+            message: `A device with status ${found.status} does not allow this action.`,
+          },
+        };
+      saveBeforeImage(domain.db, 'devices', deviceId, call.now, delay);
+      if (deprovision)
+        domain.db
+          .prepare(
+            'UPDATE devices SET status = ?, deprovision_reason = ?, last_deprovision = ? WHERE device_id = ?',
+          )
+          .run(action.to, reason as string, call.now, deviceId);
+      else
+        domain.db
+          .prepare('UPDATE devices SET status = ? WHERE device_id = ?')
+          .run(action.to, deviceId);
+      return { deviceId, response: {} };
+    }),
+  );
+  return {
+    status: 200,
+    items: ids.length,
+    body: { changeChromeOsDeviceStatusResults: results },
+  };
+}

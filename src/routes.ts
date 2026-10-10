@@ -4,7 +4,11 @@ import { handleTokenInfo } from './auth/tokeninfo.ts';
 import { SCOPES, WRITE_SCOPES } from './auth/scopes.ts';
 import { getTelemetry, listTelemetry } from './chrome/telemetry.ts';
 import { getCustomer } from './directory/customers.ts';
-import { moveDevicesToOu, updateDevice } from './directory/device-writes.ts';
+import {
+  batchChangeStatus,
+  moveDevicesToOu,
+  updateDevice,
+} from './directory/device-writes.ts';
 import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
 import { getOrgUnit, listOrgUnits } from './directory/orgunits.ts';
@@ -151,6 +155,13 @@ export function buildRoutes(mock: Mock): Route[] {
       /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/moveDevicesToOu$/,
       WRITE_SCOPES.device,
       moveDevicesToOu,
+    ),
+    writeRoute(
+      'directory.chromeos.batchChangeStatus',
+      'POST',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos(?::|%3[Aa])batchChangeStatus$/,
+      WRITE_SCOPES.device,
+      batchChangeStatus,
     ),
     {
       id: 'chrome.telemetry.devices.list',
