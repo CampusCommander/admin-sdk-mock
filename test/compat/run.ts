@@ -184,10 +184,11 @@ const child = spawn(
 );
 const [code] = (await once(child, 'exit')) as [number | null];
 await proxy.close();
+const totals = proxy.counts();
 console.log(
-  `proxy accepted ${proxy.accepted.length} CONNECT(s) (${[...new Set(proxy.accepted)].join(', ')}), refused ${proxy.refused.length}`,
+  `proxy accepted ${totals.accepted} CONNECT(s) (${[...new Set(proxy.accepted)].join(', ')}), refused ${totals.refused}`,
 );
-const proxied = proxy.accepted.length > 0 && proxy.refused.length === 0;
+const proxied = totals.accepted > 0 && totals.refused === 0;
 if (!proxied) console.error('compat traffic did not stay on the proxy');
 mock.close();
 rmSync(dataDir, { recursive: true, force: true });
