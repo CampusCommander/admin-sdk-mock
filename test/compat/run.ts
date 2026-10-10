@@ -174,6 +174,7 @@ const child = spawn(
   process.execPath,
   [
     '--test',
+    '--test-timeout=120000',
     'test/compat/directory.compat.ts',
     'test/compat/chrome.compat.ts',
     'test/compat/writes.compat.ts',

@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
+import { childEnv } from '../testing/child-env.ts';
 import { startHarness } from '../testing/harness.ts';
 import { createControlHandler } from './control.ts';
 
@@ -22,7 +23,7 @@ test('mockctl creates a domain, issues a credential file, and sets the clock', a
     await harness.close();
   });
   const env = {
-    ...process.env,
+    ...childEnv(),
     MOCK_CONTROL_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
   };
   const ctl = (...args: string[]) =>
@@ -90,7 +91,7 @@ test('mockctl flushes the search index of a domain', async (t) => {
     await harness.close();
   });
   const env = {
-    ...process.env,
+    ...childEnv(),
     MOCK_CONTROL_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
   };
   const ctl = (...args: string[]) =>

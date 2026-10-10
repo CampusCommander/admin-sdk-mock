@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { ServerInfo } from '../../src/server.ts';
+import { childEnv } from '../../src/testing/child-env.ts';
 
 type Ready = ServerInfo & { event: 'ready' };
 
@@ -50,7 +51,8 @@ async function startCli(
       '--proxy-port',
       '0',
     ],
-    { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] },
+    // No MOCK_* or ADMIN_SDK_MOCK_* variables, so the developer's shell cannot steer the mock.
+    { cwd: tmp, env: childEnv(), stdio: ['ignore', 'pipe', 'inherit'] },
   );
   const lines = createInterface({ input: child.stdout! });
   const exited = once(child, 'exit').then(([code]) => {
@@ -124,7 +126,7 @@ async function runCliExamples(tmp: string): Promise<void> {
     const envRun = spawnSync(
       process.execPath,
       [cli, 'env', '--control', controlUrl, '--format', 'json'],
-      { cwd: root, ...limits },
+      { cwd: tmp, env: childEnv(), ...limits },
     );
     if (envRun.status !== 0)
       throw new Error(

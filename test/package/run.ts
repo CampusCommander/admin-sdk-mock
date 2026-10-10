@@ -19,6 +19,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { childEnv } from '../../src/testing/child-env.ts';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const packageName = '@campuscommander/admin-sdk-mock';
@@ -47,8 +48,9 @@ function step(message: string): void {
  * the same configuration files themselves, so drop the copies.
  */
 const baseEnv: NodeJS.ProcessEnv = {
+  // childEnv also drops MOCK_* and ADMIN_SDK_MOCK_*, so the developer's shell cannot steer the mock.
   ...Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !/^npm_/i.test(name)),
+    Object.entries(childEnv()).filter(([name]) => !/^npm_/i.test(name)),
   ),
   npm_config_yes: 'false',
 };

@@ -17,7 +17,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { DatabaseSync } from 'node:sqlite';
-import test, { type TestContext } from 'node:test';
+import test, { after, type TestContext } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { READ_SCOPES, READ_WRITE_SCOPES } from '../auth/scopes.ts';
 import { createControlHandler } from '../control/control.ts';
 import { resolveSpec } from '../seed/spec.ts';
@@ -27,6 +28,7 @@ import {
   startServer,
   type ServerInfo,
 } from '../server.ts';
+import { isolatedChild } from '../testing/child-env.ts';
 import { startHarness } from '../testing/harness.ts';
 import { formatEnvironment } from './env.ts';
 import { HELP } from './help.ts';
@@ -50,11 +52,13 @@ const STARTER = {
   ],
 };
 
-/** The parent environment without MOCK_* variables, so a developer's shell cannot steer a child. */
-const cleanEnv = () =>
-  Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !name.startsWith('MOCK_')),
-  );
+const BIN = fileURLToPath(
+  new URL('../../bin/admin-sdk-mock.ts', import.meta.url),
+);
+
+/** The working directory of cli() without a cwd option: empty, so no ./admin-sdk-mock.json applies. */
+const defaultCwd = isolatedChild('cli-cwd-');
+after(() => defaultCwd.remove());
 
 function tempDir(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), 'cli-'));
@@ -77,7 +81,7 @@ async function cli(
     stdout: (text) => (stdout += text),
     stderr: (text) => (stderr += text),
     env: options.env ?? {},
-    cwd: options.cwd ?? process.cwd(),
+    cwd: options.cwd ?? defaultCwd.cwd,
     program: options.program,
   });
   return { code, stdout, stderr };
@@ -117,14 +121,21 @@ async function fakeMock(t: TestContext): Promise<string> {
   return `http://127.0.0.1:${await listen(t, server)}`;
 }
 
-/** Spawn `admin-sdk-mock start` with the arguments and collect its standard error. */
+/**
+ * Spawn `admin-sdk-mock start` with the arguments and collect its standard error. The child
+ * runs in an empty directory without the parent's MOCK_* and ADMIN_SDK_MOCK_* variables.
+ */
 function spawnStart(t: TestContext, args: string[]) {
-  const child = spawn(
-    process.execPath,
-    ['bin/admin-sdk-mock.ts', 'start', ...args],
-    { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] },
-  );
-  t.after(() => child.kill('SIGKILL'));
+  const isolated = isolatedChild('cli-start-');
+  const child = spawn(process.execPath, [BIN, 'start', ...args], {
+    cwd: isolated.cwd,
+    env: isolated.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => {
+    child.kill('SIGKILL');
+    isolated.remove();
+  });
   const output = { stderr: '' };
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk: string) => (output.stderr += chunk));
