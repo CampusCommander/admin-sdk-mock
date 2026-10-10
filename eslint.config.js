@@ -10,6 +10,8 @@ export default defineConfig(
       'test/contract/discovery/',
       'parity/evidence/',
       'dist/',
+      '.venv/',
+      'examples/python/.venv/',
     ],
   },
   js.configs.recommended,
@@ -20,6 +22,12 @@ export default defineConfig(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+    },
+  },
+  {
+    files: ['examples/**/*.mjs'],
+    languageOptions: {
+      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
     },
   },
 );
