@@ -413,3 +413,41 @@ test('large derived pages scan the email index in order without a sort', async (
     /INDEXED BY/,
   );
 });
+
+test('a user hidden by a remove-entity fault answers 404 by ID and by email', async (t) => {
+  const { harness, domain, api, top, u1, asUser } = await setup(t);
+  harness.mock.faults.add(domain.customerId, {
+    kind: 'remove-entity',
+    entityId: u1.id,
+  });
+  for (const key of [u1.id, asUser(u1).email]) {
+    const got = await api(
+      'GET',
+      `/groups/${top.email}/members/${encodeURIComponent(key)}`,
+    );
+    assert.equal(got.status, 404, key);
+  }
+});
+
+test('a group hidden by its email leaves the direct list of its parent', async (t) => {
+  const { harness, domain, ids, top, mid } = await setup(t);
+  assert.ok((await ids(top.email)).includes(mid.id));
+  harness.mock.faults.add(domain.customerId, {
+    kind: 'remove-entity',
+    entityId: mid.email,
+  });
+  assert.ok(!(await ids(top.email)).includes(mid.id));
+});
+
+test('a nested group hidden by ID removes its members from derived lists', async (t) => {
+  const { harness, domain, allIds, top, mid, u2, parent } = await setup(t);
+  const before = await allIds(top.email, { includeDerivedMembership: 'true' });
+  assert.ok(before.includes(u2.id) && before.includes(outsideMemberId(parent)));
+  harness.mock.faults.add(domain.customerId, {
+    kind: 'remove-entity',
+    entityId: mid.id,
+  });
+  const after = await allIds(top.email, { includeDerivedMembership: 'true' });
+  assert.ok(!after.includes(mid.id));
+  assert.ok(!after.includes(u2.id) && !after.includes(outsideMemberId(parent)));
+});

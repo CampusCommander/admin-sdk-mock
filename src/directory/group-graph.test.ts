@@ -50,3 +50,15 @@ test('reaches follows every link, including links inside the nesting delay', () 
   assert.equal(reaches(db, ids[1], ids[1]), true);
   assert.equal(reaches(db, ids[3], ids[0]), false);
 });
+
+test('reachedGroups stops at an excluded group by ID or email', () => {
+  const { db, ids } = chain();
+  assert.deepEqual(
+    reachedGroups(db, 'group_members', ids[0], 10_000, [ids[2]]).sort(),
+    [ids[0], ids[1]].sort(),
+  );
+  assert.deepEqual(
+    reachedGroups(db, 'group_members', ids[0], 10_000, ['b@lake.test']),
+    [ids[0]],
+  );
+});

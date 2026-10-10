@@ -4,20 +4,26 @@ import { row, rows } from '../store/sqlite.ts';
 /**
  * Every group reached from `groupId`, including `groupId`, through group links
  * added at or before `followableAt`. `table` is `group_members` or its listed view.
- * UNION, not UNION ALL, keeps the walk finite even if a cycle ever existed.
+ * Groups whose ID or email is in `excluded` are never entered. UNION, not UNION ALL, keeps the walk finite even if a cycle ever existed.
  */
 export function reachedGroups(
   db: DatabaseSync,
   table: string,
   groupId: string,
   followableAt: number,
+  excluded: readonly string[] = [],
 ): string[] {
   return rows<{ id: string }>(
     db
       .prepare(
-        `WITH RECURSIVE reach(id) AS (SELECT ? UNION SELECT m.member_id FROM ${table} m JOIN reach r ON m.group_id = r.id WHERE m.type = 'GROUP' AND m.added_at <= ?) SELECT id FROM reach`,
+        `WITH RECURSIVE reach(id) AS (SELECT ? UNION SELECT m.member_id FROM ${table} m JOIN reach r ON m.group_id = r.id WHERE m.type = 'GROUP' AND m.added_at <= ? AND m.member_id NOT IN (SELECT value FROM json_each(?)) AND m.email NOT IN (SELECT value FROM json_each(?))) SELECT id FROM reach`,
       )
-      .all(groupId, followableAt),
+      .all(
+        groupId,
+        followableAt,
+        JSON.stringify(excluded),
+        JSON.stringify(excluded),
+      ),
   ).map((entry) => entry.id);
 }
 

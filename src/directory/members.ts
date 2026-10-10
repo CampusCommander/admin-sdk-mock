@@ -109,7 +109,9 @@ export function directMember(
           )
           .get(group.id, key),
       );
-  if (!found) throw notFound('memberKey');
+  const hidden = call.overrides.hidden(domainOf(call).customerId);
+  if (!found || hidden.has(found.member_id) || hidden.has(found.email))
+    throw notFound('memberKey');
   return found;
 }
 
@@ -124,8 +126,9 @@ function rolesParam(call: Call): MemberRole[] | null {
 
 /**
  * The derived-membership page query. Parameters, in order: the reached group IDs
- * as a JSON array, the cursor email and member ID when `cursor` is set, one rank
- * per role filter, and the row limit. On the live table, large sets scan the
+ * as a JSON array, the cursor email and member ID when `cursor` is set, the hidden
+ * entries twice (once for member_id, once for email), one rank per role filter,
+ * and the row limit. On the live table, large sets scan the
  * `(email, member_id)` index in order, so GROUP BY and ORDER BY need no sort.
  */
 export function derivedQuery(
@@ -139,8 +142,11 @@ export function derivedQuery(
       : total > EMAIL_SCAN_ROWS
         ? ' INDEXED BY group_members_email'
         : ' INDEXED BY group_members_order';
+  const marks = Array(options.hidden ?? 0)
+    .fill('?')
+    .join(', ');
   const hidden = options.hidden
-    ? ` AND member_id NOT IN (${Array(options.hidden).fill('?').join(', ')})`
+    ? ` AND member_id NOT IN (${marks}) AND email NOT IN (${marks})`
     : '';
   const having =
     options.roles > 0
@@ -185,7 +191,13 @@ export function listMembers(call: Call): ApiResponse {
   let scanned = 0;
   if (derived) {
     const reach = JSON.stringify(
-      reachedGroups(db, table, group.id, call.now - nestingDelayMs(call)),
+      reachedGroups(
+        db,
+        table,
+        group.id,
+        call.now - nestingDelayMs(call),
+        hidden,
+      ),
     );
     scanned = Number(
       row<{ n: number }>(
@@ -214,6 +226,7 @@ export function listMembers(call: Call): ApiResponse {
           reach,
           ...(cursor ?? []),
           ...hidden,
+          ...hidden,
           ...(roles ?? []).map((role) => ROLE_RANK[role]),
           maxResults + 1,
         ),
@@ -230,8 +243,9 @@ export function listMembers(call: Call): ApiResponse {
       params.push(cursor[0], cursor[1]);
     }
     if (hidden.length > 0) {
-      where.push(`member_id NOT IN (${hidden.map(() => '?').join(', ')})`);
-      params.push(...hidden);
+      const marks = hidden.map(() => '?').join(', ');
+      where.push(`member_id NOT IN (${marks})`, `email NOT IN (${marks})`);
+      params.push(...hidden, ...hidden);
     }
     const built = listedSelect(db, 'group_members', table, {
       extra: 'email AS sort_key',
