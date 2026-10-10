@@ -2,12 +2,19 @@ import type { DatabaseSync } from 'node:sqlite';
 import { row, transaction } from '../store/sqlite.ts';
 import { DAY_MS } from './context.ts';
 import { seedDevices } from './devices.ts';
+import { seedGroups } from './groups.ts';
 import { buildLayout } from './layout.ts';
 import type { ResolvedSpec } from './spec.ts';
 import { seedUsers } from './users.ts';
 
 export interface SeedResult {
-  counts: { orgUnits: number; users: number; devices: number };
+  counts: {
+    orgUnits: number;
+    users: number;
+    devices: number;
+    groups: number;
+    memberships: number;
+  };
   adminEmail: string;
   durationMs: number;
 }
@@ -58,6 +65,7 @@ export function seedDomain(
     );
     const index = seedUsers(ctx);
     seedDevices(ctx, index);
+    seedGroups(ctx);
     return index;
   });
   const count = (table: string) =>
@@ -70,6 +78,8 @@ export function seedDomain(
       orgUnits: count('orgunits'),
       users: count('users'),
       devices: count('devices'),
+      groups: count('groups'),
+      memberships: count('group_members'),
     },
     adminEmail: users.adminEmail,
     durationMs: Math.round(performance.now() - started),
