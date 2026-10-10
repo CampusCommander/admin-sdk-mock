@@ -39,21 +39,39 @@ function step(message: string): void {
   console.log(`ok - ${message}`);
 }
 
+/** Never let npx fetch a package or wait on a prompt. */
+const baseEnv: NodeJS.ProcessEnv = { ...process.env, npm_config_yes: 'false' };
+
 function run(
   command: string,
   args: string[],
   cwd: string,
-  env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = 60_000,
+  env: NodeJS.ProcessEnv = baseEnv,
 ): string {
-  const result = spawnSync(command, args, {
+  const finalArgs = command === 'npx' ? ['--no-install', ...args] : args;
+  const started = Date.now();
+  const result = spawnSync(command, finalArgs, {
     cwd,
     env,
     encoding: 'utf8',
     shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
   });
+  const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+  const label = `${command} ${finalArgs.join(' ')}`;
+  if (
+    result.error &&
+    (result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT'
+  )
+    throw new StepFailure(
+      `${label} timed out after ${elapsed} s (limit ${timeoutMs / 1000} s)\n${result.stdout}\n${result.stderr}`,
+    );
   if (result.status !== 0)
     throw new StepFailure(
-      `${command} ${args.join(' ')} exited ${result.status}\n${result.stdout}\n${result.stderr}`,
+      `${label} exited ${result.status} after ${elapsed} s\n${result.error ?? ''}\n${result.stdout}\n${result.stderr}`,
     );
   return result.stdout;
 }
@@ -167,27 +185,62 @@ const tmp = mkdtempSync(join(tmpdir(), 'admin-sdk-mock-package-'));
 let mock: ChildProcess | undefined;
 let failed = false;
 /** Signal the whole process group, because npx runs the mock as a child. */
-function stopMock(signal: NodeJS.Signals): void {
-  if (mock?.pid !== undefined) {
-    try {
-      process.kill(-mock.pid, signal);
-    } catch {
-      // The group already exited.
-    }
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // The group already exited.
   }
-  mock = undefined;
 }
+
+/** Stop the mock, wait up to 10 s for it to exit, then kill the group. */
+async function stopMock(signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+  const child = mock;
+  if (!child) return;
+  mock = undefined;
+  const exited = new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else child.once('exit', () => resolve());
+  });
+  signalGroup(child, signal);
+  const timer = new Promise<'timeout'>((resolve) =>
+    setTimeout(() => resolve('timeout'), 10_000).unref(),
+  );
+  if ((await Promise.race([exited, timer])) === 'timeout') {
+    signalGroup(child, 'SIGKILL');
+    await exited;
+  }
+}
+
+for (const [signal, code] of [
+  ['SIGINT', 130],
+  ['SIGTERM', 143],
+] as const)
+  process.once(signal, () => {
+    void stopMock('SIGKILL').finally(() => {
+      rmSync(tmp, { recursive: true, force: true });
+      process.exit(code);
+    });
+  });
+
 try {
   // 1. Pack the repository. The prepare script builds dist/.
   const packOutput = run(
     'npm',
-    ['pack', '--pack-destination', tmp, '--json'],
+    ['pack', '--pack-destination', tmp, '--json', '--foreground-scripts=false'],
     repo,
+    300_000,
   );
-  const packed = JSON.parse(packOutput.slice(packOutput.indexOf('['))) as {
-    filename: string;
-  }[];
-  const tarball = join(tmp, packed[0]!.filename);
+  // Take the last JSON array in stdout, in case a build script wrote before it.
+  const packed = JSON.parse(
+    packOutput.slice(
+      packOutput.lastIndexOf('\n[') + 1 || packOutput.indexOf('['),
+    ),
+  ) as { filename: string }[];
+  if (!packed[0])
+    throw new StepFailure(`npm pack listed no file:\n${packOutput}`);
+  const tarball = join(tmp, packed[0].filename);
   if (!existsSync(tarball)) throw new StepFailure(`No tarball at ${tarball}.`);
   step(`packed ${packed[0]!.filename}`);
 
@@ -211,6 +264,7 @@ try {
       '--no-fund',
     ],
     consumer,
+    300_000,
   );
   step('installed the tarball and its peers into an empty project');
 
@@ -236,9 +290,12 @@ try {
   step('the installed package holds the expected files and no tests');
 
   // 4. The help output of both executables.
-  run('npx', ['admin-sdk-mock', '--help'], consumer);
-  run('npx', ['mockctl', '--help'], consumer);
-  step('admin-sdk-mock --help and mockctl --help exit 0');
+  for (const name of ['admin-sdk-mock', 'mockctl']) {
+    const help = run('npx', [name, '--help'], consumer);
+    if (!help.includes(`Usage: ${name} <command> [options]`))
+      throw new StepFailure(`${name} --help lacks its usage line:\n${help}`);
+  }
+  step('admin-sdk-mock --help and mockctl --help exit 0 and print usage');
 
   // 5. Validate a configuration.
   const keyFile = join(consumer, 'keys', 'read.json');
@@ -274,8 +331,19 @@ try {
   let stderr = '';
   mock = spawn(
     'npx',
-    ['admin-sdk-mock', 'start', '--config', 'admin-sdk-mock.json'],
-    { cwd: consumer, stdio: ['ignore', 'pipe', 'pipe'], detached: true },
+    [
+      '--no-install',
+      'admin-sdk-mock',
+      'start',
+      '--config',
+      'admin-sdk-mock.json',
+    ],
+    {
+      cwd: consumer,
+      env: baseEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    },
   );
   mock.stderr!.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
   const ready = await waitForReady(mock, () => stderr);
@@ -289,14 +357,14 @@ try {
   ) as Record<string, string>;
   writeFileSync(join(consumer, 'cli-client.mjs'), cliClient);
   const domain = ready.domains[0]!;
-  const output = run('node', ['cli-client.mjs'], consumer, {
-    ...process.env,
+  const output = run('node', ['cli-client.mjs'], consumer, 60_000, {
+    ...baseEnv,
     ...environment,
     KEY_FILE: domain.serviceAccounts[0]!.out,
     SUBJECT: domain.adminEmail,
   });
   step(`the CLI client listed users through the mock (${output.trim()})`);
-  stopMock('SIGTERM');
+  await stopMock('SIGTERM');
 
   // 7. Run the API in process.
   writeFileSync(join(consumer, 'api-client.mjs'), apiClient);
@@ -322,13 +390,14 @@ try {
       'consumer.ts',
     ],
     consumer,
+    120_000,
   );
   step('consumer.ts type checks under strict nodenext');
 } catch (error) {
   failed = true;
   console.error(error instanceof Error ? error.message : error);
 } finally {
-  stopMock('SIGKILL');
+  await stopMock('SIGKILL');
   // 9. Remove the temporary directory.
   rmSync(tmp, { recursive: true, force: true });
 }
