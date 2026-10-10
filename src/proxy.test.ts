@@ -191,9 +191,25 @@ test('passthrough refuses loopback, link-local, and unspecified targets with 403
 });
 
 test('isLoopbackHost names loopback hosts only', () => {
-  for (const host of ['127.0.0.1', '127.0.0.2', '::1', 'localhost'])
+  for (const host of [
+    '127.0.0.1',
+    '127.0.0.2',
+    '127.1',
+    '::1',
+    '::ffff:127.0.0.1',
+    'localhost',
+    'LOCALHOST',
+  ])
     assert.equal(isLoopbackHost(host), true, host);
-  for (const host of ['0.0.0.0', '::', '192.168.1.5', 'example.com'])
+  // name.123 is no valid URL host, and fe80::zz is no IPv6 address. Neither is loopback.
+  for (const host of [
+    '0.0.0.0',
+    '::',
+    '192.168.1.5',
+    'example.com',
+    'name.123',
+    'fe80::zz',
+  ])
     assert.equal(isLoopbackHost(host), false, host);
 });
 
