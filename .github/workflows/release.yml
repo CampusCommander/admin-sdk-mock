@@ -2,7 +2,7 @@ name: release
 
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: read
@@ -60,4 +60,5 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > release-notes.md
+          test -s release-notes.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
           gh release create "$GITHUB_REF_NAME" campuscommander-admin-sdk-mock-*.tgz --title "$GITHUB_REF_NAME" --notes-file release-notes.md
