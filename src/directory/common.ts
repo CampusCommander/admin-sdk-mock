@@ -91,3 +91,80 @@ export function enumParam<T extends string>(
     throw invalidArgument(call, `Invalid value '${raw}' for ${name}.`);
   return found;
 }
+
+const invalidJson = () =>
+  new ApiError(
+    directoryError(400, 'invalid', 'Invalid JSON payload received.', {
+      extra: { status: 'INVALID_ARGUMENT' },
+    }),
+  );
+
+/** Parse a JSON object body. An empty body reads as an empty object. */
+export function jsonBody(call: Call): Record<string, unknown> {
+  const text = call.request.body.trim();
+  if (text === '') return {};
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw invalidJson();
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    throw invalidJson();
+  return value as Record<string, unknown>;
+}
+
+/** Read an optional string field. `null` reads as null. `max` counts characters. */
+export function stringField(
+  call: Call,
+  body: Record<string, unknown>,
+  name: string,
+  max?: number,
+): string | null | undefined {
+  if (!Object.hasOwn(body, name)) return undefined;
+  const value = body[name];
+  if (value === null) return null;
+  if (typeof value !== 'string')
+    throw invalidArgument(call, `Invalid Input: ${name}`);
+  if (max !== undefined && [...value].length > max)
+    throw invalidArgument(
+      call,
+      `Invalid Input: ${name} is longer than ${max} characters.`,
+    );
+  return value;
+}
+
+/** Read an optional boolean field. `null` reads as false. */
+export function booleanField(
+  call: Call,
+  body: Record<string, unknown>,
+  name: string,
+): boolean | undefined {
+  if (!Object.hasOwn(body, name)) return undefined;
+  const value = body[name];
+  if (value === null) return false;
+  if (typeof value !== 'boolean')
+    throw invalidArgument(call, `Invalid Input: ${name}`);
+  return value;
+}
+
+export const failedPrecondition = (message: string): ApiError =>
+  new ApiError(
+    directoryError(400, 'failedPrecondition', message, {
+      extra: { status: 'FAILED_PRECONDITION' },
+    }),
+  );
+
+export const duplicate = (): ApiError =>
+  new ApiError(directoryError(409, 'duplicate', 'Entity already exists.'));
+
+export const notFound = (what: string): ApiError =>
+  new ApiError(directoryError(404, 'notFound', `Resource Not Found: ${what}`));
+
+/** The search delay of the call's domain in scaled milliseconds. */
+export function searchDelayMs(call: Call): number {
+  return (
+    (domainOf(call).record.settings.writes.searchDelaySeconds * 1000) /
+    call.scale
+  );
+}

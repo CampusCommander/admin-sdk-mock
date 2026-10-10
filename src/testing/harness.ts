@@ -137,3 +137,36 @@ export function grantToken(
   });
   return token;
 }
+
+export type DirectoryClient = (
+  method: string,
+  path: string,
+  options?: {
+    query?: Record<string, string | number | boolean | undefined>;
+    body?: unknown;
+  },
+) => Promise<HarnessResponse>;
+
+/** Call admin.googleapis.com. Paths are relative to /admin/directory/v1. */
+export function directoryClient(
+  harness: Harness,
+  token: string,
+): DirectoryClient {
+  return (method, path, options = {}) =>
+    harness.request({
+      host: 'admin.googleapis.com',
+      method,
+      path: `/admin/directory/v1${path}`,
+      token,
+      query: options.query,
+      ...(options.body === undefined
+        ? {}
+        : {
+            body:
+              typeof options.body === 'string'
+                ? options.body
+                : JSON.stringify(options.body),
+            headers: { 'content-type': 'application/json' },
+          }),
+    });
+}

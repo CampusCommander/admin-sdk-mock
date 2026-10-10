@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_SETTINGS, mergeSettings, SettingsError } from './settings.ts';
+import {
+  DEFAULT_SETTINGS,
+  mergeSettings,
+  SettingsError,
+  withDefaults,
+} from './settings.ts';
 
 test('the defaults match the spec', () => {
   assert.equal(DEFAULT_SETTINGS.quota.perMinute, 2400);
@@ -54,4 +59,49 @@ test('invalid patches fail with a message', () => {
       SettingsError,
       JSON.stringify(patch),
     );
+});
+
+test('the write defaults match the milestone 2 spec', () => {
+  assert.deepEqual(DEFAULT_SETTINGS.writes, {
+    searchDelaySeconds: 300,
+    commandExpirySeconds: 432_000,
+    userCreatesPerSecond: 10,
+    orgUnitWritesPerSecond: 1,
+  });
+  assert.equal(DEFAULT_SETTINGS.latency.writeBaseMs, 250);
+  assert.equal(DEFAULT_SETTINGS.latency.perDeviceWriteMs, 10);
+});
+
+test('write settings validate their ranges', () => {
+  assert.equal(
+    mergeSettings(DEFAULT_SETTINGS, { writes: { searchDelaySeconds: 0 } })
+      .writes.searchDelaySeconds,
+    0,
+  );
+  assert.throws(
+    () =>
+      mergeSettings(DEFAULT_SETTINGS, { writes: { commandExpirySeconds: 0 } }),
+    /writes.commandExpirySeconds must be 1 or more/,
+  );
+  assert.throws(
+    () =>
+      mergeSettings(DEFAULT_SETTINGS, {
+        writes: { userCreatesPerSecond: 1.5 },
+      }),
+    /writes.userCreatesPerSecond must be a whole number of 1 or more/,
+  );
+  assert.throws(
+    () =>
+      mergeSettings(DEFAULT_SETTINGS, {
+        writes: { orgUnitWritesPerSecond: 0 },
+      }),
+    /writes.orgUnitWritesPerSecond must be a whole number of 1 or more/,
+  );
+});
+
+test('stored settings from milestone 1 read back with the write defaults', () => {
+  const stored = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  delete stored.writes;
+  delete stored.latency.writeBaseMs;
+  assert.deepEqual(withDefaults(stored), DEFAULT_SETTINGS);
 });

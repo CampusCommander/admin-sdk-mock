@@ -34,6 +34,27 @@ export function directoryRoute(
   };
 }
 
+/** A Directory API write route on admin.googleapis.com. */
+export function writeRoute(
+  id: string,
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  pattern: RegExp,
+  scopes: readonly string[],
+  handler: Route['handler'],
+): Route {
+  return {
+    id,
+    api: 'directory',
+    hosts: ADMIN,
+    methods: [method],
+    pattern,
+    scopes,
+    admin: true,
+    write: true,
+    handler,
+  };
+}
+
 /** Every Google route. Later tasks add their routes here. */
 export function buildRoutes(mock: Mock): Route[] {
   return [

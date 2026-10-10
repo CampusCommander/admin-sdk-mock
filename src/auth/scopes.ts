@@ -34,3 +34,18 @@ export const READ_SCOPES: readonly string[] = [
   `${P}admin.directory.user.readonly`,
   `${P}chrome.management.telemetry.readonly`,
 ];
+
+/** The read-write scope of each resource that milestone 2 writes. */
+export const WRITE_SCOPES = {
+  device: [`${P}admin.directory.device.chromeos`],
+  user: [`${P}admin.directory.user`],
+  orgunit: [`${P}admin.directory.orgunit`],
+} as const;
+
+/** The milestone 1 read scopes plus the milestone 2 write scopes. */
+export const READ_WRITE_SCOPES: readonly string[] = [
+  ...READ_SCOPES,
+  ...WRITE_SCOPES.device,
+  ...WRITE_SCOPES.user,
+  ...WRITE_SCOPES.orgunit,
+];

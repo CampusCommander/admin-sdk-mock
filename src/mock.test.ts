@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fakeClock } from './clock.ts';
 import { ApiError, directoryError } from './http/errors.ts';
 import type { Route } from './http/types.ts';
 import { openPipeline } from './pipeline.ts';
@@ -153,4 +154,34 @@ test('a reset fault closes the connection without a response', async (t) => {
     harness.request({ host: 'oauth2.googleapis.com', path: '/echo/x' }),
     /socket hang up|ECONNRESET/,
   );
+});
+
+test('each call carries the dispatch time and the time scale', async (t) => {
+  const clock = fakeClock();
+  const harness = await startHarness({
+    clock,
+    timing: { scale: 60, delays: false },
+    routes: [
+      {
+        id: 'test.time',
+        api: 'oauth',
+        hosts: ['oauth2.googleapis.com'],
+        methods: ['GET'],
+        pattern: /^\/time$/,
+        scopes: [],
+        admin: false,
+        handler: (call) => ({
+          status: 200,
+          body: { now: call.now, scale: call.scale },
+        }),
+      },
+    ],
+  });
+  t.after(() => harness.close());
+  await clock.advance(1234);
+  const response = await harness.request({
+    host: 'oauth2.googleapis.com',
+    path: '/time',
+  });
+  assert.deepEqual(response.json(), { now: clock.now(), scale: 60 });
 });

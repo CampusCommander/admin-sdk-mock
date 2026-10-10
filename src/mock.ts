@@ -176,6 +176,8 @@ export function createMock(options: MockOptions): Mock {
         domain,
         batchPart,
         overrides: mock.overrides,
+        now: mock.clock.now(),
+        scale: mock.timing.scale,
         dispatchPart: async (part) => {
           const answer = await mock.dispatch(part, true);
           return answer === 'reset'

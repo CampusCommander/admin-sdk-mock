@@ -71,6 +71,10 @@ export interface Call {
   domain: OpenDomain | null;
   batchPart: boolean;
   overrides: Overrides;
+  /** The dispatch time in epoch milliseconds. Writes stamp it on before-images. */
+  now: number;
+  /** The time scale at dispatch. Durations divide by it. */
+  scale: number;
   /** Run one batch part through the full pipeline. */
   dispatchPart(request: ApiRequest): Promise<ApiResponse>;
 }
@@ -85,6 +89,8 @@ export interface Route {
   scopes: readonly string[];
   /** The delegated subject must be a super administrator. */
   admin: boolean;
+  /** Writes use the write latency costs. */
+  write?: boolean;
   handler(call: Call): ApiResponse | Promise<ApiResponse>;
 }
 

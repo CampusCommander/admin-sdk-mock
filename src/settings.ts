@@ -20,6 +20,15 @@ export interface LatencySettings {
   batchParallelism: number;
   batchPartMs: number;
   capMs: number;
+  writeBaseMs: number;
+  perDeviceWriteMs: number;
+}
+
+export interface WriteSettings {
+  searchDelaySeconds: number;
+  commandExpirySeconds: number;
+  userCreatesPerSecond: number;
+  orgUnitWritesPerSecond: number;
 }
 
 export interface DomainSettings {
@@ -28,6 +37,7 @@ export interface DomainSettings {
   concurrency: { perMethod: number; perCustomer: number };
   latency: LatencySettings;
   telemetry: { recentReports: number };
+  writes: WriteSettings;
 }
 
 const QUOTA: QuotaSettings = {
@@ -56,8 +66,16 @@ export const DEFAULT_SETTINGS: DomainSettings = Object.freeze({
     batchParallelism: 10,
     batchPartMs: 40,
     capMs: 2000,
+    writeBaseMs: 250,
+    perDeviceWriteMs: 10,
   },
   telemetry: { recentReports: 1 },
+  writes: {
+    searchDelaySeconds: 300,
+    commandExpirySeconds: 432_000,
+    userCreatesPerSecond: 10,
+    orgUnitWritesPerSecond: 1,
+  },
 }) as DomainSettings;
 
 /** Fill any key that a stored row lacks from the defaults. */
@@ -159,5 +177,15 @@ export function mergeSettings(
       merged.telemetry.recentReports >= 1,
     'telemetry.recentReports must be a whole number of 1 or more.',
   );
+  const writes = merged.writes;
+  check(
+    writes.commandExpirySeconds >= 1,
+    'writes.commandExpirySeconds must be 1 or more.',
+  );
+  for (const key of ['userCreatesPerSecond', 'orgUnitWritesPerSecond'] as const)
+    check(
+      Number.isInteger(writes[key]) && writes[key] >= 1,
+      `writes.${key} must be a whole number of 1 or more.`,
+    );
   return merged;
 }
