@@ -112,7 +112,11 @@ export async function startMock(
   const dataDir = callerDir ?? mkdtempSync(join(tmpdir(), 'admin-sdk-mock-'));
   const givenListen = (given.listen ?? {}) as Record<string, unknown>;
   const merge = (defaults: object, over: unknown) =>
-    over === null ? null : { ...defaults, ...(over as object | undefined) };
+    over === undefined
+      ? { ...defaults }
+      : typeof over === 'object' && over !== null && !Array.isArray(over)
+        ? { ...defaults, ...over }
+        : over;
   const file = {
     ...given,
     dataDir,

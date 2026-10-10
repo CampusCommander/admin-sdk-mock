@@ -214,7 +214,14 @@ export async function startServer(
     addDomain(domain) {
       const at = domains.findIndex((d) => d.customerId === domain.customerId);
       if (at === -1) domains.push(structuredClone(domain));
-      else domains[at] = structuredClone(domain);
+      else {
+        const previous = domains[at];
+        domains[at] = structuredClone(
+          domain.serviceAccounts.length === 0
+            ? { ...domain, serviceAccounts: previous.serviceAccounts }
+            : domain,
+        );
+      }
     },
     controlUrl: `http://${urlHost(config.listen.control.host)}:${controlPort}`,
     googleUrl: `https://${urlHost(config.listen.google.host)}:${googlePort}`,

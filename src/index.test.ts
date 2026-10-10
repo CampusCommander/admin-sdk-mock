@@ -166,7 +166,7 @@ test('listener options merge per listener', async (t) => {
     config: { listen: { google: { host: '127.0.0.1' } } },
   });
   t.after(() => google.close());
-  assert.ok(Number(new URL(google.googleUrl).port) > 0);
+  assert.notEqual(new URL(google.googleUrl).port, '8443');
   const proxy = await startMock({
     config: { listen: { proxy: { port: 0 } } },
   });
@@ -184,9 +184,34 @@ test('a caller-supplied data directory survives close', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'api-test-'));
   try {
     const mock = await startMock({ config: { dataDir: dir } });
+    assert.ok(existsSync(join(dir, 'ca', 'ca.pem')));
+    const info = (await mock.control('GET', '/info')) as { dataDir: string };
+    assert.equal(info.dataDir, dir);
     await mock.close();
     assert.ok(existsSync(dir));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('listen.proxy false is rejected as a configuration error', async () => {
+  await assert.rejects(
+    startMock({ config: { listen: { proxy: false } } }),
+    (error: Error) => error.name === 'ConfigError',
+  );
+});
+
+test('a repeat createDomain keeps the configured service account', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'api-keys-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const out = join(dir, 'key.json');
+  const spec = { tier: 'empty', seed: 'api-keep' };
+  const mock = await startMock({
+    config: { domains: [{ spec, serviceAccounts: [{ out, scopes: 'read' }] }] },
+  });
+  t.after(() => mock.close());
+  assert.equal(mock.env().GOOGLE_APPLICATION_CREDENTIALS, out);
+  await mock.createDomain(spec);
+  assert.equal(mock.env().GOOGLE_APPLICATION_CREDENTIALS, out);
+  assert.equal(mock.domains.length, 1);
 });
