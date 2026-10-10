@@ -134,39 +134,69 @@ test('routePath shows named groups as {name} and keeps the readable form of othe
   assert.equal(routePath(/^\/a\.b$/), '/a.b');
 });
 
-test('renderApiCoverage emits one row per route, sorted by route ID', () => {
+test('routePath throws when regex syntax would remain in the path', () => {
+  for (const pattern of [
+    /^\/a\/[a-z]+$/,
+    /^\/a(b)$/,
+    /^\/a\d$/,
+    /^\/a(?<id>(x))$/,
+    /^\/a(?:b(?:c)?)$/,
+    /^\/a.*$/,
+  ])
+    assert.throws(
+      () => routePath(pattern),
+      /cannot render the route pattern/,
+      pattern.source,
+    );
+});
+
+test('renderApiCoverage emits one row per route, sorted by route ID, with its scopes', () => {
   const route = (
     id: string,
     methods: string[],
     hosts: string[],
     pattern: RegExp,
+    scopes: string[],
+    admin: boolean,
   ) =>
-    ({ id, methods, hosts, pattern }) as Pick<
+    ({ id, methods, hosts, pattern, scopes, admin }) as Pick<
       Route,
-      'id' | 'methods' | 'hosts' | 'pattern'
+      'id' | 'methods' | 'hosts' | 'pattern' | 'scopes' | 'admin'
     >;
+  const auth = 'https://www.googleapis.com/auth/';
   assert.equal(
     renderApiCoverage([
-      route('oauth.token', ['POST'], ['oauth2.googleapis.com'], /^\/token$/),
+      route(
+        'oauth.token',
+        ['POST'],
+        ['oauth2.googleapis.com'],
+        /^\/token$/,
+        [],
+        false,
+      ),
+      route(
+        'directory.members.list',
+        ['GET'],
+        ['admin.googleapis.com'],
+        /^\/members$/,
+        [`${auth}admin.directory.group`, `${auth}admin.directory.group.member`],
+        true,
+      ),
       route(
         'batch.directory',
         ['POST'],
         ['www.googleapis.com', 'admin.googleapis.com'],
         /^\/batch$/,
-      ),
-      route(
-        'oauth.tokeninfo',
-        ['GET', 'POST'],
-        ['oauth2.googleapis.com'],
-        /^\/tokeninfo$/,
+        ['https://example.test/other-scope'],
+        false,
       ),
     ]),
     [
-      '| Route | Methods | Hosts | Path |',
-      '| --- | --- | --- | --- |',
-      '| `batch.directory` | POST | `www.googleapis.com`, `admin.googleapis.com` | `/batch` |',
-      '| `oauth.token` | POST | `oauth2.googleapis.com` | `/token` |',
-      '| `oauth.tokeninfo` | GET, POST | `oauth2.googleapis.com` | `/tokeninfo` |',
+      '| Route | Methods | Hosts | Path | Scopes | Super admin |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| `batch.directory` | POST | `www.googleapis.com`, `admin.googleapis.com` | `/batch` | `https://example.test/other-scope` | no |',
+      '| `directory.members.list` | GET | `admin.googleapis.com` | `/members` | `admin.directory.group`, `admin.directory.group.member` | yes |',
+      '| `oauth.token` | POST | `oauth2.googleapis.com` | `/token` | none | no |',
     ].join('\n'),
   );
 });

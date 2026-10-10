@@ -21,12 +21,12 @@
       "properties": {
         "google": {
           "$ref": "#/$defs/address",
-          "description": "The TLS listener for the Google hostnames.",
+          "description": "The TLS listener for the Google hostnames. An omitted field keeps its default: host 127.0.0.1, port 8443.",
           "default": { "host": "127.0.0.1", "port": 8443 }
         },
         "control": {
           "$ref": "#/$defs/address",
-          "description": "The plain HTTP control listener.",
+          "description": "The plain HTTP control listener. An omitted field keeps its default: host 127.0.0.1, port 8080.",
           "default": { "host": "127.0.0.1", "port": 8080 }
         },
         "proxy": {
@@ -56,7 +56,7 @@
               }
             }
           ],
-          "description": "The CONNECT proxy. null turns it off.",
+          "description": "The CONNECT proxy. null turns it off. Once the proxy is on, an omitted field keeps its default: host 127.0.0.1, port 3128, passthrough false.",
           "default": null
         }
       }
@@ -197,7 +197,7 @@
               },
               "projectId": {
                 "type": "string",
-                "description": "The project ID: 6 to 30 lower-case letters, digits, or hyphens, starting with a letter. The default is random."
+                "description": "The project ID: 6 to 30 lower-case letters, digits, or hyphens, starting with a letter and ending with a letter or digit. The default is random."
               }
             }
           }

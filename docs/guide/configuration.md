@@ -29,7 +29,9 @@ The [configuration reference](../reference/configuration.md) lists every key. Th
 The `$schema` key gives editors completion and checks. The mock ignores it.
 `npx admin-sdk-mock config validate admin-sdk-mock.json` checks a file and its fixtures files without starting anything.
 Validation reports every error at once, each with its JSON path, for example `domains[1].spec.tier must be one of: small, medium, large, xlarge, empty.`
-Unknown keys are errors. An invalid file exits with code 2 before any listener starts.
+Unknown keys are errors. `start` and `config validate` exit with code 2 for an invalid file, and `start` exits before any listener starts.
+`env` exits with code 2 too when it reads the file, that is, when no control URL is given.
+`doctor` prints each error as a `FAIL` line and exits with code 1.
 
 ## Lookup order
 
@@ -40,7 +42,8 @@ Unknown keys are errors. An invalid file exits with code 2 before any listener s
 3. `./admin-sdk-mock.json` in the working directory, when it exists.
 4. The `MOCK_CONFIG_DEFAULT` variable, when that file exists. The image sets it to `/config/admin-sdk-mock.json`.
 
-A file that `--config` or `MOCK_CONFIG` names must exist. A missing named file exits with code 2.
+A file that `--config` or `MOCK_CONFIG` names must exist. A missing named file makes `start` exit with code 2, and `env` too when it reads the file.
+`doctor` prints a `FAIL` line for the missing file and exits with code 1.
 Without any file, the defaults apply, and the mock starts with no domains.
 `config validate <file>` reads only the file it names, and it ignores every `MOCK_*` variable.
 
@@ -436,7 +439,10 @@ An optional `type` (`USER`, `GROUP`, or `CUSTOMER`) must match the kind of entit
 
 - Every address sits on one of the domain's own domains and collides with no address already in the domain.
 - An omitted ID derives from the seed and the entry, so one fixtures file always yields the same IDs.
-- An omitted device field takes the generator's value for that serial number. Telemetry follows the device, as it does for seeded devices.
+- An omitted device field takes a fixed default: the model `Lenovo 100e Chromebook Gen 4`, the status `ACTIVE`, and the OU `/`.
+  The last sync falls one day before the seed time, and the device has no assigned user, asset ID, location, or notes.
+- The seed and the serial number decide every other device field, such as the device ID, the MAC addresses, the versions, and the enrollment time.
+  Telemetry follows the device, as it does for seeded devices.
 - A member names a fixture or seeded user or group, the customer ID, or an outside address. A cycle is an error.
 - Fixture groups and memberships carry old creation times, so no ready or nesting delay applies to them.
 - The fixtures apply in their own transaction right after the seed. A failure removes the whole domain.

@@ -14,7 +14,9 @@ The image tag `1.0.0` arrives with that tag. Until then, use the image tag `main
 | Docker         | Docker, and a `ghcr.io` login with a token that has `read:packages`. Node is not needed.                        |
 | GitHub Actions | A runner with Docker, and a job with the `packages: read` permission. GitHub-hosted Ubuntu runners have Docker. |
 
-Linux, macOS, and Windows all work. Node and Docker cover every platform.
+The guides use POSIX shell commands, for a shell such as bash or zsh on Linux and macOS, or a shell inside WSL on Windows.
+`eval "$(npx admin-sdk-mock env)"` needs such a shell. On Windows outside WSL, run the commands inside WSL instead.
+Or print `npx admin-sdk-mock env --format json` and set each variable in your shell by hand.
 After an npm install, `npx admin-sdk-mock doctor` checks Node, the configuration, the data directory, the CA file, and the ports.
 
 ## Private repository access

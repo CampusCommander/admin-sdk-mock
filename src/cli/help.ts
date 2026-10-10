@@ -43,7 +43,8 @@ Start the listeners, ensure the configured domains, and run until SIGTERM or SIG
 The mock logs one JSON line per event to standard output.
 
 Options:
-  --config <file>          The configuration file. Default: MOCK_CONFIG, then ./admin-sdk-mock.json.
+  --config <file>          The configuration file. Default: MOCK_CONFIG, then ./admin-sdk-mock.json,
+                           then MOCK_CONFIG_DEFAULT.
   --data-dir <dir>         The data directory. Default: ./data.
   --google-host <host>     The Google listener host. Default: 127.0.0.1.
   --google-port <port>     The Google listener port. Default: 8443. 0 picks a free port.
@@ -91,7 +92,8 @@ Check the Node.js version, the configuration, the data directory, the CA file, a
 Print a PASS or FAIL line for each check. Exit with code 1 when a check fails.
 
 Options:
-  --config <file>   The configuration file. Default: MOCK_CONFIG, then ./admin-sdk-mock.json.
+  --config <file>   The configuration file. Default: MOCK_CONFIG, then ./admin-sdk-mock.json,
+                    then MOCK_CONFIG_DEFAULT.
 ${HELP_FLAG}`,
 
   config: `Usage: admin-sdk-mock config validate <file>

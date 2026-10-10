@@ -255,7 +255,8 @@ The [CLI reference](../reference/cli.md) lists every command and flag.
 
 ## The control API
 
-The control listener serves plain HTTP on `127.0.0.1:8080` by default. Every request and response body is JSON.
+The control listener serves plain HTTP on `127.0.0.1:8080` by default.
+Every request and response body is JSON, except `GET /ca.pem`, which returns the CA certificate as PEM.
 
 | Request                                      | Effect                                                                                                |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |

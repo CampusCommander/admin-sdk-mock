@@ -76,7 +76,7 @@ Fix: delegate to the `adminEmail` of the domain, which the `ready` event and `GE
 A fixture user becomes an administrator with `"isAdmin": true`. Clear faults with `admin-sdk-mock fault clear <customerId>`.
 
 A `403` with "Request had insufficient authentication scopes." has a different cause: the token lacks a scope that the method accepts.
-The [API coverage reference](../reference/api-coverage.md) and the [configuration guide](configuration.md#service-accounts) list the scopes.
+The [API coverage reference](../reference/api-coverage.md) lists the scopes that each method accepts. The [configuration guide](configuration.md#service-accounts) lists the `read` and `read-write` scope sets.
 
 ## A list misses a recent write
 

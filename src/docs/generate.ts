@@ -110,36 +110,64 @@ export function renderCliReference(
     .join('\n\n');
 }
 
+/** Marks for an optional part while routePath checks for leftover regex syntax. */
+const OPEN = '\u0000';
+const CLOSE = '\u0001';
+
 /**
  * The path pattern of a route: anchors removed, named groups shown as `{name}`, an
  * alternation shown as its first form, an optional group in brackets, and `\/` and `\.`
- * unescaped.
+ * unescaped. It throws when any other regex syntax would remain in the path.
  */
 export function routePath(pattern: RegExp): string {
-  return pattern.source
+  const path = pattern.source
     .replace(/^\^|\$$/g, '')
     .replace(/\(\?<(\w+)>[^()]*\)/g, '{$1}')
     .replace(
       /\(\?:([^()|]*)(?:\|[^()]*)?\)(\?)?/g,
       (_group, first: string, optional: string | undefined) =>
-        optional ? `[${first}]` : first,
-    )
-    .replace(/\\([/.])/g, '$1');
+        optional ? `${OPEN}${first}${CLOSE}` : first,
+    );
+  if (/[()[\]\\?*+|]/.test(path.replace(/\\[/.]/g, '')))
+    throw new Error(
+      `The docs cannot render the route pattern ${pattern.source}.`,
+    );
+  return path
+    .replace(/\\([/.])/g, '$1')
+    .replaceAll(OPEN, '[')
+    .replaceAll(CLOSE, ']');
 }
 
-/** A table of every route: its ID, HTTP methods, hosts, and path, sorted by route ID. */
+/** The scopes column: each scope without the Google auth prefix, or `none`. */
+const scopesOf = (scopes: readonly string[]): string =>
+  scopes.length === 0
+    ? 'none'
+    : scopes
+        .map(
+          (scope) =>
+            `\`${scope.replace(/^https:\/\/www\.googleapis\.com\/auth\//, '')}\``,
+        )
+        .join(', ');
+
+/**
+ * A table of every route: its ID, HTTP methods, hosts, path, accepted scopes, and whether
+ * the delegated subject must be a super administrator, sorted by route ID.
+ */
 export function renderApiCoverage(
-  routes: readonly Pick<Route, 'id' | 'methods' | 'hosts' | 'pattern'>[],
+  routes: readonly Pick<
+    Route,
+    'id' | 'methods' | 'hosts' | 'pattern' | 'scopes' | 'admin'
+  >[],
 ): string {
   const rows = [...routes]
     .sort((a, b) => a.id.localeCompare(b.id, 'en'))
     .map(
       (route) =>
-        `| \`${route.id}\` | ${route.methods.join(', ')} | ${route.hosts.map((host) => `\`${host}\``).join(', ')} | \`${routePath(route.pattern)}\` |`,
+        `| \`${route.id}\` | ${route.methods.join(', ')} | ${route.hosts.map((host) => `\`${host}\``).join(', ')} | \`${routePath(route.pattern)}\` | ${scopesOf(route.scopes)} | ${route.admin ? 'yes' : 'no'} |`,
     );
   return [
-    '| Route | Methods | Hosts | Path |',
-    '| --- | --- | --- | --- |',
+    '| Route | Methods | Hosts | Path | Scopes | Super admin |',
+    '| --- | --- | --- | --- | --- | --- |',
     ...rows,
   ].join('\n');
 }

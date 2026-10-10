@@ -8,6 +8,8 @@ GitHub Actions has a composite action. Other systems run the image with `docker 
 The action starts the image on the runner, waits until every domain is ready, and exports the client environment to every later step.
 
 ```yaml
+on: [push, pull_request]
+
 permissions:
   contents: read
   packages: read
@@ -31,6 +33,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.mock.outputs.workdir }}/out/credentials/ci.json
 ```
 
+Until v1.0.0 is tagged, use `@main`.
 [examples/github-actions](../../examples/github-actions) holds this workflow and its configuration.
 
 ### Access
@@ -101,7 +104,7 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
   -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
   ghcr.io/campuscommander/admin-sdk-mock:1.0.0
 for _ in $(seq 1 600); do [ -f "$workdir/out/ready.json" ] && break; sleep 1; done
-test -f "$workdir/out/ready.json" || { docker logs admin-sdk-mock; exit 1; }
+test -f "$workdir/out/ready.json" || { echo "The mock did not become ready in 600 seconds."; docker logs admin-sdk-mock; exit 1; }
 export HTTPS_PROXY=http://127.0.0.1:13128 https_proxy=http://127.0.0.1:13128
 export NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1
 export NODE_EXTRA_CA_CERTS="$workdir/out/ca.pem"
@@ -110,6 +113,7 @@ export HTTPLIB2_CA_CERTS="$workdir/out/ca-bundle.pem" CURL_CA_BUNDLE="$workdir/o
 export ADMIN_SDK_MOCK_CONTROL=http://127.0.0.1:18080
 ```
 
+Until v1.0.0 is tagged, use the image tag `main`.
 Log in to `ghcr.io` first, as [installation](installation.md#the-image) shows.
 When Docker runs on another host, such as a docker-in-docker service, replace `127.0.0.1` in the URLs with that host.
 The ready file holds the `ready` event. Its `domains[].customerId` and `domains[].adminEmail` name each domain.
@@ -121,11 +125,13 @@ A runner with Node 24.11 or later runs the package directly. The repository's `a
 ```sh
 npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0
 npx admin-sdk-mock start --ready-file .admin-sdk-mock/ready.json > mock.log &
-until [ -f .admin-sdk-mock/ready.json ]; do sleep 1; done
+for _ in $(seq 1 600); do [ -f .admin-sdk-mock/ready.json ] && break; sleep 1; done
+test -f .admin-sdk-mock/ready.json || { echo "The mock did not become ready in 600 seconds."; cat mock.log; exit 1; }
 eval "$(npx admin-sdk-mock env)"
 npm test
 ```
 
+Until v1.0.0 is tagged, use `#main`.
 `start` deletes an old ready file before it starts, so the wait never sees a stale one.
 
 ## Caching

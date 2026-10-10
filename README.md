@@ -53,7 +53,8 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
   -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128 \
   -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
   ghcr.io/campuscommander/admin-sdk-mock:1.0.0
-until [ -f mock/out/ready.json ]; do sleep 1; done
+(for _ in $(seq 1 600); do [ -f mock/out/ready.json ] && exit 0; sleep 1; done
+  echo "The mock did not become ready in 600 seconds."; docker logs admin-sdk-mock; exit 1)
 ```
 
 Then point the client environment at the published proxy and the exported CA files:
@@ -75,23 +76,29 @@ The action starts the image on the runner and exports the client environment to 
 The image is private, so log in to `ghcr.io` first. The job needs the `packages: read` permission.
 
 ```yaml
+on: [push, pull_request]
+
 permissions:
   contents: read
   packages: read
 
-steps:
-  - uses: actions/checkout@v5
-  - name: Log in to GHCR
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-  - id: mock
-    uses: CampusCommander/admin-sdk-mock@v1.0.0
-    with:
-      config: admin-sdk-mock.json
-  - run: npm test
-    env:
-      GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.mock.outputs.workdir }}/out/credentials/ci.json
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - id: mock
+        uses: CampusCommander/admin-sdk-mock@v1.0.0
+        with:
+          config: admin-sdk-mock.json
+      - run: npm ci
+      - run: npm test
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.mock.outputs.workdir }}/out/credentials/ci.json
 ```
 
 Write each key file path in that configuration under `/out`, for example `/out/credentials/ci.json`.
@@ -99,21 +106,25 @@ The [CI guide](docs/guide/ci.md) lists every input and output, and [examples/git
 
 ## Documentation
 
-| Page                                                       | Content                                                                          |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| [Installation](docs/guide/installation.md)                 | Prerequisites, the three install paths, private access, upgrades, and removal.   |
-| [Configuration](docs/guide/configuration.md)               | The file, precedence, domains, settings, service accounts, faults, and fixtures. |
-| [Clients](docs/guide/clients.md)                           | How Node, Python, curl, Java, and Go clients reach the mock.                     |
-| [Testing](docs/guide/testing.md)                           | `startMock()`, fixtures, time, flush, faults, tokens, and the control API.       |
-| [CI](docs/guide/ci.md)                                     | The GitHub Action and other CI systems.                                          |
-| [Behavior](docs/guide/behavior.md)                         | Quota, latency, search lag, group delays, and write limits.                      |
-| [Troubleshooting](docs/guide/troubleshooting.md)           | Symptom, cause, and fix for common failures.                                     |
-| [Configuration reference](docs/reference/configuration.md) | Every configuration key, generated from the JSON schema.                         |
-| [CLI reference](docs/reference/cli.md)                     | Every command and flag, generated from the CLI help.                             |
-| [API coverage](docs/reference/api-coverage.md)             | Every Google method, its parameters, and its rulings.                            |
-| [Trust](docs/trust.md)                                     | What each test layer proves, and which tests prove each requirement.             |
-| [Examples](examples/README.md)                             | Runnable Node, Python, curl, fixtures, and GitHub Actions projects.              |
-| [Calibration record](docs/calibration.md)                  | Live parity evidence, measurements, and every ruling.                            |
+| Page                                                                     | Content                                                                             |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| [Installation](docs/guide/installation.md)                               | Prerequisites, the three install paths, private access, upgrades, and removal.      |
+| [Configuration](docs/guide/configuration.md)                             | The file, precedence, domains, settings, service accounts, faults, and fixtures.    |
+| [Clients](docs/guide/clients.md)                                         | How Node, Python, curl, Java, and Go clients reach the mock.                        |
+| [Testing](docs/guide/testing.md)                                         | `startMock()`, fixtures, time, flush, faults, tokens, and the control API.          |
+| [CI](docs/guide/ci.md)                                                   | The GitHub Action and other CI systems.                                             |
+| [Behavior](docs/guide/behavior.md)                                       | Quota, latency, search lag, group delays, and write limits.                         |
+| [Troubleshooting](docs/guide/troubleshooting.md)                         | Symptom, cause, and fix for common failures.                                        |
+| [Configuration reference](docs/reference/configuration.md)               | Every configuration key, generated from the JSON schema.                            |
+| [CLI reference](docs/reference/cli.md)                                   | Every command and flag, generated from the CLI help.                                |
+| [API coverage](docs/reference/api-coverage.md)                           | Every Google method, its parameters, and its rulings.                               |
+| [Trust](docs/trust.md)                                                   | What each test layer proves, and which tests prove each requirement.                |
+| [Examples](examples/README.md)                                           | Runnable Node, Python, curl, fixtures, and GitHub Actions projects.                 |
+| [Calibration record](docs/calibration.md)                                | Live parity evidence, measurements, and every ruling.                               |
+| [Mock design](docs/specs/2026-10-09-admin-sdk-mock-design.md)            | The milestone 1 design: architecture, seed data, reads, quota, and latency.         |
+| [Milestone 2 design](docs/specs/2026-10-09-milestone-2-writes-design.md) | The writes design.                                                                  |
+| [Milestone 3 design](docs/specs/2026-10-10-milestone-3-groups-design.md) | The groups design.                                                                  |
+| [Productization design](docs/specs/2026-10-10-productization-design.md)  | The version 1.0 design: configuration, proxy, CLI, API, fixtures, and distribution. |
 
 [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [LICENSE.md](LICENSE.md) hold the release notes, the development workflow, the security model, and the license.
 
@@ -131,6 +142,11 @@ The [CI guide](docs/guide/ci.md) lists every input and output, and [examples/git
 Milestones 1, 2, and 3 are built: Directory and Chrome Management reads, writes, and groups.
 Version 1.0.0 adds the configuration file, the proxy, the CLI, the programmatic API, fixtures, the image configuration, the action, the examples, and these documents. It awaits owner review.
 The Campus Commander acceptance run awaits the owner. [docs/trust.md](docs/trust.md) records every acceptance item and its evidence.
+
+- Live parity against the Easton fixture: 19 of 19 probes match in status. Six have shape notes.
+- Client library compatibility: 10 of 10 read tests pass through a CONNECT proxy.
+- Write compatibility: 15 of 15 client tests pass through a CONNECT proxy, writes included.
+- Scale: the `xlarge` tier seeds with groups in 26,072 ms. The [calibration record](docs/calibration.md#scale) holds every measurement.
 
 ## Campus Commander
 
