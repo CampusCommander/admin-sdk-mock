@@ -93,17 +93,20 @@ function isLocalTarget(host: string): boolean {
 /**
  * Split `host:port`, including a bracketed IPv6 host, and drop one trailing dot from the
  * host, so `admin.googleapis.com.` matches as a Google hostname. Returns null for a
- * malformed target.
+ * malformed target, including a name with an empty label such as `localhost..`, which
+ * would otherwise slip past the Google and local-target checks.
  */
 function parseTarget(target: string): { host: string; port: number } | null {
   const match = /^(\[[^\]]+\]|[^:]+):(\d{1,5})$/.exec(target);
   if (!match) return null;
   const port = Number(match[2]);
   if (port < 1 || port > 65_535) return null;
+  const bracketed = match[1].startsWith('[');
   const host = match[1]
     .replace(/^\[|\]$/g, '')
     .replace(/\.$/, '')
     .toLowerCase();
+  if (!bracketed && host.split('.').includes('')) return null;
   return { host, port };
 }
 

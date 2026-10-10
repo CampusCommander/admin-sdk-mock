@@ -297,6 +297,32 @@ test('a Google hostname with a trailing dot tunnels to the mock, even with passt
   assert.deepEqual(proxy.counts(), { accepted: 1, refused: 0, tunneled: 0 });
 });
 
+test('a host with an empty label is refused, even with passthrough', async (t) => {
+  const google = await echoServer('google');
+  const local = await echoServer('local');
+  const proxy = await startProxy({
+    host: '127.0.0.1',
+    port: 0,
+    target: { host: '127.0.0.1', port: google.port },
+    passthrough: true,
+  });
+  t.after(async () => {
+    await proxy.close();
+    google.close();
+    local.close();
+  });
+  for (const target of [
+    'admin.googleapis.com..:443',
+    `localhost..:${local.port}`,
+    `.localhost:${local.port}`,
+    `example..com:${local.port}`,
+  ]) {
+    const result = await connect(proxy.port, target);
+    assert.equal(result.status, 'HTTP/1.1 403 Forbidden', target);
+  }
+  assert.deepEqual(proxy.counts(), { accepted: 0, refused: 4, tunneled: 0 });
+});
+
 test('close() returns the same promise each time', async () => {
   const proxy = await startProxy({
     host: '127.0.0.1',
