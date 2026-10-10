@@ -139,6 +139,55 @@ export function listedRelation(
     : table;
 }
 
+/**
+ * Build one list query over a lagged table. While before-images wait, it is a
+ * compound SELECT: live rows without a before-image, then the earliest
+ * before-image of each changed row, merged by the compound ORDER BY. Otherwise
+ * it reads the live table.
+ */
+export function listedSelect(
+  db: DatabaseSync,
+  table: LaggedTable,
+  relation: string,
+  options: {
+    /** Extra result columns, such as `ord AS sort_key`. */
+    extra: string;
+    /** WHERE conditions joined with AND. May be empty. */
+    where: readonly string[];
+    params: readonly (string | number)[];
+    /** ORDER BY and LIMIT, written against result column names only. */
+    tail: string;
+  },
+): { sql: string; params: (string | number)[] } {
+  const { extra, where, params, tail } = options;
+  if (relation === table) {
+    const clause = where.length > 0 ? `WHERE ${where.join(' AND ')} ` : '';
+    return {
+      sql: `SELECT *, ${extra} FROM ${table} ${clause}${tail}`,
+      params: [...params],
+    };
+  }
+  const key = LAGGED[table];
+  const prior = `${table}_prior`;
+  const list = columnsOf(db, table).join(', ');
+  const conditions = (...more: string[]) => [...where, ...more].join(' AND ');
+  const live =
+    `SELECT ${list}, ${extra} FROM ${table} live WHERE ` +
+    conditions(
+      `NOT EXISTS (SELECT 1 FROM ${prior} p WHERE p.${key} = live.${key})`,
+    );
+  const earliest =
+    `SELECT ${list}, ${extra} FROM ${prior} p WHERE ` +
+    conditions(
+      'p.absent = 0',
+      `p.seq = (SELECT MIN(q.seq) FROM ${prior} q WHERE q.${key} = p.${key})`,
+    );
+  return {
+    sql: `${live} UNION ALL ${earliest} ${tail}`,
+    params: [...params, ...params],
+  };
+}
+
 /** Delete every before-image. Returns the number deleted. */
 export function flushLag(db: DatabaseSync): number {
   let total = 0;

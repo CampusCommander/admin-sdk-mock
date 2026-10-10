@@ -7,7 +7,8 @@ import {
   encodePageToken,
   fingerprint,
 } from '../store/page-token.ts';
-import { emptyFilter, subtree, whereClause } from '../store/sql.ts';
+import { listedSelect } from '../store/lag.ts';
+import { emptyFilter, subtree } from '../store/sql.ts';
 import { row, rows } from '../store/sqlite.ts';
 import {
   boolParam,
@@ -175,12 +176,14 @@ export function listDevices(call: Call): ApiResponse {
     filter.params.push(cursor[0], cursor[1]);
   }
   const direction = descending ? 'DESC' : 'ASC';
+  const built = listedSelect(domain.db, 'devices', devices, {
+    extra: `${sort} AS sort_key`,
+    where: filter.where,
+    params: filter.params,
+    tail: `ORDER BY sort_key ${direction}, device_id ${direction} LIMIT ?`,
+  });
   const found = rows<StoredDevice & { sort_key: string | number }>(
-    domain.db
-      .prepare(
-        `SELECT *, ${sort} AS sort_key FROM ${devices} ${whereClause(filter)} ORDER BY ${sort} ${direction}, device_id ${direction} LIMIT ?`,
-      )
-      .all(...filter.params, maxResults + 1),
+    domain.db.prepare(built.sql).all(...built.params, maxResults + 1),
   );
   const page = found.slice(0, maxResults);
   const last = page.at(-1);

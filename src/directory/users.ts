@@ -6,7 +6,8 @@ import {
   encodePageToken,
   fingerprint,
 } from '../store/page-token.ts';
-import { emptyFilter, whereClause } from '../store/sql.ts';
+import { listedSelect } from '../store/lag.ts';
+import { emptyFilter } from '../store/sql.ts';
 import { row, rows } from '../store/sqlite.ts';
 import { findUser, type UserRow } from '../store/user-lookup.ts';
 import {
@@ -210,15 +211,20 @@ export function listUsers(call: Call): ApiResponse {
     filter.params.push(cursor[0], cursor[1]);
   }
   const direction = descending ? 'DESC' : 'ASC';
+  const built = listedSelect(
+    domain.db,
+    deleted ? 'deleted_users' : 'users',
+    table,
+    {
+      extra: `${sort} AS sort_key`,
+      where: filter.where,
+      params: filter.params,
+      tail: `ORDER BY sort_key ${direction}, id ${direction} LIMIT ?`,
+    },
+  );
   const found = rows<
     UserRow & { sort_key: string; deleted_at?: number; aliases?: string }
-  >(
-    domain.db
-      .prepare(
-        `SELECT *, ${sort} AS sort_key FROM ${table} ${whereClause(filter)} ORDER BY ${sort} ${direction}, id ${direction} LIMIT ?`,
-      )
-      .all(...filter.params, maxResults + 1),
-  );
+  >(domain.db.prepare(built.sql).all(...built.params, maxResults + 1));
   const page = found.slice(0, maxResults);
   const aliases = deleted
     ? new Map(

@@ -11,6 +11,7 @@ import {
   columnsOf,
   flushLag,
   listedRelation,
+  listedSelect,
   pendingLag,
   saveBeforeImage,
   saveBeforeImagesWhere,
@@ -187,5 +188,105 @@ test('a milestone 1 domain file gains the new columns and tables', (t) => {
         .get(),
     )?.given_name,
     'A',
+  );
+});
+
+test('listedSelect matches the listed view and merges the compound arms', (t) => {
+  const { db } = seeded(t);
+  const ids = rows<{ device_id: string; org_unit_path: string }>(
+    db
+      .prepare('SELECT device_id, org_unit_path FROM devices ORDER BY ord')
+      .all(),
+  );
+  const unit = ids[0]!.org_unit_path;
+  const query = (
+    relation: string,
+    where: string[],
+    params: (string | number)[],
+  ) => {
+    const built = listedSelect(db, 'devices', relation, {
+      extra: 'ord AS sort_key',
+      where,
+      params,
+      tail: 'ORDER BY sort_key ASC, device_id ASC LIMIT ?',
+    });
+    return {
+      sql: built.sql,
+      params: [...built.params, 1000],
+      rows: rows(db.prepare(built.sql).all(...built.params, 1000)),
+    };
+  };
+  const viaView = (where: string[], params: (string | number)[]) =>
+    rows(
+      db
+        .prepare(
+          `SELECT *, ord AS sort_key FROM devices_listed ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY sort_key, device_id LIMIT ?`,
+        )
+        .all(...params, 1000),
+    );
+  const cases: [string[], (string | number)[]][] = [
+    [[], []],
+    [['org_unit_path = ?'], [unit]],
+    [['(ord, device_id) > (?, ?)'], [5, ids[5]!.device_id]],
+    [
+      ['org_unit_path = ?', '(ord, device_id) > (?, ?)'],
+      [unit, 2, ids[2]!.device_id],
+    ],
+  ];
+  for (const [where, params] of cases) {
+    const live = query('devices', where, params);
+    assert.equal(live.sql.includes('UNION'), false);
+    assert.deepEqual(
+      live.rows,
+      rows(
+        db
+          .prepare(
+            `SELECT *, ord AS sort_key FROM devices ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY sort_key, device_id LIMIT ?`,
+          )
+          .all(...params, 1000),
+      ),
+    );
+  }
+
+  const columns = columnsOf(db, 'devices');
+  saveBeforeImage(db, 'devices', ids[0]!.device_id, T0, D);
+  db.prepare(
+    'UPDATE devices SET org_unit_path = ?, ord = ord + 1000 WHERE device_id = ?',
+  ).run('/Moved', ids[0]!.device_id);
+  saveBeforeImage(db, 'devices', ids[1]!.device_id, T0, D);
+  db.prepare('DELETE FROM devices WHERE device_id = ?').run(ids[1]!.device_id);
+  saveBeforeImage(db, 'devices', 'brand-new', T0, D);
+  db.prepare(
+    `INSERT INTO devices (${columns.join(', ')}) SELECT ${columns
+      .map((c) =>
+        c === 'device_id'
+          ? "'brand-new'"
+          : c === 'serial_number'
+            ? "'NEW-SERIAL'"
+            : c,
+      )
+      .join(', ')} FROM devices WHERE device_id = ?`,
+  ).run(ids[2]!.device_id);
+  saveBeforeImage(db, 'devices', ids[3]!.device_id, T0 + 1, D);
+  db.prepare('UPDATE devices SET notes = ? WHERE device_id = ?').run(
+    'again',
+    ids[3]!.device_id,
+  );
+
+  const relation = listedRelation(db, 'devices', T0 + 2, D);
+  assert.equal(relation, 'devices_listed');
+  for (const [where, params] of cases) {
+    const lagged = query(relation, where, params);
+    assert.deepEqual(lagged.rows, viaView(where, params));
+    assert.ok(lagged.rows.length > 0);
+  }
+  const plan = rows<{ detail: string }>(
+    db
+      .prepare(`EXPLAIN QUERY PLAN ${query(relation, [], []).sql}`)
+      .all(...query(relation, [], []).params),
+  );
+  assert.ok(
+    plan.some((step) => step.detail.includes('MERGE')),
+    plan.map((step) => step.detail).join('\n'),
   );
 });
