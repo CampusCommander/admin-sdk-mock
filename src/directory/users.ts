@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { ApiError, directoryError, notAuthorized } from '../http/errors.ts';
+import { ApiError, notAuthorized } from '../http/errors.ts';
 import type { ApiResponse, Call } from '../http/types.ts';
 import {
   decodePageToken,
@@ -16,6 +16,7 @@ import {
   invalidArgument,
   iso,
   listedTable,
+  notFound,
   resolveCustomer,
   withEtag,
 } from './common.ts';
@@ -92,13 +93,15 @@ export function userResource(
       ? { suspensionReason: user.suspension_reason ?? 'ADMIN' }
       : {}),
     archived: false,
-    changePasswordAtNextLogin: false,
+    changePasswordAtNextLogin: user.change_password_at_next_login === 1,
     ipWhitelisted: false,
     emails,
     ...(aliases.length > 0 ? { aliases: [...aliases] } : {}),
-    ...(user.external_id
-      ? { externalIds: [{ value: user.external_id, type: 'organization' }] }
-      : {}),
+    ...(user.external_ids
+      ? { externalIds: JSON.parse(user.external_ids) as unknown[] }
+      : user.external_id
+        ? { externalIds: [{ value: user.external_id, type: 'organization' }] }
+        : {}),
     customerId,
     orgUnitPath: user.org_unit_path,
     isMailboxSetup: true,
@@ -231,15 +234,20 @@ export function listUsers(call: Call): ApiResponse {
   };
 }
 
+/** Find a user that requests may see by email, alias, or ID. Unknown and hidden users answer 404. */
+export function visibleUser(call: Call, key: string): UserRow {
+  const domain = domainOf(call);
+  const user = findUser(domain.db, key);
+  const hidden = call.overrides.hidden(domain.customerId);
+  if (!user || hidden.has(user.id) || hidden.has(user.primary_email))
+    throw notFound('userKey');
+  return user;
+}
+
 export function getUser(call: Call): ApiResponse {
   const domain = domainOf(call);
   const view = viewOf(call);
-  const user = findUser(domain.db, call.params.userKey);
-  const hidden = call.overrides.hidden(domain.customerId);
-  if (!user || hidden.has(user.id) || hidden.has(user.primary_email))
-    throw new ApiError(
-      directoryError(404, 'notFound', 'Resource Not Found: userKey'),
-    );
+  const user = visibleUser(call, call.params.userKey);
   return {
     status: 200,
     items: 1,

@@ -1,12 +1,13 @@
 import { handleBatch } from './batch/batch.ts';
 import { handleToken } from './auth/token.ts';
 import { handleTokenInfo } from './auth/tokeninfo.ts';
-import { SCOPES } from './auth/scopes.ts';
+import { SCOPES, WRITE_SCOPES } from './auth/scopes.ts';
 import { getTelemetry, listTelemetry } from './chrome/telemetry.ts';
 import { getCustomer } from './directory/customers.ts';
 import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
 import { getOrgUnit, listOrgUnits } from './directory/orgunits.ts';
+import { insertUser } from './directory/user-writes.ts';
 import { getUser, listUsers } from './directory/users.ts';
 import type { Route } from './http/types.ts';
 import type { Mock } from './mock.ts';
@@ -54,6 +55,8 @@ export function writeRoute(
     handler,
   };
 }
+
+const USER = /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)$/;
 
 /** Every Google route. Later tasks add their routes here. */
 export function buildRoutes(mock: Mock): Route[] {
@@ -121,12 +124,13 @@ export function buildRoutes(mock: Mock): Route[] {
       listUsers,
       false,
     ),
-    directoryRoute(
-      'directory.users.get',
-      /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)$/,
-      SCOPES.user,
-      getUser,
-      false,
+    directoryRoute('directory.users.get', USER, SCOPES.user, getUser, false),
+    writeRoute(
+      'directory.users.insert',
+      'POST',
+      /^\/admin\/directory\/v1\/users$/,
+      WRITE_SCOPES.user,
+      insertUser,
     ),
     {
       id: 'chrome.telemetry.devices.list',
