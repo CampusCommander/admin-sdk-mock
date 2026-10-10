@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+This file records every notable change to the project.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.0.0] - 2026-10-10
@@ -8,15 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Configuration files, environment variables, and command-line flags, with a published JSON schema.
-- A CONNECT proxy that routes the Google hostnames to the mock.
-- The `admin-sdk-mock` and `mockctl` command-line tools.
+- A CONNECT proxy that routes the four Google hostnames to the mock and refuses or tunnels every other target.
+- The `admin-sdk-mock` command-line tool with `start`, `init`, `env`, `doctor`, `config validate`, and `token`. `mockctl` runs the same commands.
 - A programmatic API with `startMock`, in-process installation, and TypeScript types.
-- Fixtures for hand-written domain data.
+- The control API requests `GET /info` and `POST /domains/{id}/tokens`.
+- Fixtures for hand-written OUs, users, devices, and groups.
 - The `empty` seed tier.
-- Container image configuration.
-- A GitHub action.
-- Examples.
-- Documentation.
+- Container image configuration: a mounted configuration file, the proxy port, and the CLI on the path.
+- A GitHub action that starts the image and exports the client environment.
+- Examples for Node, Python, curl, fixtures, and GitHub Actions.
+- Documentation: guides, generated references, and a trust map.
 - Package install tests and coverage tests.
 
 ### History

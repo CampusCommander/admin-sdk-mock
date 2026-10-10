@@ -11,12 +11,13 @@
     },
     "dataDir": {
       "type": "string",
-      "description": "The data directory. Relative paths resolve against the configuration file.",
+      "description": "The data directory. A relative path resolves against the configuration file. Without this key, the mock uses ./data in the working directory.",
       "default": "./data"
     },
     "listen": {
       "type": "object",
       "additionalProperties": false,
+      "description": "The listener addresses.",
       "properties": {
         "google": {
           "$ref": "#/$defs/address",
@@ -35,12 +36,17 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "host": { "type": "string", "default": "127.0.0.1" },
+                "host": {
+                  "type": "string",
+                  "default": "127.0.0.1",
+                  "description": "The address that the proxy binds."
+                },
                 "port": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 65535,
-                  "default": 3128
+                  "default": 3128,
+                  "description": "The proxy port. 0 picks a free port."
                 },
                 "passthrough": {
                   "type": "boolean",
@@ -58,32 +64,34 @@
     "timing": {
       "type": "object",
       "additionalProperties": false,
+      "description": "The time scale and the delay switch.",
       "properties": {
         "scale": {
           "type": "number",
           "minimum": 1,
           "maximum": 100000,
           "default": 1,
-          "description": "Divides every quota window, delay, and timeline."
+          "description": "The factor that divides every quota window, delay, and timeline."
         },
         "delays": {
           "type": "boolean",
           "default": true,
-          "description": "Whether modeled latency applies."
+          "description": "Whether modeled latency applies. The search lag and the group delays apply either way."
         }
       }
     },
     "caFile": {
       "type": "string",
-      "description": "Where to write the CA certificate. The default is <dataDir>/ca/ca.pem."
+      "description": "Where to write the CA certificate. The default is <dataDir>/ca/ca.pem. The CA bundle lands beside it, with -bundle.pem in place of .pem."
     },
     "readyFile": {
       "type": "string",
-      "description": "A file written with the started event once every domain is ready."
+      "description": "A file that receives the ready event once every domain is ready."
     },
     "defaults": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Values that every configured domain shares.",
       "properties": {
         "settings": {
           "type": "object",
@@ -95,7 +103,8 @@
     "domains": {
       "type": "array",
       "items": { "$ref": "#/$defs/domain" },
-      "default": []
+      "default": [],
+      "description": "The domains to ensure at startup."
     }
   },
   "$defs": {
@@ -103,8 +112,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "host": { "type": "string" },
-        "port": { "type": "integer", "minimum": 0, "maximum": 65535 }
+        "host": {
+          "type": "string",
+          "description": "The address that the listener binds."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "The listener port. 0 picks a free port."
+        }
       }
     },
     "domain": {
@@ -117,17 +134,43 @@
           "additionalProperties": false,
           "required": ["tier", "seed"],
           "properties": {
-            "tier": { "enum": ["small", "medium", "large", "xlarge", "empty"] },
-            "seed": { "type": "string" },
-            "name": { "type": "string" },
-            "layout": { "enum": ["role-first", "school-first"] },
-            "counts": { "type": "object" },
-            "rates": { "type": "object" }
+            "tier": {
+              "enum": ["small", "medium", "large", "xlarge", "empty"],
+              "description": "The size tier. empty seeds only the root OU and one administrator."
+            },
+            "seed": {
+              "type": "string",
+              "description": "The seed: 1 to 64 letters, digits, hyphens, or underscores."
+            },
+            "name": {
+              "type": "string",
+              "description": "The district name, 1 to 60 characters. The default derives from the seed."
+            },
+            "layout": {
+              "enum": ["role-first", "school-first"],
+              "description": "The OU layout. The default derives from the seed."
+            },
+            "counts": {
+              "type": "object",
+              "description": "Overrides of the tier counts: schools, students, staff, and devices."
+            },
+            "rates": {
+              "type": "object",
+              "description": "Overrides of the scenario rates."
+            }
           },
           "description": "The seed specification. The same specification always yields the same data."
         },
-        "onStart": { "enum": ["keep", "reset"], "default": "keep" },
-        "settings": { "type": "object", "default": {} },
+        "onStart": {
+          "enum": ["keep", "reset"],
+          "default": "keep",
+          "description": "keep reuses the domain when its specification and fixtures match. reset seeds it again on every start."
+        },
+        "settings": {
+          "type": "object",
+          "default": {},
+          "description": "A settings patch, merged after defaults.settings."
+        },
         "fixtures": {
           "type": "string",
           "description": "A fixtures file, relative to the configuration file."
@@ -135,6 +178,7 @@
         "serviceAccounts": {
           "type": "array",
           "default": [],
+          "description": "The service accounts to issue, each with its delegated scopes.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -142,22 +186,27 @@
             "properties": {
               "out": {
                 "type": "string",
-                "description": "Where to write the key file, with mode 0600."
+                "description": "Where to write the key file, with mode 0600. A relative path resolves against the configuration file."
               },
               "scopes": {
                 "anyOf": [
                   { "enum": ["read", "read-write"] },
                   { "type": "array", "items": { "type": "string" } }
-                ]
+                ],
+                "description": "The scope set read or read-write, or a list of scope URLs."
               },
-              "projectId": { "type": "string" }
+              "projectId": {
+                "type": "string",
+                "description": "The project ID: 6 to 30 lower-case letters, digits, or hyphens, starting with a letter. The default is random."
+              }
             }
           }
         },
         "faults": {
           "type": "array",
           "items": { "type": "object" },
-          "default": []
+          "default": [],
+          "description": "Fault rules that replace the domain faults at each start, in the control API fault format."
         }
       }
     }
