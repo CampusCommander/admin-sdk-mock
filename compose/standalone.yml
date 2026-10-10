@@ -1,7 +1,8 @@
 name: admin-sdk-mock
 services:
   admin-sdk-mock:
-    image: ${ADMIN_SDK_MOCK_IMAGE:-ghcr.io/campuscommander/admin-sdk-mock:main}
+    # A local name, so the build never replaces a pulled ghcr.io/campuscommander/admin-sdk-mock image.
+    image: ${ADMIN_SDK_MOCK_IMAGE:-admin-sdk-mock:local}
     build: ..
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0

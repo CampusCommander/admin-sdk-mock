@@ -14,7 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The control API requests `GET /info` and `POST /domains/{id}/tokens`.
 - Fixtures for hand-written OUs, users, devices, and groups.
 - The `empty` seed tier.
-- Container image configuration: a mounted configuration file, the proxy port, and the CLI on the path.
+- Container image configuration: a mounted configuration file, the proxy port, the CLI on the path, and an `/out` directory that the `node` user owns.
 - A GitHub action that starts the image and exports the client environment.
 - Examples for Node, Python, curl, fixtures, and GitHub Actions.
 - Documentation: guides, generated references, and a trust map.
@@ -25,6 +25,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - `GET /health` answers `503` until every domain is ready. The image health check reads `MOCK_CONTROL_PORT` and allows 600 seconds to start.
+- `compose/standalone.yml` tags its build `admin-sdk-mock:local`, so the build no longer replaces a pulled `ghcr.io/campuscommander/admin-sdk-mock:main`.
 
 ### Security
 

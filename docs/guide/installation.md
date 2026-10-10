@@ -150,17 +150,18 @@ The image runs `admin-sdk-mock start` as the `node` user, with these settings:
 
 The `admin-sdk-mock` and `mockctl` commands sit on the path, so `docker exec <container> admin-sdk-mock domain list` works.
 
-The `node` user cannot bind port 443 without `--sysctl net.ipv4.ip_unprivileged_port_start=0`.
-A client that uses the proxy never needs port 443, so set `MOCK_GOOGLE_PORT=8443` instead. The action and the image smoke test do so.
+Docker 20.10 and later let the `node` user bind port 443. Another runtime may need `--sysctl net.ipv4.ip_unprivileged_port_start=0`.
+A client that uses the proxy never needs port 443, so the action and the image smoke test set `MOCK_GOOGLE_PORT=8443`.
 
 Mount a configuration at `/config/admin-sdk-mock.json`, or set `MOCK_CONFIG` to another path.
 Write key files and the CA under a mounted directory such as `/out`, so the host can read them.
+Without a mount, `/out` is an empty directory that the `node` user owns. Read its files with `docker exec` or `docker cp`.
 Pass `--user "$(id -u):$(id -g)"` when the mounted directories belong to your host user.
 The [README](../../README.md#quickstart-with-docker) shows a complete `docker run`.
 
 ### Docker Compose
 
-Inside a clone of this repository, `compose/standalone.yml` builds and runs the image:
+Inside a clone of this repository, `compose/standalone.yml` builds the image as `admin-sdk-mock:local` and runs it. Set `ADMIN_SDK_MOCK_IMAGE` to run another image.
 
 ```sh
 docker compose -f compose/standalone.yml up --detach --wait --build
@@ -176,7 +177,8 @@ ADMIN_SDK_MOCK_CONFIG_DIR="$PWD/my-config" docker compose -f compose/standalone.
 ```
 
 Pass an absolute path. Compose resolves a relative path against `compose/`, the directory of the first file.
-A directory that does not exist fails the start. Compose does not create it.
+The start fails when the directory does not exist or holds no `admin-sdk-mock.json`. The mock exits with code 2 and logs `/config/admin-sdk-mock.json does not exist.`
+Docker Engine refuses a missing directory. Docker Desktop creates it, owned by root, before the mock exits. Remove that directory afterwards.
 
 ## GitHub Actions
 

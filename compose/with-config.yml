@@ -1,9 +1,12 @@
 # Mount a configuration directory that holds admin-sdk-mock.json. Pass an absolute path:
 # Compose resolves a relative path against compose/, the directory of the first file.
 #   ADMIN_SDK_MOCK_CONFIG_DIR="$PWD/my-config" docker compose -f compose/standalone.yml -f compose/with-config.yml up --detach --wait
-# create_host_path: false makes a missing directory fail the start, instead of mounting an empty one.
+# Docker Engine refuses a missing directory (create_host_path: false). Docker Desktop creates it, owned by root.
+# MOCK_CONFIG names the file explicitly, so a directory without admin-sdk-mock.json stops the start with exit code 2.
 services:
   admin-sdk-mock:
+    environment:
+      MOCK_CONFIG: /config/admin-sdk-mock.json
     volumes:
       - type: bind
         source: ${ADMIN_SDK_MOCK_CONFIG_DIR:?Set ADMIN_SDK_MOCK_CONFIG_DIR to the absolute path of a directory that holds admin-sdk-mock.json}

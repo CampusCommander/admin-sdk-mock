@@ -159,7 +159,7 @@ Inside Docker, network aliases replace the hosts file.
 The Campus Commander overlay, `compose/campus-commander.overlay.yml`, shows the pattern:
 
 - The mock container joins the application's internal network with the four Google hostnames as network aliases. Docker DNS resolves them to the mock.
-- The mock listens on port 443, the image default. The overlay sets the `net.ipv4.ip_unprivileged_port_start=0` sysctl so the `node` user can bind it.
+- The mock listens on port 443, the image default. Docker 20.10 and later let the `node` user bind it. The overlay also sets the `net.ipv4.ip_unprivileged_port_start=0` sysctl, for runtimes that do not.
 - The mock exports its CA to a shared volume. The `api` and `workers` containers mount it and trust it through `NODE_EXTRA_CA_CERTS`.
 
 Combine the overlay with a rendered Campus Commander all-docker Compose file:
@@ -176,6 +176,6 @@ docker build -t admin-sdk-mock:local .
 ADMIN_SDK_MOCK_IMAGE=admin-sdk-mock:local docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overlay.yml up --detach --wait
 ```
 
-A plain `docker run` needs `--sysctl net.ipv4.ip_unprivileged_port_start=0` to bind port 443.
+A plain `docker run` binds port 443 on Docker 20.10 and later. Another runtime may need `--sysctl net.ipv4.ip_unprivileged_port_start=0`.
 Seeding an `xlarge` domain blocks the mock for about 26 seconds. Seed before you connect Campus Commander.
 [docs/campus-commander.md](../campus-commander.md) holds the full procedure.
