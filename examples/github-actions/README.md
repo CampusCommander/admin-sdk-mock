@@ -10,8 +10,8 @@ Inside this repository, use `uses: ./` instead of `uses: CampusCommander/admin-s
 
 ## Log in to the private image
 
-The image is private. Run `docker/login-action@v3` for `ghcr.io` before the action. Pass `GITHUB_TOKEN` as the password.
-Give the job `packages: read` permission.
+The image is private. Log in to `ghcr.io` before the action with `docker login --password-stdin`, as `workflow.yml` does.
+Pass `GITHUB_TOKEN` as the password, and give the job `packages: read` permission.
 
 `GITHUB_TOKEN` pulls the image only from repositories that the package grants access to, such as repositories in the same organization with access granted.
 Other repositories need a token with `read:packages`. Pass it as the login password.
