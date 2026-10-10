@@ -323,7 +323,9 @@ List membership, filters, `query` matching, `userKey` matching, sort keys, and r
 
 **Ruling:** a removed group link takes effect at once for `hasMember`.
 Derived lists read lagged memberships, so they drop the link after the search delay. The nesting delay applies only to additions.
-**Ruling:** for one search delay after a group or user email change, `userKey` and `memberKey` lookups in `groups.list` return no groups for that member, because lagged rows still hold the old address.
+**Ruling:** `groups.list` `userKey` and `memberKey` lookups still find the member during the search delay after a group or user email change.
+They match the member ID plus every current address of the target: its primary email and its aliases.
+A rename keeps the old address as an alias, so lagged rows that still hold it match.
 
 Groups and members page by email. An email change can move an entry between pages, like a user's `primaryEmail` change.
 
