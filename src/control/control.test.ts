@@ -25,9 +25,10 @@ const SPEC = {
 async function setup(
   t: import('node:test').TestContext,
   options: Parameters<typeof startHarness>[0] = {},
+  control: Parameters<typeof createControlHandler>[1] = {},
 ) {
   const harness = await startHarness(options);
-  const server = http.createServer(createControlHandler(harness.mock));
+  const server = http.createServer(createControlHandler(harness.mock, control));
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => {
@@ -510,5 +511,99 @@ test('a domain reset discards group writes', async (t) => {
         after.db.prepare('SELECT count(*) AS n FROM groups').get(),
       )!.n,
     ) > 0,
+  );
+});
+
+test('GET /info answers the info provider, and 404 without one', async (t) => {
+  const { call } = await setup(t);
+  assert.equal((await call('GET', '/info')).status, 404);
+
+  const info = {
+    version: '1.0.0',
+    ready: true,
+    listeners: {
+      google: { host: '127.0.0.1', port: 8443 },
+      control: { host: '127.0.0.1', port: 8080 },
+      proxy: null,
+    },
+    caFile: '/data/ca/ca.pem',
+    caBundleFile: '/data/ca/ca-bundle.pem',
+    dataDir: '/data',
+    domains: [],
+  };
+  const provided = await setup(t, {}, { info: () => info });
+  const response = await provided.call('GET', '/info');
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.json(), info);
+  assert.equal(
+    (await provided.raw('GET', '/info', { host: 'attacker.example' })).status,
+    403,
+  );
+});
+
+test('POST /domains/{id}/tokens stores a token for a domain user', async (t) => {
+  const clock = fakeClock();
+  const { harness, call } = await setup(t, { clock });
+  const { customerId, adminEmail } = (
+    await call('POST', '/domains', { tier: 'empty', seed: 'tokens' })
+  ).json();
+  const path = `/domains/${customerId}/tokens`;
+
+  const issued = await call('POST', path, {});
+  assert.equal(issued.status, 200);
+  const body = issued.json();
+  assert.equal(body.token_type, 'Bearer');
+  assert.equal(body.expires_in, 3600);
+  assert.equal(body.scope, READ_WRITE_SCOPES.join(' '));
+  assert.deepEqual(harness.mock.registry.token(body.access_token), {
+    token: body.access_token,
+    clientId: '100000000000000000000',
+    projectId: 'admin-sdk-mock-control',
+    subject: adminEmail,
+    customerId,
+    scopes: READ_WRITE_SCOPES,
+    expiresAt: clock.now() + 3_600_000,
+  });
+  const users = await directoryClient(harness, body.access_token)(
+    'GET',
+    '/users',
+    { query: { customer: 'my_customer' } },
+  );
+  assert.equal(users.status, 200);
+
+  const scope = SCOPES.orgunit[1];
+  const narrow = (
+    await call('POST', path, {
+      subject: adminEmail,
+      scopes: [scope],
+      ttlSeconds: 60,
+    })
+  ).json();
+  assert.equal(narrow.scope, scope);
+  assert.equal(narrow.expires_in, 60);
+  assert.equal(
+    harness.mock.registry.token(narrow.access_token)?.expiresAt,
+    clock.now() + 60_000,
+  );
+
+  for (const [input, error] of [
+    [
+      { subject: 'nobody@example.test' },
+      'subject must name a user of the domain.',
+    ],
+    [{ subject: 42 }, 'subject must name a user of the domain.'],
+    [{ scopes: 'everything' }, undefined],
+    [{ scopes: [1] }, undefined],
+    [{ ttlSeconds: 0 }, 'ttlSeconds must be a whole number from 1 to 3600.'],
+    [{ ttlSeconds: 3601 }, 'ttlSeconds must be a whole number from 1 to 3600.'],
+    [{ ttlSeconds: 2.5 }, 'ttlSeconds must be a whole number from 1 to 3600.'],
+  ] as const) {
+    const response = await call('POST', path, input);
+    assert.equal(response.status, 400, JSON.stringify(input));
+    if (error) assert.equal(response.json().error, error);
+  }
+  assert.equal(
+    (await call('POST', '/domains/C0missing/tokens', {})).status,
+    404,
   );
 });
