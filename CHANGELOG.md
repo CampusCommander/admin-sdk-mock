@@ -18,7 +18,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A GitHub action that starts the image and exports the client environment.
 - Examples for Node, Python, curl, fixtures, and GitHub Actions.
 - Documentation: guides, generated references, and a trust map.
-- Package install tests and coverage tests.
+- Package install tests, including an install from a Git clone, and coverage tests.
+- `env`, `startMock().env()`, and the action export `NODE_USE_ENV_PROXY=1`, so Node's built-in `fetch` uses the proxy.
+- The package exports `ConfigError` and `FixtureError`, and the `token()` options take `ttlSeconds`.
+
+### Changed
+
+- `GET /health` answers `503` until every domain is ready. The image health check reads `MOCK_CONTROL_PORT` and allows 600 seconds to start.
+
+### Security
+
+- With `passthrough` on, the proxy refuses local targets such as `127.0.0.1`, `localhost`, and `169.254.169.254`.
+- `start` logs a `warning` event when a passthrough proxy listens on an address other than loopback.
+- The action rejects a line break in its path and image inputs, and a port outside 1 to 65535.
 
 ### History
 

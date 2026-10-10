@@ -173,14 +173,14 @@ It follows the existing host and content-type guards.
 
 One executable, `admin-sdk-mock`, holds every command. `mockctl` stays as an alias for the control commands.
 
-| Command                                   | Effect                                                                                                                                                                          |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start`                                   | Validate the configuration, start the listeners, ensure the domains, write the CA, key, and ready files, and run until a signal.                                                |
-| `init [--out <file>]`                     | Write a starter configuration with one small domain, a proxy, and a read-write service account. Print the next steps.                                                           |
-| `env [--format sh\|dotenv\|json\|github]` | Ask a running mock's `GET /info` for its listeners, then print the client environment: proxy, CA variables, `NO_PROXY`, and the control URL. `github` appends to `$GITHUB_ENV`. |
-| `doctor`                                  | Check the Node version, the data directory, free ports, and the CA file. Print a pass or fail line for each.                                                                    |
-| `config validate <file>`                  | Validate a configuration file and print every error.                                                                                                                            |
-| Control commands                          | Every current `mockctl` command: `domain`, `credential`, `ca`, `clock`, `quota`, `fault`, `index`, `settings`.                                                                  |
+| Command                                   | Effect                                                                                                                                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`                                   | Validate the configuration, start the listeners, ensure the domains, write the CA, key, and ready files, and run until a signal.                                                                              |
+| `init [--out <file>]`                     | Write a starter configuration with one small domain, a proxy, and a read-write service account. Print the next steps.                                                                                         |
+| `env [--format sh\|dotenv\|json\|github]` | Ask a running mock's `GET /info` for its listeners, then print the client environment: proxy, `NODE_USE_ENV_PROXY`, CA variables, `NO_PROXY`, and the control URL (P-R29). `github` appends to `$GITHUB_ENV`. |
+| `doctor`                                  | Check the Node version, the data directory, free ports, and the CA file. Print a pass or fail line for each.                                                                                                  |
+| `config validate <file>`                  | Validate a configuration file and print every error.                                                                                                                                                          |
+| Control commands                          | Every current `mockctl` command: `domain`, `credential`, `ca`, `clock`, `quota`, `fault`, `index`, `settings`.                                                                                                |
 
 Exit codes: 0 for success, 1 for a runtime failure, 2 for invalid usage or configuration.
 Code 2 covers usage, configuration, fixture, and seed specification errors.
@@ -268,7 +268,8 @@ Documentation prose follows the repository writing rules.
 
 ## Examples
 
-`examples/` holds runnable projects. Each one has a README and a test that runs it.
+`examples/` holds runnable projects. Each one has a README.
+`test/examples/run.ts` and `test/python/run.ts` run every example except `github-actions`. The CI `action` job runs the action with that example's configuration.
 
 | Example           | Shows                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------- |
@@ -341,6 +342,7 @@ The execution ledger recorded these rulings while the plan ran. The text above a
 - P-R14: the existing control commands keep exit code 1 for their own validation messages.
 - P-R15: the new `token` command exits with code 2 on usage errors, and a malformed control URL exits with code 2 for every command.
 - P-R16: the control URL comes from `--control`, then `MOCK_CONTROL_URL`, then `ADMIN_SDK_MOCK_CONTROL`, then the configuration's control listener for `env` or `http://127.0.0.1:8080`.
+- P-R29: when the proxy is on, `env`, `startMock().env()`, and the action also export `NODE_USE_ENV_PROXY=1`. Without it, Node's built-in `fetch` skips the proxy and reaches real Google. `useInProcess()` cannot set it, because Node reads it only at startup.
 - P-R30: the spec text matches the code in these places:
   - The image sets `MOCK_CONFIG_DEFAULT=/config/admin-sdk-mock.json`, not `MOCK_CONFIG`. The lookup reads it last.
   - The action has `control-port` (default 18080) and `proxy-port` (default 13128) inputs.
