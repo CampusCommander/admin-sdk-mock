@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import {
+  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -232,6 +233,23 @@ test('close() closes all three listeners, and a second close() resolves', async 
   for (const port of ports)
     assert.equal(await free(port), true, `port ${port}`);
   await handle.close();
+});
+
+test('close() removes the ready file it wrote, and keeps a file that another writer replaced', async (t) => {
+  const dir = tempDir(t);
+  const readyFile = join(dir, 'ready.json');
+  const own = await startServer(configIn(dir, { readyFile }));
+  assert.equal(JSON.parse(readFileSync(readyFile, 'utf8')).event, 'ready');
+  await own.close();
+  assert.equal(existsSync(readyFile), false);
+
+  const other = await startServer(configIn(dir, { readyFile }));
+  writeFileSync(readyFile, '{"event":"ready","from":"another mock"}\n');
+  await other.close();
+  assert.equal(
+    readFileSync(readyFile, 'utf8'),
+    '{"event":"ready","from":"another mock"}\n',
+  );
 });
 
 test('clientEnvironment maps wildcard hosts to loopback and names a lone key file', () => {

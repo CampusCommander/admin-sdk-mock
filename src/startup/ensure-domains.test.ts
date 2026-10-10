@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -247,7 +249,12 @@ test('reset recreates the domain with the current fixtures and keeps a key of th
       client_email: 'unknown@nowhere.iam.gserviceaccount.com',
     }),
   );
+  chmodSync(account.out, 0o644);
+  const before = statSync(account.out).ino;
   const fourth = ensureDomain(mock, entry(domain), 0, {}, NOW + 180_000);
+  // A rename puts the new key in place, so no reader sees a torn or wider-mode file.
+  assert.notEqual(statSync(account.out).ino, before);
+  assert.deepEqual(readdirSync(dirname(account.out)), ['app.json']);
   const replaced = JSON.parse(readFileSync(account.out, 'utf8'));
   assert.equal(replaced.client_email, fourth.serviceAccounts[0].clientEmail);
   assert.notEqual(

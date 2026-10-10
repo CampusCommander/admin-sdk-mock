@@ -86,7 +86,7 @@
     },
     "readyFile": {
       "type": "string",
-      "description": "A file that receives the ready event once every domain is ready."
+      "description": "A file that receives the ready event once every domain is ready. A graceful stop deletes it."
     },
     "defaults": {
       "type": "object",

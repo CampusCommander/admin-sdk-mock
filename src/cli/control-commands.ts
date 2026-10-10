@@ -1,7 +1,8 @@
-import { chmodSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { READ_SCOPES, READ_WRITE_SCOPES } from '../auth/scopes.ts';
+import { writeSecret } from '../write-file.ts';
 import { usageFailure } from './help.ts';
 import type { Io } from './main.ts';
 
@@ -190,11 +191,10 @@ export async function runControlCommand(
         scopes,
       });
       if (values.out) {
-        const path = resolve(io.cwd, values.out);
-        writeFileSync(path, `${JSON.stringify(account, null, 2)}\n`, {
-          mode: 0o600,
-        });
-        chmodSync(path, 0o600);
+        writeSecret(
+          resolve(io.cwd, values.out),
+          `${JSON.stringify(account, null, 2)}\n`,
+        );
         return print({
           written: values.out,
           clientId: account.client_id,

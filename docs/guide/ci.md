@@ -133,6 +133,7 @@ npm test
 
 Until v1.0.0 is tagged, use `#main`.
 `start` deletes an old ready file before it starts, so the wait never sees a stale one.
+A graceful stop deletes the ready file that `start` wrote.
 
 ## Caching
 
