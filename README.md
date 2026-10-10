@@ -60,7 +60,7 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
 Then point the client environment at the published proxy and the exported CA files:
 
 ```sh
-export HTTPS_PROXY=http://127.0.0.1:3128 NO_PROXY=localhost,127.0.0.1,::1
+export HTTPS_PROXY=http://127.0.0.1:3128 NODE_USE_ENV_PROXY=1 NO_PROXY=localhost,127.0.0.1,::1
 export NODE_EXTRA_CA_CERTS="$PWD/mock/out/ca.pem"
 export SSL_CERT_FILE="$PWD/mock/out/ca-bundle.pem" CURL_CA_BUNDLE="$PWD/mock/out/ca-bundle.pem"
 export REQUESTS_CA_BUNDLE="$PWD/mock/out/ca-bundle.pem" HTTPLIB2_CA_CERTS="$PWD/mock/out/ca-bundle.pem"

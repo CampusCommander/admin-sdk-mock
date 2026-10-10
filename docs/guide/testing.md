@@ -31,6 +31,8 @@ The handle has these members:
 | `close()`                             | Stop the listeners, undo every `useInProcess()`, and remove a temporary data directory.                        |
 
 `useInProcess()` throws when the proxy is off or the mock is closed.
+It routes Google's clients, which read `HTTPS_PROXY` on every request. Built-in `fetch` in the test process still skips the proxy.
+Node reads `NODE_USE_ENV_PROXY` only at startup, so run a `fetch` client in a child process with `env()`.
 `createDomain()` on a domain that exists keeps its data, but resets its settings and removes its faults.
 
 ### A complete test

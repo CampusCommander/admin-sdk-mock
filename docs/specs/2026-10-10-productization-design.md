@@ -87,7 +87,7 @@ A composite action at the repository root, `action.yml`, starts the image on the
 An empty `image` resolves to `ghcr.io/campuscommander/admin-sdk-mock:<X.Y.Z>` when `github.action_ref` is `vX.Y.Z`, and to `:main` otherwise (P-R7).
 `passthrough` defaults to true, so later steps that share `HTTPS_PROXY` keep their network (P-R7).
 
-It waits for the ready file, then writes `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
+It waits for the ready file, then writes `HTTPS_PROXY`, `NODE_USE_ENV_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
 It sets five outputs: `workdir`, `ca-file`, `ca-bundle-file`, `proxy-url`, and `control-url`. It sets no credential-path output.
 A key file that the configuration writes under `/out` lands in `<workdir>/out` (P-R30).
 The action requires Docker on the runner. GitHub-hosted Ubuntu runners have it.
@@ -209,6 +209,7 @@ The package root exports `startMock(options?)` for in-process tests. It returns 
 | `close()`                             | Stop the listeners, restore in-process changes, and remove a temporary data directory.                                                                                                                                                                   |
 
 `useInProcess()` lets the unmodified `googleapis` and `google-auth-library` clients reach the mock from the same process. gaxios reads `HTTPS_PROXY` on every request.
+Node's built-in `fetch` in that process still skips the proxy, because Node reads `NODE_USE_ENV_PROXY` only at startup.
 The in-process proxy tunnels other targets by default, so the test's other HTTPS calls keep working.
 
 ## Fixtures

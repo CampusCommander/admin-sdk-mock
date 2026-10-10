@@ -287,6 +287,8 @@ export function clientEnvironment(
     const url = `http://${urlHost(proxy.host)}:${proxy.port}`;
     environment.HTTPS_PROXY = url;
     environment.https_proxy = url;
+    // Node's built-in fetch and https modules read HTTPS_PROXY only with this switch.
+    environment.NODE_USE_ENV_PROXY = '1';
   }
   Object.assign(environment, {
     NO_PROXY,

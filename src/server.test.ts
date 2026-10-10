@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import {
   existsSync,
@@ -17,6 +18,7 @@ import tls from 'node:tls';
 import { READ_SCOPES } from './auth/scopes.ts';
 import { resolveConfig } from './config/config.ts';
 import { FixtureError } from './seed/fixtures.ts';
+import { childEnv } from './testing/child-env.ts';
 import { clientEnvironment, startServer, type ServerInfo } from './server.ts';
 import { VERSION } from './version.ts';
 
@@ -284,6 +286,7 @@ test('clientEnvironment maps wildcard hosts to loopback and names a lone key fil
   assert.deepEqual(clientEnvironment(info, control), {
     HTTPS_PROXY: 'http://127.0.0.1:3128',
     https_proxy: 'http://127.0.0.1:3128',
+    NODE_USE_ENV_PROXY: '1',
     NO_PROXY: 'localhost,127.0.0.1,::1',
     no_proxy: 'localhost,127.0.0.1,::1',
     NODE_EXTRA_CA_CERTS: '/out/ca.pem',
@@ -304,6 +307,7 @@ test('clientEnvironment maps wildcard hosts to loopback and names a lone key fil
   );
   assert.equal(bare.HTTPS_PROXY, undefined);
   assert.equal(bare.https_proxy, undefined);
+  assert.equal(bare.NODE_USE_ENV_PROXY, undefined);
   assert.equal(bare.GOOGLE_APPLICATION_CREDENTIALS, undefined);
   assert.equal(bare.NODE_EXTRA_CA_CERTS, '/out/ca.pem');
 });
@@ -330,4 +334,46 @@ test('a failing fixtures file rejects startServer and frees every port', async (
     started.proxyPort,
   ] as number[])
     assert.equal(await free(port), true, `port ${port}`);
+});
+
+test('a plain fetch in a child started with clientEnvironment() goes through the mock proxy', async (t) => {
+  const { handle } = await start(t, { domains: [{ spec: EMPTY }] });
+  const { customerId } = handle.info().domains[0];
+  const minted = await post(
+    `${handle.controlUrl}/domains/${customerId}/tokens`,
+    { scopes: 'read' },
+  );
+  const { access_token: token } = (await minted.json()) as {
+    access_token: string;
+  };
+  const before = handle.proxy!.counts().accepted;
+  const script = `
+    const response = await fetch(
+      'https://admin.googleapis.com/admin/directory/v1/users?customer=my_customer&maxResults=1',
+      { headers: { authorization: 'Bearer ' + process.env.TOKEN } },
+    );
+    console.log(response.status);
+  `;
+  const child = spawn(
+    process.execPath,
+    ['--input-type=module', '--eval', script],
+    {
+      env: {
+        ...childEnv(),
+        ...clientEnvironment(handle.info(), handle.controlUrl),
+        TOKEN: token,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+  t.after(() => child.kill('SIGKILL'));
+  let output = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => (output += chunk));
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => (output += chunk));
+  const [code] = (await once(child, 'exit')) as [number];
+  assert.equal(code, 0, output);
+  assert.equal(output.trim(), '200');
+  assert.ok(handle.proxy!.counts().accepted > before);
 });

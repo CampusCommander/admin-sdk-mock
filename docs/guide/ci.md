@@ -63,7 +63,7 @@ A workflow in another repository uses the action only when the Actions settings 
 | `proxy-url`      | The proxy URL, `http://127.0.0.1:<proxy-port>`.                                  |
 | `control-url`    | The control API URL, `http://127.0.0.1:<control-port>`.                          |
 
-The action also writes `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
+The action also writes `HTTPS_PROXY`, `https_proxy`, `NODE_USE_ENV_PROXY`, `NO_PROXY`, `no_proxy`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
 The action sets no output for a key file. Build its path from the `workdir` output, as the workflow above does.
 
 ### Key files
@@ -105,7 +105,7 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
   ghcr.io/campuscommander/admin-sdk-mock:1.0.0
 for _ in $(seq 1 600); do [ -f "$workdir/out/ready.json" ] && break; sleep 1; done
 test -f "$workdir/out/ready.json" || { echo "The mock did not become ready in 600 seconds."; docker logs admin-sdk-mock; exit 1; }
-export HTTPS_PROXY=http://127.0.0.1:13128 https_proxy=http://127.0.0.1:13128
+export HTTPS_PROXY=http://127.0.0.1:13128 https_proxy=http://127.0.0.1:13128 NODE_USE_ENV_PROXY=1
 export NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1
 export NODE_EXTRA_CA_CERTS="$workdir/out/ca.pem"
 export SSL_CERT_FILE="$workdir/out/ca-bundle.pem" REQUESTS_CA_BUNDLE="$workdir/out/ca-bundle.pem"

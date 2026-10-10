@@ -101,6 +101,7 @@ runs:
         {
           echo "HTTPS_PROXY=$proxy"
           echo "https_proxy=$proxy"
+          echo "NODE_USE_ENV_PROXY=1"
           echo "NO_PROXY=localhost,127.0.0.1,::1"
           echo "no_proxy=localhost,127.0.0.1,::1"
           echo "NODE_EXTRA_CA_CERTS=$workdir/out/ca.pem"

@@ -46,10 +46,12 @@ Causes and fixes:
 
 Symptoms: a `401` that names a missing or invalid credential, with a `server: ESF` header, and no request in the mock's log.
 
-Cause: the client ignores `HTTPS_PROXY`. Node's built-in `fetch` and `https` modules ignore it unless the environment sets `NODE_USE_ENV_PROXY=1`.
+Cause: the client ignores `HTTPS_PROXY`. Node's built-in `fetch` and `https` modules ignore it when the process starts without `NODE_USE_ENV_PROXY=1`.
+`useInProcess()` cannot set it for the running process, so built-in `fetch` calls there skip the proxy.
 A Google hostname in `NO_PROXY` has the same effect.
 
-Fix: set `NODE_USE_ENV_PROXY=1` for such a Node client, or use Google's client libraries, which honor the proxy.
+Fix: start a Node client with the variables from `env`, which include `NODE_USE_ENV_PROXY=1`.
+In a test process, run such a call in a child process with `env()`, or use Google's client libraries.
 Remove every Google hostname from `NO_PROXY`. A client that ignores proxies needs the [hosts-file alternative](clients.md#the-hosts-file-alternative).
 
 ## 401 unauthorized_client
