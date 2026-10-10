@@ -66,6 +66,18 @@ const free = (port: number) =>
     server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
   });
 
+/**
+ * How many TCP listeners this process holds, once pending close callbacks have run. A closed
+ * port is no proof either way: another test process may bind a freed ephemeral port at once.
+ */
+async function listeners(): Promise<number> {
+  for (let tick = 0; tick < 2; tick++)
+    await new Promise((resolve) => setImmediate(resolve));
+  return process
+    .getActiveResourcesInfo()
+    .filter((name) => name === 'TCPServerWrap').length;
+}
+
 /** CONNECT through the proxy, speak TLS to admin.googleapis.com, and return the status line. */
 async function tunnelGet(
   proxyPort: number,
@@ -226,14 +238,14 @@ test('POST /domains/{id}/tokens issues a token that the Directory API accepts', 
 
 test('close() closes all three listeners, and a second close() resolves', async (t) => {
   const dir = tempDir(t);
+  const before = await listeners();
   const handle = await startServer(configIn(dir));
   const { google, control, proxy } = handle.info().listeners;
-  const ports = [google.port, control.port, proxy!.port];
-  for (const port of ports)
+  for (const port of [google.port, control.port, proxy!.port])
     assert.equal(await free(port), false, `port ${port}`);
+  assert.equal(await listeners(), before + 3);
   await handle.close();
-  for (const port of ports)
-    assert.equal(await free(port), true, `port ${port}`);
+  assert.equal(await listeners(), before);
   await handle.close();
 });
 
@@ -312,8 +324,9 @@ test('clientEnvironment maps wildcard hosts to loopback and names a lone key fil
   assert.equal(bare.NODE_EXTRA_CA_CERTS, '/out/ca.pem');
 });
 
-test('a failing fixtures file rejects startServer and frees every port', async (t) => {
+test('a failing fixtures file rejects startServer and closes every listener', async (t) => {
   const dir = tempDir(t);
+  const before = await listeners();
   writeFileSync(
     join(dir, 'fixtures.json'),
     JSON.stringify({ users: [{ primaryEmail: `ada@${PRIMARY}` }] }),
@@ -328,12 +341,7 @@ test('a failing fixtures file rejects startServer and frees every port', async (
   );
   const [started] = events;
   assert.equal(started.event, 'started');
-  for (const port of [
-    started.googlePort,
-    started.controlPort,
-    started.proxyPort,
-  ] as number[])
-    assert.equal(await free(port), true, `port ${port}`);
+  assert.equal(await listeners(), before);
 });
 
 test('a plain fetch in a child started with clientEnvironment() goes through the mock proxy', async (t) => {
