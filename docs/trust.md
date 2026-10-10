@@ -84,7 +84,7 @@ Spec: [milestone 3 groups design](specs/2026-10-10-milestone-3-groups-design.md#
 | 6. The scale test passes with groups.                                                            | `test/scale/scale.ts`. The measured run is in the [calibration record](calibration.md#milestone-3-scale).                                                                                                                                    |
 | 7. CI passes on `main` and publishes the image.                                                  | The CI `image` job in `.github/workflows/ci.yml`.                                                                                                                                                                                            |
 
-## Version 1.0
+## Version 0.1.0
 
 Spec: [productization design](specs/2026-10-10-productization-design.md#acceptance).
 

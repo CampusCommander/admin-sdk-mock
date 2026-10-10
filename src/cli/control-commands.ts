@@ -10,7 +10,7 @@ const DEFAULT_CONTROL_URL = 'http://127.0.0.1:8080';
 const MAX_TOKEN_SECONDS = 3600;
 
 /**
- * A failure of a control command that mockctl had before 1.0. The CLI prints its message
+ * A failure of a control command that mockctl had before 0.1.0. The CLI prints its message
  * and exits with code 1, as mockctl always did, even for a missing or invalid value.
  */
 class CliError extends Error {}

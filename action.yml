@@ -6,7 +6,7 @@ inputs:
     required: false
     default: ''
   image:
-    description: The image to run. Empty picks the tag that matches an action pinned to vX.Y.Z or to a main commit SHA, else main. A private image needs docker login first.
+    description: The image to run. Empty picks the tag that matches an action pinned to vX.Y.Z or to a main commit SHA, else main.
     required: false
     default: ''
   workdir:

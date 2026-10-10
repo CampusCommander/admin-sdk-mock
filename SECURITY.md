@@ -45,5 +45,5 @@ Keep passthrough off on a shared network. Turn it on only when you trust every c
 
 ## Report a vulnerability
 
-Report a suspected vulnerability privately to the repository owner. Open a draft security advisory on the `CampusCommander/admin-sdk-mock` repository, or contact the owner directly.
+Report a suspected vulnerability privately. On the repository's **Security** tab, choose **Report a vulnerability**. Do not open a public issue.
 Do not open an issue for a vulnerability. Include the version, the steps to reproduce, and the impact.

@@ -169,7 +169,7 @@ docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overl
 ```
 
 The overlay adds no file to Campus Commander. It routes the four Google hostnames to the mock inside the `internal` network.
-The default image is private. Build it locally and point the overlay at it when you lack access:
+To test local changes, build the image and point the overlay at it:
 
 ```sh
 docker build -t admin-sdk-mock:local .

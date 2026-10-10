@@ -3,7 +3,9 @@
 This file records every notable change to the project.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.0.0] - 2026-10-10
+## [0.1.0] - 2026-10-10
+
+The first public release. It is not production ready: any 0.x release may change the configuration, the CLI, the API, or the image.
 
 ### Added
 
@@ -24,6 +26,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The license is the PolyForm Noncommercial License 1.0.0. Any noncommercial use is permitted. Commercial use is not licensed.
 - `GET /health` answers `503` until every domain is ready. The image health check reads `MOCK_CONTROL_PORT` and allows 600 seconds to start.
 - `compose/standalone.yml` tags its build `admin-sdk-mock:local`, so the build no longer replaces a pulled `ghcr.io/campuscommander/admin-sdk-mock:main`.
 

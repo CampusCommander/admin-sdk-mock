@@ -355,3 +355,12 @@ The execution ledger recorded these rulings while the plan ran. The text above a
   - `start` logs a `warning` event when passthrough is on and the proxy host is not loopback.
   - `GET /health` answers `503` until every domain is ready. The image's health check reads `MOCK_CONTROL_PORT` and has a 600-second start period.
   - The action maps a commit SHA pin to the image's SHA tag, and it rejects a line break in `workdir`, `config`, or `image`, and a port outside 1 to 65535.
+
+## Owner decisions after review
+
+On 2026-10-10 the owner decided these, and they replace P-D1 and P-D10:
+
+- The repository and the image are public.
+- The first release is `v0.1.0`, a pre-release, because the mock is not production ready. The text above names it version 1.0.
+- The license is the PolyForm Noncommercial License 1.0.0. Noncommercial use is permitted, and commercial use is not licensed.
+- Before the repository went public, its history was rewritten to replace one real delegated admin email, its domain, and a local credential path with placeholders.

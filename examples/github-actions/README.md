@@ -6,16 +6,7 @@ The runner needs Docker. GitHub-hosted Ubuntu runners have it.
 ## Use the action
 
 Copy `workflow.yml` and `admin-sdk-mock.json` into your repository. Set `config` to the path of your copy.
-Inside this repository, use `uses: ./` instead of `uses: CampusCommander/admin-sdk-mock@v1.0.0`.
-
-## Log in to the private image
-
-The image is private. Log in to `ghcr.io` before the action with `docker login --password-stdin`, as `workflow.yml` does.
-Pass `GITHUB_TOKEN` as the password, and give the job `packages: read` permission.
-
-`GITHUB_TOKEN` pulls the image only from repositories that the package grants access to, such as repositories in the same organization with access granted.
-Other repositories need a token with `read:packages`. Pass it as the login password.
-To use the action from another repository, allow access from other repositories in the Actions settings of the action repository.
+Inside this repository, use `uses: ./` instead of `uses: CampusCommander/admin-sdk-mock@v0.1.0`.
 
 ## Inputs
 

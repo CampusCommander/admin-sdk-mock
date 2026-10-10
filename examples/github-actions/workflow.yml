@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
   test:
@@ -15,13 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Log in to GHCR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-
       - id: mock
-        uses: CampusCommander/admin-sdk-mock@v1.0.0
+        uses: CampusCommander/admin-sdk-mock@v0.1.0
         with:
           config: examples/github-actions/admin-sdk-mock.json
 

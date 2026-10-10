@@ -88,7 +88,7 @@ async function cli(
 }
 
 const FAKE_INFO: ServerInfo = {
-  version: '1.0.0',
+  version: '0.1.0',
   ready: true,
   listeners: {
     google: { host: '127.0.0.1', port: 8443 },

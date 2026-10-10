@@ -1,8 +1,8 @@
 {
   "name": "@campuscommander/admin-sdk-mock",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "description": "A local mock of the Google Admin SDK Directory API, Chrome Management telemetry, and Google OAuth for testing",
   "type": "module",
   "engines": {

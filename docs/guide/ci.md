@@ -12,19 +12,14 @@ on: [push, pull_request]
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Log in to GHCR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - id: mock
-        uses: CampusCommander/admin-sdk-mock@v1.0.0
+        uses: CampusCommander/admin-sdk-mock@v0.1.0
         with:
           config: .github/admin-sdk-mock.json
       - run: npm ci
@@ -33,15 +28,8 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.mock.outputs.workdir }}/out/credentials/ci.json
 ```
 
-Until v1.0.0 is tagged, use `@main`.
 [examples/github-actions](../../examples/github-actions) holds this workflow and its configuration.
 Keep the action's configuration apart from the `init` starter. The starter's relative key paths resolve under `/config`, where the container cannot write.
-
-### Access
-
-The image and the action are private.
-`GITHUB_TOKEN` pulls the image when the package grants your repository access. Other repositories pass a token with `read:packages` as the login password.
-A workflow in another repository uses the action only when the Actions settings of this repository allow access from it.
 
 ### Inputs
 
@@ -105,7 +93,7 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
   -v "$PWD/admin-sdk-mock.json:/config/admin-sdk-mock.json:ro" \
   -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128 -e MOCK_PROXY_PASSTHROUGH=true \
   -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
-  ghcr.io/campuscommander/admin-sdk-mock:1.0.0
+  ghcr.io/campuscommander/admin-sdk-mock:0.1.0
 for _ in $(seq 1 600); do
   [ -f "$workdir/out/ready.json" ] && break
   [ "$(docker inspect -f '{{.State.Running}}' admin-sdk-mock)" = true ] \
@@ -121,8 +109,6 @@ export HTTPLIB2_CA_CERTS="$workdir/out/ca-bundle.pem" CURL_CA_BUNDLE="$workdir/o
 export ADMIN_SDK_MOCK_CONTROL=http://127.0.0.1:18080
 ```
 
-Until v1.0.0 is tagged, use the image tag `main`.
-Log in to `ghcr.io` first, as [installation](installation.md#the-image) shows.
 The wait stops early, and prints the container log, when the container exits first.
 The ready file holds the `ready` event. Its `domains[].customerId` and `domains[].adminEmail` name each domain.
 
@@ -137,7 +123,7 @@ addr="$(getent hosts docker | awk '{ print $1 }')"
 docker create --name admin-sdk-mock -p "$addr:13128:3128" \
   -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128 -e MOCK_CONFIG=/config/admin-sdk-mock.json \
   -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
-  ghcr.io/campuscommander/admin-sdk-mock:1.0.0
+  ghcr.io/campuscommander/admin-sdk-mock:0.1.0
 docker cp admin-sdk-mock.json admin-sdk-mock:/config/admin-sdk-mock.json
 docker start admin-sdk-mock
 for _ in $(seq 1 600); do
@@ -175,7 +161,7 @@ export HTTPLIB2_CA_CERTS="$PWD/mock-ca-bundle.pem" CURL_CA_BUNDLE="$PWD/mock-ca-
 A runner with Node 24.11 or later runs the package directly. The repository's `admin-sdk-mock.json` must turn the proxy on, as the `init` starter does.
 
 ```sh
-npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0
+npm install --save-dev github:CampusCommander/admin-sdk-mock#v0.1.0
 npx admin-sdk-mock start --ready-file .admin-sdk-mock/ready.json > mock.log 2>&1 &
 mock_pid=$!
 for _ in $(seq 1 600); do
@@ -189,7 +175,6 @@ eval "$client_env"
 npm test
 ```
 
-Until v1.0.0 is tagged, use `#main`.
 The wait stops early, and prints `mock.log`, when the mock exits first.
 The block reads the environment into a variable first, because `eval "$(...)"` would ignore a failed `env`, and the tests would then run without the proxy.
 `start` deletes an old ready file before it starts, so the wait never sees a stale one.

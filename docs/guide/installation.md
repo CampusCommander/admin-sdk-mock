@@ -3,76 +3,27 @@
 The mock installs three ways: as an npm development dependency, as a Docker image, or as a GitHub Action.
 All three run the same mock. Pick the path that matches where your tests run.
 
-Until v1.0.0 is tagged, use `#main` and `@main`.
-The image tag `1.0.0` arrives with that tag. Until then, use the image tag `main`.
-
 ## Prerequisites
 
-| Path           | Prerequisites                                                                                                   |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| npm            | Node 24.11 or later, and read access to the `CampusCommander/admin-sdk-mock` repository.                        |
-| Docker         | Docker, and a `ghcr.io` login with a token that has `read:packages`. Node is not needed.                        |
-| GitHub Actions | A runner with Docker, and a job with the `packages: read` permission. GitHub-hosted Ubuntu runners have Docker. |
+| Path           | Prerequisites                                                   |
+| -------------- | --------------------------------------------------------------- |
+| npm            | Node 24.11 or later.                                            |
+| Docker         | Docker. Node is not needed.                                     |
+| GitHub Actions | A runner with Docker. GitHub-hosted Ubuntu runners have Docker. |
 
 The guides use POSIX shell commands, for a shell such as bash or zsh on Linux and macOS, or a shell inside WSL on Windows.
 `eval "$(npx admin-sdk-mock env)"` needs such a shell. On Windows outside WSL, run the commands inside WSL instead.
 Or print `npx admin-sdk-mock env --format json` and set each variable in your shell by hand.
 After an npm install, `npx admin-sdk-mock doctor` checks Node, the configuration, the data directory, the CA file, and the ports.
 
-## Private repository access
-
-The repository and the image are private. Every install path needs an account or a token with access.
-
-### The GitHub CLI
-
-`gh auth setup-git` makes git use your GitHub CLI login for `github.com`. npm then fetches the repository through git with that login.
-
-```sh
-gh auth login
-gh auth setup-git
-```
-
-### A deploy key or a token
-
-A machine without a personal login uses a deploy key or a fine-grained token.
-
-- A deploy key is a read-only SSH key on the repository. npm falls back to SSH when the HTTPS fetch fails, so a loaded deploy key works.
-- A fine-grained token needs read access to the repository contents. Point git at it before `npm install`:
-
-```sh
-git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
-```
-
-Keep the token in a CI secret. Never commit it.
-
-`package-lock.json` records the dependency as `git+ssh://git@github.com/CampusCommander/admin-sdk-mock.git#<commit>`, even after an HTTPS install.
-npm 11.19 still fetches that URL over HTTPS first, so the rewrite above covers `npm ci`.
-When the HTTPS fetch fails, npm falls back to SSH, and its error names `ssh://git@github.com/`. Check the token's access first.
-A tool that fetches the recorded SSH URL directly needs a second rewrite. No test covers this case:
-
-```sh
-git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
-```
-
-### The image
-
-Log in to `ghcr.io` with a token that has `read:packages`:
-
-```sh
-echo "$GHCR_TOKEN" | docker login ghcr.io -u <github user> --password-stdin
-```
-
-In GitHub Actions, `GITHUB_TOKEN` pulls the image when the package grants your repository access. Other repositories need a token with `read:packages`.
-Using the action from another repository also requires the Actions access setting of this repository to allow it.
-
 ## npm
 
 ```sh
-npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0
+npm install --save-dev github:CampusCommander/admin-sdk-mock#v0.1.0
 npx admin-sdk-mock --help
 ```
 
-npm records the dependency as `"@campuscommander/admin-sdk-mock": "github:CampusCommander/admin-sdk-mock#v1.0.0"`.
+npm records the dependency as `"@campuscommander/admin-sdk-mock": "github:CampusCommander/admin-sdk-mock#v0.1.0"`.
 The install runs the `prepare` script, which compiles the package into `dist/`. The first install therefore takes longer.
 
 ### Lifecycle scripts
@@ -110,7 +61,7 @@ Approve this package in `package.json` by its repository:
 ```
 
 npm matches a Git dependency by its repository and commit SHA.
-A key with a tag, such as `github:CampusCommander/admin-sdk-mock#v1.0.0`, never matches. The package name never matches either.
+A key with a tag, such as `github:CampusCommander/admin-sdk-mock#v0.1.0`, never matches. The package name never matches either.
 Without the entry, npm runs `prepare` and prints a warning that names the package.
 With `strict-allow-scripts=true`, the install fails with `ESTRICTALLOWSCRIPTS` until the entry exists.
 
@@ -125,12 +76,12 @@ The package is ESM only. Start with `npx admin-sdk-mock init`, then read the [co
 ## Docker
 
 ```sh
-docker pull ghcr.io/campuscommander/admin-sdk-mock:1.0.0
+docker pull ghcr.io/campuscommander/admin-sdk-mock:0.1.0
 ```
 
 | Tag            | Source                                              |
 | -------------- | --------------------------------------------------- |
-| `1.0.0`, `1.0` | The release workflow, from the tag `v1.0.0`.        |
+| `0.1.0`, `0.1` | The release workflow, from the tag `v0.1.0`.        |
 | `main`         | CI, from every push to `main`.                      |
 | A commit SHA   | CI, from the push to `main` that built that commit. |
 
@@ -184,7 +135,7 @@ Docker Engine refuses a missing directory. Docker Desktop creates it, owned by r
 
 ```yaml
 - id: mock
-  uses: CampusCommander/admin-sdk-mock@v1.0.0
+  uses: CampusCommander/admin-sdk-mock@v0.1.0
   with:
     config: .github/admin-sdk-mock.json
 ```
@@ -193,13 +144,13 @@ The [CI guide](ci.md) covers the login, the inputs, and the outputs.
 
 ## Upgrades
 
-Releases follow version tags such as `v1.0.0`. Read [CHANGELOG.md](../../CHANGELOG.md) before you move to a new tag.
+Releases follow version tags such as `v0.1.0`. A 0.x release may change any interface. Read [CHANGELOG.md](../../CHANGELOG.md) before you move to a new tag.
 
 | Path           | Upgrade                                                                    |
 | -------------- | -------------------------------------------------------------------------- |
 | npm            | `npm install --save-dev github:CampusCommander/admin-sdk-mock#<new tag>`   |
 | Docker         | Pull and run `ghcr.io/campuscommander/admin-sdk-mock:<new version>`.       |
-| GitHub Actions | Change `@v1.0.0` to the new tag. The action then picks the matching image. |
+| GitHub Actions | Change `@v0.1.0` to the new tag. The action then picks the matching image. |
 
 A domain with `onStart: keep` keeps its stored data across an upgrade.
 To seed it with the new version, set `onStart` to `reset` for one start, or delete the data directory.

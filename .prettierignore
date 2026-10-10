@@ -7,3 +7,5 @@ docs/plans
 .superpowers
 dist
 .venv
+# The license text stays verbatim.
+LICENSE.md

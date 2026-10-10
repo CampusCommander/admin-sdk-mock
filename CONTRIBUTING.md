@@ -1,6 +1,6 @@
 # Contributing
 
-This repository is private CampusCommander test infrastructure. This page describes the development workflow.
+This page describes the development workflow of the Admin SDK mock.
 
 ## Set up
 

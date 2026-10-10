@@ -5,15 +5,16 @@ Unmodified Google clients reach it through a built-in CONNECT proxy and a mock C
 It serves seeded K-12 domains, from an empty domain to the 400,000-device `xlarge` tier, and it models Google's quota, latency, and search lag.
 It is test infrastructure and never serves production traffic.
 
-Until v1.0.0 is tagged, use `#main` and `@main`.
-The image tag `1.0.0` arrives with that tag. Until then, use the image tag `main`.
+> [!WARNING]
+> Version 0.1.0 is an early release, and it is not production ready. Any 0.x release may change the configuration, the CLI, the API, or the image.
+> Pin an exact version, and read [CHANGELOG.md](CHANGELOG.md) before you upgrade.
 
 ## Quickstart with npm
 
-You need Node 24.11 or later and read access to this repository. See [private repository access](docs/guide/installation.md#private-repository-access).
+You need Node 24.11 or later.
 
 ```sh
-npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0
+npm install --save-dev github:CampusCommander/admin-sdk-mock#v0.1.0
 npx admin-sdk-mock init
 npx admin-sdk-mock start
 ```
@@ -32,7 +33,7 @@ A Google client library uses the key file `.admin-sdk-mock/credentials/demo.json
 
 ## Quickstart with Docker
 
-You need Docker and a `ghcr.io` login with a token that has `read:packages`. Write a configuration that puts the key file under `/out`:
+You need Docker. Write a configuration that puts the key file under `/out`:
 
 ```sh
 mkdir -p mock/data mock/out
@@ -52,7 +53,7 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
   -v "$PWD/mock/data:/data" -v "$PWD/mock/out:/out" \
   -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128 \
   -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
-  ghcr.io/campuscommander/admin-sdk-mock:1.0.0
+  ghcr.io/campuscommander/admin-sdk-mock:0.1.0
 (for _ in $(seq 1 600); do
   [ -f mock/out/ready.json ] && exit 0
   [ "$(docker inspect -f '{{.State.Running}}' admin-sdk-mock)" = true ] \
@@ -80,7 +81,6 @@ The key file lands at `mock/out/credentials/demo.json`. Stop the mock with `dock
 ## Quickstart with GitHub Actions
 
 The action starts the image on the runner and exports the client environment to every later step.
-The image is private, so log in to `ghcr.io` first. The job needs the `packages: read` permission.
 Give the action its own configuration file, such as `.github/admin-sdk-mock.json`, as [examples/github-actions](examples/github-actions) does.
 The `init` starter does not fit. Its relative key paths resolve under `/config`, where the container cannot write.
 
@@ -89,19 +89,14 @@ on: [push, pull_request]
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Log in to GHCR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - id: mock
-        uses: CampusCommander/admin-sdk-mock@v1.0.0
+        uses: CampusCommander/admin-sdk-mock@v0.1.0
         with:
           config: .github/admin-sdk-mock.json
       - run: npm ci
@@ -115,25 +110,25 @@ The [CI guide](docs/guide/ci.md) lists every input and output, and [examples/git
 
 ## Documentation
 
-| Page                                                                     | Content                                                                             |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| [Installation](docs/guide/installation.md)                               | Prerequisites, the three install paths, private access, upgrades, and removal.      |
-| [Configuration](docs/guide/configuration.md)                             | The file, precedence, domains, settings, service accounts, faults, and fixtures.    |
-| [Clients](docs/guide/clients.md)                                         | How Node, Python, curl, Java, and Go clients reach the mock.                        |
-| [Testing](docs/guide/testing.md)                                         | `startMock()`, fixtures, time, flush, faults, tokens, and the control API.          |
-| [CI](docs/guide/ci.md)                                                   | The GitHub Action and other CI systems.                                             |
-| [Behavior](docs/guide/behavior.md)                                       | Quota, latency, search lag, group delays, and write limits.                         |
-| [Troubleshooting](docs/guide/troubleshooting.md)                         | Symptom, cause, and fix for common failures.                                        |
-| [Configuration reference](docs/reference/configuration.md)               | Every configuration key, generated from the JSON schema.                            |
-| [CLI reference](docs/reference/cli.md)                                   | Every command and flag, generated from the CLI help.                                |
-| [API coverage](docs/reference/api-coverage.md)                           | Every Google method, its parameters, and its rulings.                               |
-| [Trust](docs/trust.md)                                                   | What each test layer proves, and which tests prove each requirement.                |
-| [Examples](examples/README.md)                                           | Runnable Node, Python, curl, fixtures, and GitHub Actions projects.                 |
-| [Calibration record](docs/calibration.md)                                | Live parity evidence, measurements, and every ruling.                               |
-| [Mock design](docs/specs/2026-10-09-admin-sdk-mock-design.md)            | The milestone 1 design: architecture, seed data, reads, quota, and latency.         |
-| [Milestone 2 design](docs/specs/2026-10-09-milestone-2-writes-design.md) | The writes design.                                                                  |
-| [Milestone 3 design](docs/specs/2026-10-10-milestone-3-groups-design.md) | The groups design.                                                                  |
-| [Productization design](docs/specs/2026-10-10-productization-design.md)  | The version 1.0 design: configuration, proxy, CLI, API, fixtures, and distribution. |
+| Page                                                                     | Content                                                                          |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| [Installation](docs/guide/installation.md)                               | Prerequisites, the three install paths, private access, upgrades, and removal.   |
+| [Configuration](docs/guide/configuration.md)                             | The file, precedence, domains, settings, service accounts, faults, and fixtures. |
+| [Clients](docs/guide/clients.md)                                         | How Node, Python, curl, Java, and Go clients reach the mock.                     |
+| [Testing](docs/guide/testing.md)                                         | `startMock()`, fixtures, time, flush, faults, tokens, and the control API.       |
+| [CI](docs/guide/ci.md)                                                   | The GitHub Action and other CI systems.                                          |
+| [Behavior](docs/guide/behavior.md)                                       | Quota, latency, search lag, group delays, and write limits.                      |
+| [Troubleshooting](docs/guide/troubleshooting.md)                         | Symptom, cause, and fix for common failures.                                     |
+| [Configuration reference](docs/reference/configuration.md)               | Every configuration key, generated from the JSON schema.                         |
+| [CLI reference](docs/reference/cli.md)                                   | Every command and flag, generated from the CLI help.                             |
+| [API coverage](docs/reference/api-coverage.md)                           | Every Google method, its parameters, and its rulings.                            |
+| [Trust](docs/trust.md)                                                   | What each test layer proves, and which tests prove each requirement.             |
+| [Examples](examples/README.md)                                           | Runnable Node, Python, curl, fixtures, and GitHub Actions projects.              |
+| [Calibration record](docs/calibration.md)                                | Live parity evidence, measurements, and every ruling.                            |
+| [Mock design](docs/specs/2026-10-09-admin-sdk-mock-design.md)            | The milestone 1 design: architecture, seed data, reads, quota, and latency.      |
+| [Milestone 2 design](docs/specs/2026-10-09-milestone-2-writes-design.md) | The writes design.                                                               |
+| [Milestone 3 design](docs/specs/2026-10-10-milestone-3-groups-design.md) | The groups design.                                                               |
+| [Productization design](docs/specs/2026-10-10-productization-design.md)  | The 0.1.0 design: configuration, proxy, CLI, API, fixtures, and distribution.    |
 
 [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [LICENSE.md](LICENSE.md) hold the release notes, the development workflow, the security model, and the license.
 
@@ -149,7 +144,7 @@ The [CI guide](docs/guide/ci.md) lists every input and output, and [examples/git
 ## Status
 
 Milestones 1, 2, and 3 are built: Directory and Chrome Management reads, writes, and groups.
-Version 1.0.0 adds the configuration file, the proxy, the CLI, the programmatic API, fixtures, the image configuration, the action, the examples, and these documents. It awaits owner review.
+Version 0.1.0, the first public release, adds the configuration file, the proxy, the CLI, the programmatic API, fixtures, the image configuration, the action, the examples, and these documents.
 The Campus Commander acceptance run awaits the owner. [docs/trust.md](docs/trust.md) records every acceptance item and its evidence.
 
 - Live parity against the Easton fixture: 19 of 19 probes match in status. Six have shape notes.
@@ -162,3 +157,8 @@ The Campus Commander acceptance run awaits the owner. [docs/trust.md](docs/trust
 The mock began as the scale-test backend of Campus Commander.
 A Compose overlay routes the four Google hostnames to the mock inside the Campus Commander network. The overlay adds no file to Campus Commander.
 [docs/campus-commander.md](docs/campus-commander.md) holds the procedure and its record. The [clients guide](docs/guide/clients.md#docker-network-aliases) explains the overlay.
+
+## License
+
+The mock is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
+Any noncommercial use is permitted, including use by schools, charities, public research organizations, and government institutions. Commercial use is not licensed.

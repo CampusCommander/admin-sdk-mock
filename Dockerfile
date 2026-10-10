@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+# The source label links the ghcr.io package to the repository.
+LABEL org.opencontainers.image.source="https://github.com/CampusCommander/admin-sdk-mock" \
+      org.opencontainers.image.description="A local stand-in for the Google Admin SDK Directory, Chrome Management, and OAuth APIs" \
+      org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 WORKDIR /app
 COPY package.json package-lock.json ./
 # --ignore-scripts: the prepare script builds dist/ with TypeScript, a dev dependency. The image runs the .ts sources directly.

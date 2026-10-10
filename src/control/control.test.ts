@@ -519,7 +519,7 @@ test('GET /info answers the info provider, and 404 without one', async (t) => {
   assert.equal((await call('GET', '/info')).status, 404);
 
   const info = {
-    version: '1.0.0',
+    version: '0.1.0',
     ready: true,
     listeners: {
       google: { host: '127.0.0.1', port: 8443 },
@@ -543,7 +543,7 @@ test('GET /info answers the info provider, and 404 without one', async (t) => {
 
 test('GET /health answers 503 starting until the info provider is ready, then 200', async (t) => {
   const info = {
-    version: '1.0.0',
+    version: '0.1.0',
     ready: false,
     listeners: {
       google: { host: '127.0.0.1', port: 8443 },
