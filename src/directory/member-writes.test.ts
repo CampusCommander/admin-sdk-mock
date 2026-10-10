@@ -185,6 +185,7 @@ test('a new group accepts members only after the ready delay', async (t) => {
   });
   assert.equal(early.status, 404);
   assert.equal(early.json().error.message, 'Resource Not Found: groupKey');
+  assert.equal((await api('GET', `/groups/${fresh.email}`)).status, 200);
   assert.equal((await api('GET', members(fresh.email))).status, 200);
   await clock.advance(60_000);
   assert.equal(
