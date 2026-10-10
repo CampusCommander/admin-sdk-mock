@@ -15,7 +15,8 @@ cleanup() {
     echo "remote docker smoke failed (exit $rc). Mock log:"
     inner logs admin-sdk-mock 2>&1 || true
   fi
-  docker rm -f "$id" > /dev/null 2>&1 || true
+  # -v removes the anonymous /var/lib/docker volume that holds the loaded image.
+  docker rm -f -v "$id" > /dev/null 2>&1 || true
   docker network rm "$id" > /dev/null 2>&1 || true
   docker volume rm "$id-certs" > /dev/null 2>&1 || true
   rm -rf "$work"
@@ -24,15 +25,17 @@ cleanup() {
 trap cleanup EXIT
 # The guide's block, with the image that the docker-in-docker host holds.
 awk '/^### Docker on another host$/ { section = 1 } section && /^```sh$/ { block = 1; next } block && /^```$/ { exit } block' docs/guide/ci.md \
-  | sed 's#ghcr.io/campuscommander/admin-sdk-mock:1.0.0#admin-sdk-mock:remote#' > "$work/recipe.sh"
-grep -q 'admin-sdk-mock:remote' "$work/recipe.sh" \
-  || { echo "docs/guide/ci.md has no Docker on another host block that runs the 1.0.0 image."; exit 1; }
+  | sed 's#ghcr\.io/campuscommander/admin-sdk-mock:[^[:space:]]*#admin-sdk-mock:remote#' > "$work/recipe.sh"
+for part in 'admin-sdk-mock:remote' 'docker cp ' 'docker start ' 'NO_PROXY=.*,docker '; do
+  grep -q "$part" "$work/recipe.sh" \
+    || { echo "The Docker on another host block in docs/guide/ci.md lacks '$part'."; exit 1; }
+done
 # The example configuration writes its key file to /out/credentials/ci.json, the path that the block copies.
 cp examples/github-actions/admin-sdk-mock.json "$work/admin-sdk-mock.json"
 cat > "$work/job.sh" << 'EOF'
 set -euo pipefail
 . ./recipe.sh
-customer="$(docker exec admin-sdk-mock cat /out/ready.json | grep -o '"customerId": *"[^"]*"' | head -n 1 | cut -d '"' -f 4)"
+customer="$(docker exec admin-sdk-mock cat /out/ready.json | grep -m 1 -o '"customerId": *"[^"]*"' | cut -d '"' -f 4)"
 # A docker command after the exports proves that NO_PROXY keeps the Docker CLI off the proxy.
 docker exec admin-sdk-mock admin-sdk-mock token "$customer" --scopes read --raw > token
 test -s ci.json || { echo "The key file was not copied."; exit 1; }

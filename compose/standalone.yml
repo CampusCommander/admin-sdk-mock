@@ -4,6 +4,7 @@ services:
     # A local name, so the build never replaces a pulled ghcr.io/campuscommander/admin-sdk-mock image.
     image: ${ADMIN_SDK_MOCK_IMAGE:-admin-sdk-mock:local}
     build: ..
+    # Docker 20.10 and later allow port 443 without it. Other runtimes may not.
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
     environment:
