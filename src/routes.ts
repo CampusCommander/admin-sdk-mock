@@ -4,6 +4,7 @@ import { handleTokenInfo } from './auth/tokeninfo.ts';
 import { SCOPES, WRITE_SCOPES } from './auth/scopes.ts';
 import { getTelemetry, listTelemetry } from './chrome/telemetry.ts';
 import { getCustomer } from './directory/customers.ts';
+import { getCommand, issueCommand } from './directory/commands.ts';
 import {
   batchChangeStatus,
   moveDevicesToOu,
@@ -162,6 +163,19 @@ export function buildRoutes(mock: Mock): Route[] {
       /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos(?::|%3[Aa])batchChangeStatus$/,
       WRITE_SCOPES.device,
       batchChangeStatus,
+    ),
+    writeRoute(
+      'directory.chromeos.issueCommand',
+      'POST',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/:]+?)(?::|%3[Aa])issueCommand$/,
+      WRITE_SCOPES.device,
+      issueCommand,
+    ),
+    directoryRoute(
+      'directory.chromeos.commands.get',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/]+)\/commands\/(?<commandId>[^/]+)$/,
+      SCOPES.device,
+      getCommand,
     ),
     {
       id: 'chrome.telemetry.devices.list',

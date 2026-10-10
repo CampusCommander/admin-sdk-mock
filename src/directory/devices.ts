@@ -1,3 +1,4 @@
+import { settleCommands } from './command-effects.ts';
 import type { ApiResponse, Call, OpenDomain } from '../http/types.ts';
 import type { StoredDevice } from '../seed/devices.ts';
 import { deviceReports } from '../seed/reports.ts';
@@ -112,6 +113,7 @@ export function deviceCount(domain: OpenDomain): number {
 export function listDevices(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customerId);
+  settleCommands(call);
   const query = call.request.query;
   const maxResults = intParam(call, 'maxResults', {
     fallback: 100,
@@ -216,6 +218,7 @@ export function visibleDevice(call: Call, id: string): StoredDevice {
 export function getDevice(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customerId);
+  settleCommands(call);
   const projection = enumParam(call, 'projection', PROJECTION, 'FULL');
   const device = visibleDevice(call, call.params.deviceId);
   return {

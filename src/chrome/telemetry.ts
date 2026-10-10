@@ -1,3 +1,4 @@
+import { settleCommands } from '../directory/command-effects.ts';
 import {
   invalidArgument,
   listedTable,
@@ -76,6 +77,7 @@ export function telemetryDevice(
 export function listTelemetry(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customer);
+  settleCommands(call);
   const mask = readMask(call);
   const pageSize =
     intParam(call, 'pageSize', {
@@ -144,6 +146,7 @@ export function listTelemetry(call: Call): ApiResponse {
 export function getTelemetry(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customer);
+  settleCommands(call);
   const mask = readMask(call);
   const id = call.params.deviceId;
   const device = call.overrides.hidden(domain.customerId).has(id)

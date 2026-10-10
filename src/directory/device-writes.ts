@@ -1,3 +1,4 @@
+import { settleCommands } from './command-effects.ts';
 import { ApiError, directoryError } from '../http/errors.ts';
 import type { ApiResponse, Call } from '../http/types.ts';
 import type { StoredDevice } from '../seed/devices.ts';
@@ -47,6 +48,7 @@ export function deviceIdList(call: Call, value: unknown): string[] {
 export function updateDevice(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customerId);
+  settleCommands(call);
   const projection = enumParam(call, 'projection', PROJECTION, 'FULL');
   const device = visibleDevice(call, call.params.deviceId);
   const body = jsonBody(call);
@@ -96,6 +98,7 @@ export function updateDevice(call: Call): ApiResponse {
 export function moveDevicesToOu(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customerId);
+  settleCommands(call);
   const raw = call.request.query.get('orgUnitPath');
   if (!raw)
     throw new ApiError(
@@ -171,6 +174,7 @@ const FAILED_PRECONDITION = 9;
 export function batchChangeStatus(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customerId);
+  settleCommands(call);
   const body = jsonBody(call);
   const ids = deviceIdList(call, body.deviceIds);
   const name = body.changeChromeOsDeviceStatusAction;
