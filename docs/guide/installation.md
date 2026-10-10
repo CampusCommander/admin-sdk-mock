@@ -45,6 +45,15 @@ git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".ins
 
 Keep the token in a CI secret. Never commit it.
 
+`package-lock.json` records the dependency as `git+ssh://git@github.com/CampusCommander/admin-sdk-mock.git#<commit>`, even after an HTTPS install.
+npm 11.19 still fetches that URL over HTTPS first, so the rewrite above covers `npm ci`.
+When the HTTPS fetch fails, npm falls back to SSH, and its error names `ssh://git@github.com/`. Check the token's access first.
+A tool that fetches the recorded SSH URL directly needs a second rewrite. No test covers this case:
+
+```sh
+git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+```
+
 ### The image
 
 Log in to `ghcr.io` with a token that has `read:packages`:
@@ -65,6 +74,45 @@ npx admin-sdk-mock --help
 
 npm records the dependency as `"@campuscommander/admin-sdk-mock": "github:CampusCommander/admin-sdk-mock#v1.0.0"`.
 The install runs the `prepare` script, which compiles the package into `dist/`. The first install therefore takes longer.
+
+### Lifecycle scripts
+
+npm must run the `prepare` script of this Git dependency. Two npm settings stop it. The steps below hold for npm 11.19.
+
+With `--ignore-scripts`, or `ignore-scripts=true` in an `.npmrc` file, npm skips `prepare`.
+The install still exits 0, but the package holds no `dist/` directory and links no executables.
+`npx admin-sdk-mock` then fails with `npm error 404 Not Found - GET https://registry.npmjs.org/admin-sdk-mock`.
+Run `npm install --ignore-scripts=false` in the project. npm then builds the package and links both executables.
+`npm rebuild` does not build it.
+
+An `allow-scripts` line in any `.npmrc` file fails the install:
+
+```text
+npm error git dep preparation failed
+npm error npm error code EALLOWSCRIPTS
+npm error npm error --allow-scripts is not allowed in project-scoped installs.
+```
+
+npm passes the setting to the nested install that prepares the Git dependency. That install treats it as a command-line flag and rejects it.
+For one install, pass an empty value: `npm install --allow-scripts=` or `npm ci --allow-scripts=`.
+To fix it for good, run `npm config ls`. It names the file that sets `allow-scripts`.
+Remove the line from that file, for example with `npm config delete allow-scripts --location=user`.
+A project keeps its script policy in the `allowScripts` field of `package.json` instead. That field never reaches the nested install.
+
+Approve this package in `package.json` by its repository:
+
+```json
+{
+  "allowScripts": {
+    "github:CampusCommander/admin-sdk-mock": true
+  }
+}
+```
+
+npm matches a Git dependency by its repository and commit SHA.
+A key with a tag, such as `github:CampusCommander/admin-sdk-mock#v1.0.0`, never matches. The package name never matches either.
+Without the entry, npm runs `prepare` and prints a warning that names the package.
+With `strict-allow-scripts=true`, the install fails with `ESTRICTALLOWSCRIPTS` until the entry exists.
 
 The package provides:
 

@@ -3,6 +3,26 @@
 Each section names a symptom, its cause, and the fix.
 Start with `npx admin-sdk-mock doctor`. It checks Node, the configuration, the data directory, the CA file, and every listener port.
 
+## npx answers 404 after an npm install
+
+Symptom: `npm install` exits 0, but `npx admin-sdk-mock` fails with `npm error 404 Not Found - GET https://registry.npmjs.org/admin-sdk-mock`.
+`node_modules/@campuscommander/admin-sdk-mock` holds no `dist/` directory, and `node_modules/.bin` holds no `admin-sdk-mock`.
+
+Cause: npm skipped the `prepare` script. `--ignore-scripts` or `ignore-scripts=true` in an `.npmrc` file does that.
+
+Fix: run `npm install --ignore-scripts=false` in the project. `npm rebuild` does not build the package.
+The [installation guide](installation.md#lifecycle-scripts) explains both script settings.
+
+## EALLOWSCRIPTS on npm install
+
+Symptom: `npm install` or `npm ci` fails with `git dep preparation failed`, then `EALLOWSCRIPTS` and `--allow-scripts is not allowed in project-scoped installs.`
+
+Cause: an `.npmrc` file sets `allow-scripts`. npm 11.19 passes it to the nested install that prepares the Git dependency, and that install rejects it.
+
+Fix: pass an empty value for one install, `npm install --allow-scripts=`. To fix it for good, find the file with `npm config ls`.
+Remove the line, for example with `npm config delete allow-scripts --location=user`. Keep the project's policy in `package.json` instead.
+The [installation guide](installation.md#lifecycle-scripts) shows the `allowScripts` entry for this package.
+
 ## Certificate errors
 
 Symptoms:
