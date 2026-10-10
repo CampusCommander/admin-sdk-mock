@@ -8,6 +8,9 @@ export const LAGGED = {
   deleted_users: 'id',
   user_aliases: 'alias',
   devices: 'device_id',
+  groups: 'id',
+  group_aliases: 'alias',
+  group_members: 'id',
 } as const;
 export type LaggedTable = keyof typeof LAGGED;
 
@@ -18,6 +21,9 @@ const PRIOR_INDEXES: Readonly<Record<LaggedTable, readonly string[]>> = {
   deleted_users: ['primary_email'],
   user_aliases: ['user_id'],
   devices: ['org_unit_path, ord', 'ord'],
+  groups: ['email'],
+  group_aliases: ['group_id'],
+  group_members: ['group_id, email, member_id', 'email, member_id'],
 };
 
 const TABLES = Object.keys(LAGGED) as LaggedTable[];
@@ -86,7 +92,7 @@ export function createLagSchema(db: DatabaseSync): void {
 export function saveBeforeImage(
   db: DatabaseSync,
   table: LaggedTable,
-  keyValue: string,
+  keyValue: string | number,
   writtenAt: number,
   delayMs: number,
 ): void {

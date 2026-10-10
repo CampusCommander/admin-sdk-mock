@@ -27,53 +27,14 @@ import {
 } from './directory/user-writes.ts';
 import { getUser, listUsers } from './directory/users.ts';
 import type { Route } from './http/types.ts';
+import { directoryRoute, writeRoute } from './route-helpers.ts';
+import { groupRoutes } from './directory/group-routes.ts';
+import { memberRoutes } from './directory/member-routes.ts';
 import type { Mock } from './mock.ts';
 
 const OAUTH = ['oauth2.googleapis.com'];
-const ADMIN = ['admin.googleapis.com'];
 const DEVICE =
   /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/]+)$/;
-
-/** A Directory API read route on admin.googleapis.com. */
-export function directoryRoute(
-  id: string,
-  pattern: RegExp,
-  scopes: readonly string[],
-  handler: Route['handler'],
-  admin = true,
-): Route {
-  return {
-    id,
-    api: 'directory',
-    hosts: ADMIN,
-    methods: ['GET'],
-    pattern,
-    scopes,
-    admin,
-    handler,
-  };
-}
-
-/** A Directory API write route on admin.googleapis.com. */
-export function writeRoute(
-  id: string,
-  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-  pattern: RegExp,
-  scopes: readonly string[],
-  handler: Route['handler'],
-): Route {
-  return {
-    id,
-    api: 'directory',
-    hosts: ADMIN,
-    methods: [method],
-    pattern,
-    scopes,
-    admin: true,
-    write: true,
-    handler,
-  };
-}
 
 const USER = /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)$/;
 const ORGUNIT =
@@ -257,6 +218,8 @@ export function buildRoutes(mock: Mock): Route[] {
       SCOPES.device,
       getCommand,
     ),
+    ...groupRoutes(),
+    ...memberRoutes(),
     {
       id: 'chrome.telemetry.devices.list',
       api: 'chrome',
