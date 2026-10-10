@@ -18,6 +18,8 @@ export interface UserRow {
   creation_time: number;
   last_login_time: number | null;
   ord: number;
+  change_password_at_next_login: number;
+  external_ids: string | null;
 }
 
 /** Find a user by primary email, alias, or user ID. */

@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { createLagSchema } from './lag.ts';
+import { openDatabase, rows } from './sqlite.ts';
 import { registerTextFunctions } from './text.ts';
-import { openDatabase } from './sqlite.ts';
 
 export const DOMAIN_SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -38,7 +39,9 @@ CREATE TABLE IF NOT EXISTS users (
   school INTEGER,
   creation_time INTEGER NOT NULL,
   last_login_time INTEGER,
-  ord INTEGER NOT NULL
+  ord INTEGER NOT NULL,
+  change_password_at_next_login INTEGER NOT NULL DEFAULT 0,
+  external_ids TEXT
 );
 CREATE INDEX IF NOT EXISTS users_ou ON users (org_unit_path);
 CREATE INDEX IF NOT EXISTS users_family ON users (family_name, id);
@@ -88,12 +91,74 @@ CREATE INDEX IF NOT EXISTS devices_status ON devices (status);
 CREATE INDEX IF NOT EXISTS devices_sync ON devices (last_sync);
 CREATE INDEX IF NOT EXISTS devices_ord ON devices (ord);
 CREATE INDEX IF NOT EXISTS devices_asset ON devices (annotated_asset_id);
+CREATE TABLE IF NOT EXISTS deleted_users (
+  id TEXT PRIMARY KEY,
+  primary_email TEXT NOT NULL,
+  given_name TEXT NOT NULL,
+  family_name TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  org_unit_path TEXT NOT NULL,
+  is_admin INTEGER NOT NULL,
+  suspended INTEGER NOT NULL,
+  suspension_reason TEXT,
+  external_id TEXT,
+  role TEXT NOT NULL,
+  school INTEGER,
+  creation_time INTEGER NOT NULL,
+  last_login_time INTEGER,
+  ord INTEGER NOT NULL,
+  change_password_at_next_login INTEGER NOT NULL DEFAULT 0,
+  external_ids TEXT,
+  deleted_at INTEGER NOT NULL,
+  aliases TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS deleted_users_email ON deleted_users (primary_email);
+CREATE TABLE IF NOT EXISTS device_commands (
+  command_id INTEGER PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  payload TEXT,
+  issued_at INTEGER NOT NULL,
+  sent_at INTEGER,
+  acked_at INTEGER,
+  executed_at INTEGER,
+  expire_at INTEGER NOT NULL,
+  result TEXT NOT NULL,
+  error_message TEXT,
+  applied INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS device_commands_due ON device_commands (applied, executed_at);
 `;
 
-/** Open one domain file and create its tables when they are missing. */
+/** Columns that milestone 2 added to tables in milestone 1 files. */
+const ADDED_COLUMNS: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  users: {
+    change_password_at_next_login: 'INTEGER NOT NULL DEFAULT 0',
+    external_ids: 'TEXT',
+  },
+};
+
+function addMissingColumns(db: DatabaseSync): void {
+  for (const [table, columns] of Object.entries(ADDED_COLUMNS)) {
+    const existing = new Set(
+      rows<{ name: string }>(
+        db.prepare(`PRAGMA table_info(${table})`).all(),
+      ).map((column) => column.name),
+    );
+    for (const [name, type] of Object.entries(columns))
+      if (!existing.has(name))
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
+}
+
+/** Open one domain file and create its tables and views when they are missing. */
 export function openDomainDb(path: string): DatabaseSync {
   const db = openDatabase(path);
   db.exec(DOMAIN_SCHEMA);
+  addMissingColumns(db);
+  createLagSchema(db);
   registerTextFunctions(db);
   return db;
 }
