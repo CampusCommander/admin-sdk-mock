@@ -40,7 +40,18 @@ function step(message: string): void {
 }
 
 /** Never let npx fetch a package or wait on a prompt. */
-const baseEnv: NodeJS.ProcessEnv = { ...process.env, npm_config_yes: 'false' };
+/**
+ * The environment for every child. `npm run test:package` exports the parent npm's
+ * settings as npm_* variables, and a nested npm treats them as command-line flags
+ * (npm 11 refuses `allow-scripts` from them in a project install). The children read
+ * the same configuration files themselves, so drop the copies.
+ */
+const baseEnv: NodeJS.ProcessEnv = {
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !/^npm_/i.test(name)),
+  ),
+  npm_config_yes: 'false',
+};
 
 function run(
   command: string,
