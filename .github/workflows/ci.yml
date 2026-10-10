@@ -82,11 +82,10 @@ jobs:
       - name: Smoke-test a mounted configuration and the proxy
         run: bash scripts/image-smoke.sh admin-sdk-mock:ci
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         name: Publish the image
         run: |

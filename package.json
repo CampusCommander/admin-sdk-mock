@@ -35,7 +35,7 @@
     "test:contract": "node --test \"test/contract/*.test.ts\"",
     "test:compat": "node test/compat/run.ts",
     "test:scale": "node test/scale/scale.ts",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=\"**/*.test.ts\" --test-coverage-exclude=\"src/testing/**\" --test-coverage-exclude=\"parity/**\" \"src/**/*.test.ts\" --test-coverage-lines=99 --test-coverage-branches=94 --test-coverage-functions=97",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=\"**/*.test.ts\" --test-coverage-exclude=\"src/testing/**\" --test-coverage-exclude=\"parity/**\" \"src/**/*.test.ts\" \"parity/**/*.test.ts\" --test-coverage-lines=99 --test-coverage-branches=94 --test-coverage-functions=97",
     "test:examples": "npm run build && node test/examples/run.ts",
     "test:python": "node test/python/run.ts",
     "test:package": "node test/package/run.ts",
