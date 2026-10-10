@@ -263,16 +263,10 @@ test('a second run replaces the faults, and an invalid rule names its path', (t)
   const first = ensureDomain(mock, entry(domain), 0, {}, NOW);
   ensureDomain(mock, entry(domain), 0, {}, NOW);
   assert.equal(mock.faults.list(first.customerId).length, 1);
+  // resolveConfig rejects this rule first. Skip it to reach the backstop in ensureDomain.
+  const bogus = { ...entry({ spec: EMPTY }), faults: [{ kind: 'bogus' }] };
   assert.deepEqual(
-    configErrors(() =>
-      ensureDomain(
-        mock,
-        entry({ spec: EMPTY, faults: [{ kind: 'bogus' }] }),
-        0,
-        {},
-        NOW,
-      ),
-    ),
+    configErrors(() => ensureDomain(mock, bogus, 0, {}, NOW)),
     ['domains[0].faults[0]: Unknown fault kind.'],
   );
 });

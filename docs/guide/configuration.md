@@ -226,6 +226,7 @@ domains[0].spec changed since the domain was created. Set onStart to reset or de
 
 `reset` keeps each key file that still belongs to the domain, so clients keep working across restarts.
 Two entries with the same seed name the same customer and fail validation.
+Two entries that share a domain name fail validation too, such as two entries with the same `spec.name`.
 
 ### What every start reapplies
 
@@ -263,7 +264,7 @@ The key file holds the Google service-account JSON format, with mode 0600. Googl
 A client signs its token request with this key and names a domain user as the subject, such as the administrator `admin@<primary domain>`.
 With exactly one service account in the configuration, `env` also exports `GOOGLE_APPLICATION_CREDENTIALS` with its path.
 
-`scopes` takes a list of scope URLs, or one of two words:
+`scopes` takes a non-empty list of full scope URLs, or one of two words:
 
 | Word         | Scopes                                                                                                                                                                                                                                                            |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

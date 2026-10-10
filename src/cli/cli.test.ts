@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,11 +16,17 @@ import net, { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { DatabaseSync } from 'node:sqlite';
 import test, { type TestContext } from 'node:test';
 import { READ_SCOPES, READ_WRITE_SCOPES } from '../auth/scopes.ts';
 import { createControlHandler } from '../control/control.ts';
 import { resolveSpec } from '../seed/spec.ts';
-import { clientEnvironment, type ServerInfo } from '../server.ts';
+import {
+  clientEnvironment,
+  loadStartupConfig,
+  startServer,
+  type ServerInfo,
+} from '../server.ts';
 import { startHarness } from '../testing/harness.ts';
 import { formatEnvironment } from './env.ts';
 import { HELP } from './help.ts';
@@ -256,6 +263,22 @@ test('config validate prints every error of a configuration file', async (t) => 
     (await cli(['config', 'validate', 'missing.json'], { cwd: dir })).stderr,
     `${join(dir, 'missing.json')} does not exist.\n`,
   );
+  writeFileSync(
+    join(dir, 'faults.json'),
+    JSON.stringify({
+      domains: [
+        { spec: { tier: 'empty', seed: 'f' }, faults: [{ kind: 'explode' }] },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    await cli(['config', 'validate', 'faults.json'], { cwd: dir }),
+    {
+      code: 2,
+      stdout: '',
+      stderr: 'domains[0].faults[0]: Unknown fault kind.\n',
+    },
+  );
   const usage = await cli(['config', 'validate'], { cwd: dir });
   assert.equal(usage.code, 2);
   assert.ok(usage.stderr.includes(HELP.config));
@@ -435,6 +458,66 @@ test('start exits 2 with each configuration error on standard error', async (t) 
     stdout: '',
     stderr: '--delays must be on or off.\n',
   });
+});
+
+test('start exits 2 on an invalid fault before it opens a listener or touches a domain', async (t) => {
+  const dir = tempDir(t);
+  const config = join(dir, 'mock.json');
+  const write = (faults: unknown[]) =>
+    writeFileSync(
+      config,
+      JSON.stringify({
+        dataDir: './data',
+        listen: { google: { port: 0 }, control: { port: 0 } },
+        timing: { delays: false },
+        domains: [
+          { spec: { tier: 'empty', seed: 'early' }, onStart: 'reset', faults },
+        ],
+      }),
+    );
+  const invalid = {
+    code: 2,
+    stdout: '',
+    stderr: 'domains[0].faults[0]: Unknown fault kind.\n',
+  };
+
+  // A listener on the held port fails with EADDRINUSE and code 1, so code 2 shows that none started.
+  const held = String(await listen(t, net.createServer()));
+  write([{ kind: 'explode' }]);
+  assert.deepEqual(
+    await cli(['start', '--config', config, '--control-port', held], {
+      cwd: dir,
+    }),
+    invalid,
+  );
+  assert.equal(existsSync(join(dir, 'data')), false);
+
+  write([]);
+  const server = await startServer(
+    loadStartupConfig({ configFlag: config, env: {}, cwd: dir }),
+  );
+  const { customerId } = server.info().domains[0];
+  server.mock.domains
+    .get(customerId)!
+    .db.prepare("INSERT INTO meta (key, value) VALUES ('marker', 'kept')")
+    .run();
+  await server.close();
+  write([{ kind: 'explode' }]);
+  assert.deepEqual(
+    await cli(['start', '--config', config], { cwd: dir }),
+    invalid,
+  );
+  const db = new DatabaseSync(
+    join(dir, 'data', 'domains', `${customerId}.sqlite`),
+  );
+  t.after(() => db.close());
+  assert.deepEqual(
+    {
+      ...(db.prepare("SELECT value FROM meta WHERE key = 'marker'").get() ??
+        {}),
+    },
+    { value: 'kept' },
+  );
 });
 
 test('start exits 1 when a listener port is taken', async (t) => {

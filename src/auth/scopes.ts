@@ -1,4 +1,6 @@
-const P = 'https://www.googleapis.com/auth/';
+/** The prefix of every Google OAuth scope URL. */
+export const SCOPE_PREFIX = 'https://www.googleapis.com/auth/';
+const P = SCOPE_PREFIX;
 
 export const TOKEN_URI = 'https://oauth2.googleapis.com/token';
 
