@@ -223,3 +223,41 @@ test('a hidden group answers 404', async (t) => {
   });
   assert.equal((await check(top.email, staff[1].primary_email)).status, 404);
 });
+
+test('a nested check skips a middle group hidden by ID', async (t) => {
+  const { harness, domain, staff, top, mid, check } = await setup(t);
+  assert.deepEqual((await check(top.email, staff[0].id)).body, {
+    isMember: true,
+  });
+  harness.mock.faults.add(domain.customerId, {
+    kind: 'remove-entity',
+    entityId: mid.id,
+  });
+  assert.deepEqual(await check(top.email, staff[0].id), {
+    status: 200,
+    body: { isMember: false },
+  });
+});
+
+test('a removed group link ends nested answers at once', async (t) => {
+  const { harness, domain, P, staff, top, link, member, check } =
+    await setup(t);
+  const side = addTestGroup(domain.db, { email: `side@${P}` });
+  const linkId = link(top, side);
+  member(side, staff[3]);
+  assert.deepEqual((await check(top.email, staff[3].id)).body, {
+    isMember: true,
+  });
+  // Remove the link as members.delete does: save a before-image at now, then delete the row.
+  saveBeforeImage(
+    domain.db,
+    'group_members',
+    linkId,
+    harness.mock.clock.now(),
+    300_000,
+  );
+  domain.db.prepare('DELETE FROM group_members WHERE id = ?').run(linkId);
+  assert.deepEqual((await check(top.email, staff[3].id)).body, {
+    isMember: false,
+  });
+});

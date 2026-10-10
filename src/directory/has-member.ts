@@ -13,10 +13,12 @@ const IN_REACH = 'group_id IN (SELECT value FROM json_each(?))';
 
 /**
  * `members.hasMember`. Direct membership answers on any domain. A nested check
- * needs the user and the group on one email domain, as Google documents.
+ * needs the user and the group on one email domain, as Google documents. Like
+ * derived lists, a nested check never enters a group hidden by a fault.
  */
 export function hasMember(call: Call): ApiResponse {
-  const db = domainOf(call).db;
+  const domain = domainOf(call);
+  const db = domain.db;
   const group = visibleGroup(call, call.params.groupKey);
   const target = resolveMemberTarget(call, call.params.memberKey);
   // Ruling: an unknown key answers 404. Groups, outside addresses, and the customer answer 400.
@@ -39,6 +41,7 @@ export function hasMember(call: Call): ApiResponse {
       'group_members',
       group.id,
       call.now - nestingDelayMs(call),
+      [...call.overrides.hidden(domain.customerId)],
     ),
   );
   const found =
