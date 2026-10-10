@@ -8,6 +8,7 @@ import {
 import { rows } from '../store/sqlite.ts';
 import { DAY_MS, type SeedContext } from './context.ts';
 import { CLUBS } from './courses.ts';
+import { seedGroupScenarios } from './group-scenarios.ts';
 import type { School } from './layout.ts';
 
 export interface GroupSeedResult {
@@ -419,6 +420,15 @@ export function seedGroups(ctx: SeedContext): GroupSeedResult {
   });
   for (const entry of schools)
     if (entry.owner) writer.add(principals, asUser(entry.owner));
+
+  seedGroupScenarios({
+    ctx,
+    random: random.fork('scenarios'),
+    writer,
+    schools,
+    admins,
+    districtStaff,
+  });
 
   return { groups: writer.groups.length, memberships: writer.memberships() };
 }
