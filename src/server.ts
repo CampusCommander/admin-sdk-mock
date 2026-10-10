@@ -55,8 +55,8 @@ const NO_PROXY = 'localhost,127.0.0.1,::1';
 const dialable = (host: string) =>
   host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
 
-/** A listener host as it appears in a URL, with an IPv6 address bracketed. */
-const urlHost = (host: string) => {
+/** A listener host as a client dials it in a URL: a wildcard becomes loopback, IPv6 is bracketed. */
+export const urlHost = (host: string) => {
   const name = dialable(host);
   return name.includes(':') ? `[${name}]` : name;
 };
@@ -231,23 +231,34 @@ export async function startServer(
 }
 
 /**
- * Find and resolve the startup configuration: the flag, then MOCK_CONFIG, then
+ * Find the startup configuration file: the flag, then MOCK_CONFIG, then
  * ./admin-sdk-mock.json, then MOCK_CONFIG_DEFAULT when that file exists.
  */
+export function startupConfigFile(input: {
+  configFlag?: string;
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+}): string | null {
+  const file = findConfigFile({
+    flag: input.configFlag,
+    env: input.env,
+    cwd: input.cwd,
+  });
+  if (file) return file;
+  const fallback = input.env.MOCK_CONFIG_DEFAULT;
+  return fallback && existsSync(resolve(input.cwd, fallback))
+    ? resolve(input.cwd, fallback)
+    : null;
+}
+
+/** Find the startup configuration file with startupConfigFile, and resolve it. */
 export function loadStartupConfig(input: {
   flags?: ConfigFlags;
   configFlag?: string;
   env: NodeJS.ProcessEnv;
   cwd: string;
 }): MockConfig {
-  let file = findConfigFile({
-    flag: input.configFlag,
-    env: input.env,
-    cwd: input.cwd,
-  });
-  const fallback = input.env.MOCK_CONFIG_DEFAULT;
-  if (!file && fallback && existsSync(resolve(input.cwd, fallback)))
-    file = resolve(input.cwd, fallback);
+  const file = startupConfigFile(input);
   return resolveConfig({
     file: file ? loadConfigFile(file) : undefined,
     fileDir: file ? dirname(file) : undefined,
