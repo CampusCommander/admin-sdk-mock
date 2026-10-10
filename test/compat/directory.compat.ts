@@ -112,7 +112,7 @@ test('getTokenInfo reports the exact requested scope', async () => {
 test('an ungranted scope fails the token exchange', async () => {
   await assert.rejects(
     auth([
-      'https://www.googleapis.com/auth/admin.directory.group.readonly',
+      'https://www.googleapis.com/auth/admin.directory.group.member',
     ]).getAccessToken(),
     /unauthorized_client/,
   );
