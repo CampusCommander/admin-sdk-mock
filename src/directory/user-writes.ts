@@ -1,17 +1,23 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { ApiResponse, Call } from '../http/types.ts';
 import { createRandom } from '../random.ts';
-import { saveBeforeImage } from '../store/lag.ts';
+import {
+  columnsOf,
+  saveBeforeImage,
+  saveBeforeImagesWhere,
+} from '../store/lag.ts';
 import { row, rows, transaction } from '../store/sqlite.ts';
-import type { UserRow } from '../store/user-lookup.ts';
+import { findUser, type UserRow } from '../store/user-lookup.ts';
 import {
   booleanField,
   domainOf,
   duplicate,
   invalidArgument,
   jsonBody,
+  notFound,
   searchDelayMs,
   stringField,
+  undeleteWindowMs,
 } from './common.ts';
 import { resolveOrgUnit, targetOrgUnit } from './orgunits.ts';
 import { userResource, visibleUser } from './users.ts';
@@ -287,4 +293,115 @@ export function updateUser(call: Call): ApiResponse {
       }
     });
   return { status: 200, body: writtenUser(call, user.id) };
+}
+
+/** One row of the `deleted_users` table. */
+interface DeletedUserRow extends UserRow {
+  deleted_at: number;
+  aliases: string;
+}
+
+/** `users.delete`. The user leaves get at once and lists after the delay. */
+export function deleteUser(call: Call): ApiResponse {
+  const domain = domainOf(call);
+  const user = visibleUser(call, call.params.userKey);
+  const columns = columnsOf(domain.db, 'users').join(', ');
+  const aliases = rows<{ alias: string }>(
+    domain.db
+      .prepare(
+        'SELECT alias FROM user_aliases WHERE user_id = ? ORDER BY alias',
+      )
+      .all(user.id),
+  ).map((entry) => entry.alias);
+  const delay = searchDelayMs(call);
+  transaction(domain.db, () => {
+    saveBeforeImage(domain.db, 'users', user.id, call.now, delay);
+    saveBeforeImage(domain.db, 'deleted_users', user.id, call.now, delay);
+    domain.db
+      .prepare(
+        `INSERT INTO deleted_users (${columns}, deleted_at, aliases) SELECT ${columns}, ?, ? FROM users WHERE id = ?`,
+      )
+      .run(call.now, JSON.stringify(aliases), user.id);
+    saveBeforeImagesWhere(
+      domain.db,
+      'user_aliases',
+      'user_id = ?',
+      [user.id],
+      call.now,
+      delay,
+    );
+    domain.db
+      .prepare('DELETE FROM user_aliases WHERE user_id = ?')
+      .run(user.id);
+    domain.db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  });
+  return { status: 204 };
+}
+
+/**
+ * `users.undelete`. The key is the user ID or the deleted primary email.
+ * Ruling: a missing orgUnitPath restores into `/`, and aliases taken since the delete are dropped.
+ */
+export function undeleteUser(call: Call): ApiResponse {
+  const domain = domainOf(call);
+  const key = call.params.userKey;
+  const deleted = row<DeletedUserRow>(
+    domain.db
+      .prepare(
+        'SELECT * FROM deleted_users WHERE (id = ? OR primary_email = ?) AND deleted_at > ? ORDER BY deleted_at DESC LIMIT 1',
+      )
+      .get(key, key.toLowerCase(), call.now - undeleteWindowMs(call)),
+  );
+  if (!deleted || call.overrides.hidden(domain.customerId).has(deleted.id)) {
+    if (findUser(domain.db, key))
+      throw invalidArgument(call, 'Invalid Input: the user is not deleted.');
+    throw notFound('userKey');
+  }
+  const ou = stringField(call, jsonBody(call), 'orgUnitPath');
+  const unit = ou
+    ? targetOrgUnit(call, ou)
+    : resolveOrgUnit(call, domain.db, '/');
+  if (emailInUse(domain.db, deleted.primary_email)) throw duplicate();
+  const aliases = (JSON.parse(deleted.aliases) as string[]).filter(
+    (alias) => !emailInUse(domain.db, alias),
+  );
+  const columns = columnsOf(domain.db, 'users').join(', ');
+  const delay = searchDelayMs(call);
+  transaction(domain.db, () => {
+    saveBeforeImage(domain.db, 'deleted_users', deleted.id, call.now, delay);
+    saveBeforeImage(domain.db, 'users', deleted.id, call.now, delay);
+    domain.db
+      .prepare(
+        `INSERT INTO users (${columns}) SELECT ${columns} FROM deleted_users WHERE id = ?`,
+      )
+      .run(deleted.id);
+    domain.db
+      .prepare('UPDATE users SET org_unit_path = ? WHERE id = ?')
+      .run(unit.path, deleted.id);
+    const insert = domain.db.prepare(
+      'INSERT INTO user_aliases (alias, user_id) VALUES (?, ?)',
+    );
+    for (const alias of aliases) {
+      saveBeforeImage(domain.db, 'user_aliases', alias, call.now, delay);
+      insert.run(alias, deleted.id);
+    }
+    domain.db.prepare('DELETE FROM deleted_users WHERE id = ?').run(deleted.id);
+  });
+  return { status: 204 };
+}
+
+/** `users.makeAdmin`. The change applies to the subject's next call. */
+export function makeAdmin(call: Call): ApiResponse {
+  const domain = domainOf(call);
+  const user = visibleUser(call, call.params.userKey);
+  const status = jsonBody(call).status;
+  if (typeof status !== 'boolean')
+    throw invalidArgument(call, 'Invalid Input: status');
+  transaction(domain.db, () => {
+    saveBeforeImage(domain.db, 'users', user.id, call.now, searchDelayMs(call));
+    domain.db
+      .prepare('UPDATE users SET is_admin = ? WHERE id = ?')
+      .run(status ? 1 : 0, user.id);
+  });
+  return { status: 204 };
 }

@@ -10,6 +10,7 @@ import { emptyFilter, whereClause } from '../store/sql.ts';
 import { row, rows } from '../store/sqlite.ts';
 import { findUser, type UserRow } from '../store/user-lookup.ts';
 import {
+  boolParam,
   domainOf,
   enumParam,
   intParam,
@@ -18,6 +19,7 @@ import {
   listedTable,
   notFound,
   resolveCustomer,
+  undeleteWindowMs,
   withEtag,
 } from './common.ts';
 import { QueryError } from './device-query.ts';
@@ -60,6 +62,7 @@ export function userResource(
   view: View,
   aliases: readonly string[],
   customerId: string,
+  deletedAt?: number,
 ): Record<string, unknown> {
   const name = {
     givenName: user.given_name,
@@ -87,6 +90,7 @@ export function userResource(
     isDelegatedAdmin: false,
     lastLoginTime: iso(user.last_login_time) ?? NEVER,
     creationTime: iso(user.creation_time),
+    ...(deletedAt !== undefined ? { deletionTime: iso(deletedAt) } : {}),
     agreedToTerms: true,
     suspended: user.suspended === 1,
     ...(user.suspended === 1
@@ -144,7 +148,12 @@ export function listUsers(call: Call): ApiResponse {
   if (!customer && !domainName)
     throw invalidArgument(call, 'Bad Request', 'badRequest');
   const filter = emptyFilter();
-  const table = listedTable(call, 'users');
+  const deleted = boolParam(call, 'showDeleted');
+  const table = listedTable(call, deleted ? 'deleted_users' : 'users');
+  if (deleted) {
+    filter.where.push('deleted_at > ?');
+    filter.params.push(call.now - undeleteWindowMs(call));
+  }
   const aliasTable = listedTable(call, 'user_aliases');
   if (customer) resolveCustomer(call, customer);
   else {
@@ -201,7 +210,9 @@ export function listUsers(call: Call): ApiResponse {
     filter.params.push(cursor[0], cursor[1]);
   }
   const direction = descending ? 'DESC' : 'ASC';
-  const found = rows<UserRow & { sort_key: string }>(
+  const found = rows<
+    UserRow & { sort_key: string; deleted_at?: number; aliases?: string }
+  >(
     domain.db
       .prepare(
         `SELECT *, ${sort} AS sort_key FROM ${table} ${whereClause(filter)} ORDER BY ${sort} ${direction}, id ${direction} LIMIT ?`,
@@ -209,18 +220,31 @@ export function listUsers(call: Call): ApiResponse {
       .all(...filter.params, maxResults + 1),
   );
   const page = found.slice(0, maxResults);
-  const aliases = aliasesFor(
-    domain.db,
-    page.map((user) => user.id),
-    aliasTable,
-  );
+  const aliases = deleted
+    ? new Map(
+        page.map((user) => [
+          user.id,
+          JSON.parse(user.aliases ?? '[]') as string[],
+        ]),
+      )
+    : aliasesFor(
+        domain.db,
+        page.map((user) => user.id),
+        aliasTable,
+      );
   const last = page.at(-1);
   const nextPageToken =
     found.length > maxResults && last
       ? encodePageToken(fp, [last.sort_key, last.id])
       : undefined;
   const users = page.map((user) =>
-    userResource(user, view, aliases.get(user.id) ?? [], domain.customerId),
+    userResource(
+      user,
+      view,
+      aliases.get(user.id) ?? [],
+      domain.customerId,
+      deleted ? user.deleted_at : undefined,
+    ),
   );
   return {
     status: 200,

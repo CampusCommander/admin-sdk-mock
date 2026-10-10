@@ -351,3 +351,149 @@ test('a primaryEmail change lags in list bodies, aliases included', async (t) =>
   assert.equal(after.primaryEmail, renamed);
   assert.ok(after.aliases.includes(user.primary_email));
 });
+
+test('delete removes the user from get at once and from lists after the delay', async (t) => {
+  const { clock, api, user, listedEmails } = await setup(t);
+  const response = await api('DELETE', `/users/${user.primary_email}`);
+  assert.equal(response.status, 204, response.text);
+  assert.equal(response.text, '');
+  assert.equal((await api('GET', `/users/${user.id}`)).status, 404);
+  assert.equal((await listedEmails()).includes(user.primary_email), true);
+  await clock.advance(D);
+  assert.equal((await listedEmails()).includes(user.primary_email), false);
+});
+
+test('showDeleted lists a deleted user after the delay, with its deletion time', async (t) => {
+  const { clock, api, user, listedEmails } = await setup(t);
+  const deletedAt = clock.now();
+  await api('DELETE', `/users/${user.id}`);
+  const deleted = { showDeleted: 'true' };
+  assert.equal(
+    (await listedEmails(deleted)).includes(user.primary_email),
+    false,
+  );
+  await clock.advance(D);
+  const response = await api('GET', '/users', {
+    query: { customer: 'my_customer', showDeleted: 'true' },
+  });
+  const entry = response
+    .json()
+    .users.find((found: { id: string }) => found.id === user.id);
+  assert.equal(entry.deletionTime, new Date(deletedAt).toISOString());
+});
+
+test('undelete restores the user, its aliases, and the named OU', async (t) => {
+  const { api, aliased, usersOu } = await setup(t);
+  await api('DELETE', `/users/${aliased.id}`);
+  const response = await api('POST', `/users/${aliased.id}/undelete`, {
+    body: { orgUnitPath: usersOu },
+  });
+  assert.equal(response.status, 204, response.text);
+  const restored = (await api('GET', `/users/${aliased.primary_email}`)).json();
+  assert.equal(restored.id, aliased.id);
+  assert.equal(restored.orgUnitPath, usersOu);
+  assert.ok(restored.aliases.includes(aliased.alias));
+  assert.equal(
+    (await api('GET', `/users/${aliased.alias}`)).json().id,
+    aliased.id,
+  );
+});
+
+test('undelete answers 400 for an active user and 404 for an unknown user', async (t) => {
+  const { api, user } = await setup(t);
+  assert.equal(
+    (await api('POST', `/users/${user.id}/undelete`, { body: {} })).status,
+    400,
+  );
+  assert.equal(
+    (await api('POST', '/users/100000000000000000009/undelete', { body: {} }))
+      .status,
+    404,
+  );
+});
+
+test('the undelete window is 20 days, and the time scale shortens it', async (t) => {
+  for (const scale of [1, 60]) {
+    const { clock, harness, domain, api, user } = await setup(t, scale);
+    await api('DELETE', `/users/${user.id}`);
+    await clock.advance((20 * 86_400_000) / scale);
+    // The setup token expires inside the window, so mint a fresh one.
+    const later = directoryClient(
+      harness,
+      grantToken(harness, domain, READ_WRITE_SCOPES),
+    );
+    assert.equal(
+      (await later('POST', `/users/${user.id}/undelete`, { body: {} })).status,
+      404,
+      `scale ${scale}`,
+    );
+  }
+});
+
+test('undelete answers 409 when another user took the address', async (t) => {
+  const { api, user, fresh } = await setup(t);
+  await api('DELETE', `/users/${user.id}`);
+  const taken = await api('POST', '/users', {
+    body: { ...fresh(), primaryEmail: user.primary_email },
+  });
+  assert.equal(taken.status, 200, taken.text);
+  assert.equal(
+    (await api('POST', `/users/${user.id}/undelete`, { body: {} })).status,
+    409,
+  );
+});
+
+test('makeAdmin sets administrator status, and a demoted or deleted subject loses access', async (t) => {
+  const { harness, domain, api, user } = await setup(t);
+  const subject = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_WRITE_SCOPES, user.primary_email),
+  );
+  const devices = () =>
+    subject('GET', '/customer/my_customer/devices/chromeos');
+  assert.equal((await devices()).status, 403);
+  assert.equal(
+    (
+      await api('POST', `/users/${user.id}/makeAdmin`, {
+        body: { status: true },
+      })
+    ).status,
+    204,
+  );
+  assert.equal((await api('GET', `/users/${user.id}`)).json().isAdmin, true);
+  assert.equal((await devices()).status, 200);
+  await api('POST', `/users/${user.id}/makeAdmin`, { body: { status: false } });
+  assert.equal((await devices()).status, 403);
+  await api('POST', `/users/${user.id}/makeAdmin`, { body: { status: true } });
+  await api('DELETE', `/users/${user.id}`);
+  assert.equal((await devices()).status, 403);
+  assert.equal(
+    (
+      await api('POST', `/users/${domain.spec.primaryDomain}/makeAdmin`, {
+        body: {},
+      })
+    ).status,
+    404,
+  );
+  const admin = `admin@${domain.spec.primaryDomain}`;
+  assert.equal(
+    (await api('POST', `/users/${admin}/makeAdmin`, { body: {} })).status,
+    400,
+  );
+});
+
+test('a deleted user keeps its aliases in lists until the delay passes', async (t) => {
+  const { clock, api, aliased } = await setup(t);
+  await api('DELETE', `/users/${aliased.id}`);
+  const listedAliases = async (): Promise<string[] | undefined> =>
+    (
+      await api('GET', '/users', {
+        query: { customer: 'my_customer', maxResults: 500 },
+      })
+    )
+      .json()
+      .users.find((entry: { id: string }) => entry.id === aliased.id)?.aliases;
+  assert.ok((await listedAliases())?.includes(aliased.alias));
+  await clock.advance(D);
+  assert.equal(await listedAliases(), undefined);
+});
