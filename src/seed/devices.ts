@@ -65,13 +65,18 @@ const NOTES = [
   'Returned from repair',
   'Battery swelling reported',
 ];
-const DEPROVISION_REASONS = [
+export const DEPROVISION_REASONS = [
   'DEPROVISION_REASON_RETIRING_DEVICE',
   'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
   'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT',
   'DEPROVISION_REASON_REPAIR_CENTER',
 ];
-const COLUMNS = [
+export const LICENSE_TYPES: readonly (readonly [string, number])[] = [
+  ['educationUpgradePerpetual', 0.6],
+  ['educationUpgrade', 0.3],
+  ['education', 0.1],
+];
+export const DEVICE_COLUMNS = [
   'device_id',
   'serial_number',
   'status',
@@ -121,7 +126,7 @@ export function seedDevices(ctx: SeedContext, users: UserIndex): void {
   const assetPrefix = random.pick(['', 'CB', 'A-', 'TAG-']);
   const serials = new Set<string>();
   const insert = db.prepare(
-    `INSERT INTO devices (${COLUMNS.join(', ')}) VALUES (${COLUMNS.map(() => '?').join(', ')})`,
+    `INSERT INTO devices (${DEVICE_COLUMNS.join(', ')}) VALUES (${DEVICE_COLUMNS.map(() => '?').join(', ')})`,
   );
 
   for (let ord = 0; ord < spec.counts.devices; ord++) {
@@ -254,11 +259,7 @@ export function seedDevices(ctx: SeedContext, users: UserIndex): void {
       order_number: random.chance(0.5)
         ? `PO-${random.int(10_000, 99_999)}`
         : null,
-      license_type: random.weighted([
-        ['educationUpgradePerpetual', 0.6],
-        ['educationUpgrade', 0.3],
-        ['education', 0.1],
-      ]),
+      license_type: random.weighted(LICENSE_TYPES),
       deprovision_reason:
         status === 'DEPROVISIONED' ? random.pick(DEPROVISION_REASONS) : null,
       last_deprovision:
@@ -269,6 +270,6 @@ export function seedDevices(ctx: SeedContext, users: UserIndex): void {
       misplaced: misplaced ? 1 : 0,
       ord,
     };
-    insert.run(...COLUMNS.map((column) => device[column]));
+    insert.run(...DEVICE_COLUMNS.map((column) => device[column]));
   }
 }

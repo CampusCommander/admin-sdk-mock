@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createDomains, DomainError } from './domains.ts';
+import { FixtureError, parseFixtures } from './seed/fixtures.ts';
+import { resolveSpec } from './seed/spec.ts';
 import { openRegistry } from './store/registry.ts';
-import { row } from './store/sqlite.ts';
+import { row, rows } from './store/sqlite.ts';
 
 const SPEC = {
   tier: 'small',
@@ -120,4 +122,82 @@ test('settings merge, persist, and reject bad values', () => {
     status(() => domains.updateSettings('C0missing', {})),
     404,
   );
+});
+
+const FIXED = { tier: 'empty', seed: 'fixed', name: 'Fixed District' };
+const FIXED_DOMAIN = 'fixed-district.test';
+
+test('a domain reset re-applies its stored fixtures', () => {
+  const { domains } = setup();
+  const data = parseFixtures(
+    {
+      users: [
+        {
+          primaryEmail: `pat@${FIXED_DOMAIN}`,
+          givenName: 'Pat',
+          familyName: 'Lee',
+        },
+      ],
+    },
+    'inline.json',
+  );
+  const { domain, result } = domains.create(FIXED, 1_000, {
+    fixtures: { file: 'inline.json', data },
+  });
+  assert.equal(result.counts.users, 2);
+  domain.db
+    .prepare(
+      "INSERT INTO users (id, primary_email, given_name, family_name, full_name, org_unit_path, is_admin, suspended, role, creation_time, ord) VALUES ('1999', ?, 'Stray', 'Row', 'Stray Row', '/', 0, 0, 'staff', 1000, 99)",
+    )
+    .run(`stray@${FIXED_DOMAIN}`);
+  const reset = domains.reset(domain.customerId, 5_000);
+  assert.equal(reset.counts.users, 2);
+  const db = domains.get(domain.customerId)!.db;
+  assert.deepEqual(
+    rows<{ primary_email: string }>(
+      db.prepare('SELECT primary_email FROM users ORDER BY ord').all(),
+    ).map((user) => user.primary_email),
+    [`admin@${FIXED_DOMAIN}`, `pat@${FIXED_DOMAIN}`],
+  );
+  assert.deepEqual(
+    rows<{ key: string; value: string }>(
+      db
+        .prepare(
+          "SELECT key, value FROM meta WHERE key IN ('fixtures', 'fixturesFile') ORDER BY key",
+        )
+        .all(),
+    ).map((entry) => [entry.key, entry.value]),
+    [
+      ['fixtures', JSON.stringify(data)],
+      ['fixturesFile', 'inline.json'],
+    ],
+  );
+});
+
+test('a fixtures error leaves no domain behind', () => {
+  const { dataDir, registry, domains } = setup();
+  const bad = parseFixtures(
+    {
+      users: [
+        { primaryEmail: 'pat@elsewhere.test', givenName: 'P', familyName: 'L' },
+      ],
+    },
+    'bad.json',
+  );
+  assert.throws(
+    () =>
+      domains.create(FIXED, 1_000, {
+        fixtures: { file: 'bad.json', data: bad },
+      }),
+    (error: unknown) =>
+      error instanceof FixtureError &&
+      error.errors.join() ===
+        "bad.json: users[0].primaryEmail must be on one of the customer's domains.",
+  );
+  const { customerId } = resolveSpec(FIXED);
+  assert.equal(registry.getDomain(customerId), undefined);
+  assert.equal(registry.domainForName(FIXED_DOMAIN), undefined);
+  assert.equal(domains.get(customerId), undefined);
+  assert.ok(!existsSync(join(dataDir, 'domains', `${customerId}.sqlite`)));
+  assert.equal(domains.create(FIXED, 2_000).domain.customerId, customerId);
 });

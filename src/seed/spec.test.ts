@@ -128,3 +128,23 @@ test('the group rates do not change any derived identity value', () => {
   assert.equal(tuned.primaryDomain, plain.primaryDomain);
   assert.equal(tuned.studentDomain, plain.studentDomain);
 });
+
+test('the empty tier has zero counts and refuses counts and rates', () => {
+  const spec = resolveSpec({ tier: 'empty', seed: 'blank' });
+  assert.deepEqual(spec.counts, {
+    schools: 0,
+    students: 0,
+    staff: 0,
+    devices: 0,
+  });
+  for (const extra of [
+    { counts: { students: 5 } },
+    { rates: { suspended: 0.1 } },
+  ])
+    assert.throws(
+      () => resolveSpec({ tier: 'empty', seed: 'blank', ...extra }),
+      (error: unknown) =>
+        error instanceof SpecError &&
+        error.message === 'The empty tier takes no counts or rates.',
+    );
+});
