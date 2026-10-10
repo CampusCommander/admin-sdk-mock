@@ -14,7 +14,7 @@ import {
   stringField,
 } from './common.ts';
 import { resolveOrgUnit, targetOrgUnit } from './orgunits.ts';
-import { userResource } from './users.ts';
+import { userResource, visibleUser } from './users.ts';
 
 const MAX_NAME = 60;
 const HASH_FUNCTIONS: ReadonlySet<string> = new Set(['MD5', 'SHA-1', 'crypt']);
@@ -206,4 +206,85 @@ export function insertUser(call: Call): ApiResponse {
       );
   });
   return { status: 200, body: writtenUser(call, id) };
+}
+
+/** `users.update` and `users.patch`. Both merge: absent fields stay, null clears, arrays replace. */
+export function updateUser(call: Call): ApiResponse {
+  const domain = domainOf(call);
+  const user = visibleUser(call, call.params.userKey);
+  const body = jsonBody(call);
+  const sets: string[] = [];
+  const params: (string | number | null)[] = [];
+  const set = (column: string, value: string | number | null) => {
+    sets.push(`${column} = ?`);
+    params.push(value);
+  };
+  if (Object.hasOwn(body, 'name')) {
+    const name = readName(call, body.name, {
+      given: user.given_name,
+      family: user.family_name,
+    });
+    set('given_name', name.given);
+    set('family_name', name.family);
+    set('full_name', `${name.given} ${name.family}`);
+  }
+  const ou = stringField(call, body, 'orgUnitPath');
+  if (ou) set('org_unit_path', targetOrgUnit(call, ou).path);
+  const suspended = booleanField(call, body, 'suspended');
+  if (suspended !== undefined) {
+    set('suspended', suspended ? 1 : 0);
+    set('suspension_reason', suspended ? 'ADMIN' : null);
+  }
+  const changePassword = booleanField(call, body, 'changePasswordAtNextLogin');
+  if (changePassword !== undefined)
+    set('change_password_at_next_login', changePassword ? 1 : 0);
+  if (Object.hasOwn(body, 'externalIds')) {
+    const external = readExternalIds(call, body.externalIds);
+    set('external_ids', external.json);
+    set('external_id', external.first);
+  }
+  if (Object.hasOwn(body, 'password')) checkPassword(call, body);
+  let rename: string | undefined;
+  if (body.primaryEmail !== undefined && body.primaryEmail !== null) {
+    const email = primaryEmail(call, body.primaryEmail);
+    if (email !== user.primary_email) {
+      if (emailInUse(domain.db, email, user.id)) throw duplicate();
+      rename = email;
+    }
+  }
+  if (sets.length > 0 || rename)
+    transaction(domain.db, () => {
+      saveBeforeImage(
+        domain.db,
+        'users',
+        user.id,
+        call.now,
+        searchDelayMs(call),
+      );
+      if (sets.length > 0)
+        domain.db
+          .prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`)
+          .run(...params, user.id);
+      if (rename) {
+        const delay = searchDelayMs(call);
+        saveBeforeImage(domain.db, 'user_aliases', rename, call.now, delay);
+        saveBeforeImage(
+          domain.db,
+          'user_aliases',
+          user.primary_email,
+          call.now,
+          delay,
+        );
+        domain.db
+          .prepare('DELETE FROM user_aliases WHERE alias = ? AND user_id = ?')
+          .run(rename, user.id);
+        domain.db
+          .prepare('UPDATE users SET primary_email = ? WHERE id = ?')
+          .run(rename, user.id);
+        domain.db
+          .prepare('INSERT INTO user_aliases (alias, user_id) VALUES (?, ?)')
+          .run(user.primary_email, user.id);
+      }
+    });
+  return { status: 200, body: writtenUser(call, user.id) };
 }

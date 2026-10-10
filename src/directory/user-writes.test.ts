@@ -190,3 +190,164 @@ test('a read-only token and a non-administrator cannot insert', async (t) => {
     'Not Authorized to access this resource/api',
   );
 });
+
+test('patch merges: absent fields stay and the full name follows the name parts', async (t) => {
+  const { api, user } = await setup(t);
+  const before = (await api('GET', `/users/${user.id}`)).json();
+  const response = await api('PATCH', `/users/${user.id}`, {
+    body: { name: { givenName: 'Renamed' } },
+  });
+  assert.equal(response.status, 200, response.text);
+  const after = response.json();
+  assert.equal(after.name.givenName, 'Renamed');
+  assert.equal(after.name.familyName, before.name.familyName);
+  assert.equal(after.name.fullName, `Renamed ${before.name.familyName}`);
+  assert.equal(after.orgUnitPath, before.orgUnitPath);
+  assert.notEqual(after.etag, before.etag);
+});
+
+test('suspension, the password flag, and external IDs follow the body', async (t) => {
+  const { api, user } = await setup(t);
+  const patch = async (body: unknown) =>
+    (await api('PATCH', `/users/${user.id}`, { body })).json();
+  let current = await patch({ suspended: true });
+  assert.equal(current.suspended, true);
+  assert.equal(current.suspensionReason, 'ADMIN');
+  current = await patch({ suspended: false });
+  assert.equal(current.suspended, false);
+  assert.equal(current.suspensionReason, undefined);
+  current = await patch({ changePasswordAtNextLogin: true });
+  assert.equal(current.changePasswordAtNextLogin, true);
+  const externalIds = [{ value: 'E-7', type: 'organization' }];
+  current = await patch({ externalIds });
+  assert.deepEqual(current.externalIds, externalIds);
+  current = await patch({ externalIds: null });
+  assert.equal(current.externalIds, undefined);
+  assert.equal(
+    (await api('PATCH', `/users/${user.id}`, { body: { password: 'short' } }))
+      .status,
+    400,
+  );
+});
+
+test('a primaryEmail change keeps the old address as an alias', async (t) => {
+  const { api, user, primary } = await setup(t);
+  const renamed = `renamed.person@${primary}`;
+  const response = await api('PATCH', `/users/${user.id}`, {
+    body: { primaryEmail: renamed },
+  });
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json().primaryEmail, renamed);
+  assert.ok(response.json().aliases.includes(user.primary_email));
+  assert.equal(
+    (await api('GET', `/users/${user.primary_email}`)).json().id,
+    user.id,
+  );
+  assert.equal((await api('GET', `/users/${renamed}`)).json().id, user.id);
+});
+
+test('renaming to one of your own aliases swaps the two addresses', async (t) => {
+  const { api, aliased } = await setup(t);
+  const response = await api('PATCH', `/users/${aliased.id}`, {
+    body: { primaryEmail: aliased.alias },
+  });
+  assert.equal(response.status, 200, response.text);
+  const body = response.json();
+  assert.equal(body.primaryEmail, aliased.alias);
+  assert.ok(body.aliases.includes(aliased.primary_email));
+  assert.equal(body.aliases.includes(aliased.alias), false);
+});
+
+test('an address in use answers 409, and bad fields answer 400', async (t) => {
+  const { api, user, aliased } = await setup(t);
+  assert.equal(
+    (
+      await api('PATCH', `/users/${user.id}`, {
+        body: { primaryEmail: aliased.primary_email },
+      })
+    ).status,
+    409,
+  );
+  for (const body of [
+    { primaryEmail: 'someone@elsewhere.test' },
+    { name: null },
+    { name: { familyName: '' } },
+    { orgUnitPath: '/No/Such/Unit' },
+    { suspended: 'yes' },
+  ])
+    assert.equal(
+      (await api('PATCH', `/users/${user.id}`, { body })).status,
+      400,
+      JSON.stringify(body),
+    );
+  assert.equal(
+    (await api('PATCH', '/users/nobody@nowhere.test', { body: {} })).status,
+    404,
+  );
+});
+
+test('update behaves like patch and ignores isAdmin', async (t) => {
+  const { api, user } = await setup(t);
+  const before = (await api('GET', `/users/${user.id}`)).json();
+  const response = await api('PUT', `/users/${user.id}`, {
+    body: { isAdmin: true, name: { familyName: 'Changed' } },
+  });
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json().isAdmin, false);
+  assert.equal(response.json().name.givenName, before.name.givenName);
+  assert.equal(response.json().name.familyName, 'Changed');
+});
+
+test('an OU change lags in users.list', async (t) => {
+  const { clock, api, user, usersOu, listedEmails } = await setup(t);
+  await api('PATCH', `/users/${user.id}`, { body: { orgUnitPath: usersOu } });
+  const query = { query: `orgUnitPath='${usersOu}'` };
+  assert.equal((await listedEmails(query)).includes(user.primary_email), false);
+  await clock.advance(D);
+  assert.equal((await listedEmails(query)).includes(user.primary_email), true);
+});
+
+test('a hidden user never changes through a write', async (t) => {
+  const { harness, domain, api, user } = await setup(t);
+  harness.mock.faults.add(domain.customerId, {
+    kind: 'remove-entity',
+    entityId: user.id,
+  });
+  assert.equal(
+    (
+      await api('PATCH', `/users/${user.primary_email}`, {
+        body: { name: { givenName: 'Changed' } },
+      })
+    ).status,
+    404,
+  );
+  assert.notEqual(
+    row<{ given_name: string }>(
+      domain.db
+        .prepare('SELECT given_name FROM users WHERE id = ?')
+        .get(user.id),
+    )!.given_name,
+    'Changed',
+  );
+});
+
+test('a primaryEmail change lags in list bodies, aliases included', async (t) => {
+  const { clock, api, user, primary } = await setup(t);
+  const renamed = `lagging.rename@${primary}`;
+  await api('PATCH', `/users/${user.id}`, { body: { primaryEmail: renamed } });
+  const listed = async () =>
+    (
+      await api('GET', '/users', {
+        query: { customer: 'my_customer', maxResults: 500 },
+      })
+    )
+      .json()
+      .users.find((entry: { id: string }) => entry.id === user.id);
+  const during = await listed();
+  assert.equal(during.primaryEmail, user.primary_email);
+  assert.equal((during.aliases ?? []).includes(user.primary_email), false);
+  await clock.advance(D);
+  const after = await listed();
+  assert.equal(after.primaryEmail, renamed);
+  assert.ok(after.aliases.includes(user.primary_email));
+});

@@ -7,7 +7,7 @@ import { getCustomer } from './directory/customers.ts';
 import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
 import { getOrgUnit, listOrgUnits } from './directory/orgunits.ts';
-import { insertUser } from './directory/user-writes.ts';
+import { insertUser, updateUser } from './directory/user-writes.ts';
 import { getUser, listUsers } from './directory/users.ts';
 import type { Route } from './http/types.ts';
 import type { Mock } from './mock.ts';
@@ -131,6 +131,20 @@ export function buildRoutes(mock: Mock): Route[] {
       /^\/admin\/directory\/v1\/users$/,
       WRITE_SCOPES.user,
       insertUser,
+    ),
+    writeRoute(
+      'directory.users.update',
+      'PUT',
+      USER,
+      WRITE_SCOPES.user,
+      updateUser,
+    ),
+    writeRoute(
+      'directory.users.patch',
+      'PATCH',
+      USER,
+      WRITE_SCOPES.user,
+      updateUser,
     ),
     {
       id: 'chrome.telemetry.devices.list',
