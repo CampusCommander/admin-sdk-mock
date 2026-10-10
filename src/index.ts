@@ -106,25 +106,31 @@ function install(handle: Installed): () => void {
 export async function startMock(
   options: MockOptions = {},
 ): Promise<MockHandle> {
-  const ownsDataDir = options.dataDir === undefined;
-  const dataDir =
-    options.dataDir ?? mkdtempSync(join(tmpdir(), 'admin-sdk-mock-'));
   const given = options.config ?? {};
+  const callerDir = options.dataDir ?? (given.dataDir as string | undefined);
+  const ownsDataDir = callerDir === undefined;
+  const dataDir = callerDir ?? mkdtempSync(join(tmpdir(), 'admin-sdk-mock-'));
+  const givenListen = (given.listen ?? {}) as Record<string, unknown>;
+  const merge = (defaults: object, over: unknown) =>
+    over === null ? null : { ...defaults, ...(over as object | undefined) };
   const file = {
     ...given,
     dataDir,
     listen: {
-      google: { host: '127.0.0.1', port: 0 },
-      control: { host: '127.0.0.1', port: 0 },
+      ...givenListen,
+      google: merge({ host: '127.0.0.1', port: 0 }, givenListen.google),
+      control: merge({ host: '127.0.0.1', port: 0 }, givenListen.control),
       proxy:
         options.proxy === false
           ? null
-          : {
-              host: '127.0.0.1',
-              port: 0,
-              passthrough: options.proxy?.passthrough ?? true,
-            },
-      ...(given.listen as object | undefined),
+          : merge(
+              {
+                host: '127.0.0.1',
+                port: 0,
+                passthrough: options.proxy?.passthrough ?? true,
+              },
+              givenListen.proxy,
+            ),
     },
     timing: {
       scale: 1,
@@ -152,13 +158,13 @@ export async function startMock(
   }
 
   const initial = server.info();
-  const domains: EnsuredDomain[] = [...initial.domains];
   const proxyUrl = server.proxy ? server.proxy.url : null;
   // Node reports trusted certificates with LF line endings, so normalize the PEM the same way.
   const caCert = new X509Certificate(
     server.mock.certificates.caCert,
   ).toString();
-  let restore: (() => void) | undefined;
+  const undos = new Set<() => void>();
+  let closed = false;
   let closing: Promise<void> | undefined;
 
   const control = async (
@@ -186,7 +192,9 @@ export async function startMock(
     caCert,
     caFile: initial.caFile,
     caBundleFile: initial.caBundleFile,
-    domains,
+    get domains() {
+      return server.info().domains;
+    },
 
     async createDomain(spec, domainOptions = {}) {
       let fixturesFile: string | null = null;
@@ -212,11 +220,11 @@ export async function startMock(
             serviceAccounts: [],
             faults: [],
           },
-          domains.length,
+          server.info().domains.length,
           {},
           server.mock.clock.now(),
         );
-        domains.push(ensured);
+        server.addDomain(ensured);
         return structuredClone(ensured);
       } finally {
         if (scratch) rmSync(scratch, { recursive: true, force: true });
@@ -243,20 +251,18 @@ export async function startMock(
     },
 
     env() {
-      return clientEnvironment(
-        { ...server.info(), domains: [...domains] },
-        server.controlUrl,
-      );
+      return clientEnvironment(server.info(), server.controlUrl);
     },
 
     useInProcess() {
+      if (closed) throw new Error('The mock is closed.');
       if (proxyUrl === null)
         throw new Error(
           'The proxy is off. Start the mock with a proxy to use it in process.',
         );
-      restore?.();
-      restore = install({ caCert, proxyUrl });
-      return () => restore?.();
+      const undo = install({ caCert, proxyUrl });
+      undos.add(undo);
+      return undo;
     },
 
     flush(customerId) {
@@ -270,7 +276,8 @@ export async function startMock(
 
     close() {
       return (closing ??= (async () => {
-        restore?.();
+        closed = true;
+        for (const undo of undos) undo();
         try {
           await server.close();
         } finally {

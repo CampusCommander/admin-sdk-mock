@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import tls from 'node:tls';
 import test from 'node:test';
 import { admin } from '@googleapis/admin';
@@ -47,13 +49,15 @@ test('the unmodified Google client reaches an in-process mock', async (t) => {
   assert.ok((groups.data.groups?.length ?? 0) > 0);
 });
 
-test('useInProcess restores the CA set and HTTPS_PROXY, in any close order', async () => {
+test('useInProcess restores the CA set and HTTPS_PROXY, in any close order', async (t) => {
   const baseline = {
     ca: tls.getCACertificates('default').length,
     proxy: process.env.HTTPS_PROXY,
   };
   const a = await startMock();
+  t.after(() => a.close());
   const b = await startMock();
+  t.after(() => b.close());
   a.useInProcess();
   b.useInProcess();
   const defaults = tls.getCACertificates('default');
@@ -68,8 +72,9 @@ test('useInProcess restores the CA set and HTTPS_PROXY, in any close order', asy
   assert.equal(process.env.HTTPS_PROXY, baseline.proxy);
 });
 
-test('createDomain applies inline fixtures, and token, env, flush, and close work', async () => {
+test('createDomain applies inline fixtures, and token, env, flush, and close work', async (t) => {
   const mock = await startMock();
+  t.after(() => mock.close());
   const primary = resolveSpec({
     tier: 'empty',
     seed: 'api-fixtures',
@@ -112,9 +117,76 @@ test('createDomain applies inline fixtures, and token, env, flush, and close wor
   assert.equal(existsSync(caFile), false);
 });
 
-test('proxy false starts no proxy, and useInProcess then throws', async () => {
+test('proxy false starts no proxy, and useInProcess then throws', async (t) => {
   const mock = await startMock({ proxy: false });
+  t.after(() => mock.close());
   assert.equal(mock.proxyUrl, null);
   assert.throws(() => mock.useInProcess(), /The proxy is off/);
   await mock.close();
+});
+
+test('createDomain shows in GET /info, and a repeat call adds no duplicate', async (t) => {
+  const mock = await startMock();
+  t.after(() => mock.close());
+  const spec = { tier: 'empty', seed: 'api-info' };
+  const first = await mock.createDomain(spec);
+  const second = await mock.createDomain(spec);
+  assert.deepEqual(Object.keys(second), Object.keys(first));
+  assert.equal(second.customerId, first.customerId);
+  const info = (await mock.control('GET', '/info')) as {
+    domains: { customerId: string }[];
+  };
+  assert.deepEqual(
+    info.domains.map((d) => d.customerId),
+    [first.customerId],
+  );
+  assert.equal(mock.domains.length, 1);
+});
+
+test('an earlier restore undoes only its own install', async (t) => {
+  const mock = await startMock();
+  t.after(() => mock.close());
+  const first = mock.useInProcess();
+  const second = mock.useInProcess();
+  first();
+  assert.ok(tls.getCACertificates('default').includes(mock.caCert));
+  assert.equal(process.env.HTTPS_PROXY, mock.proxyUrl);
+  second();
+  assert.ok(!tls.getCACertificates('default').includes(mock.caCert));
+});
+
+test('useInProcess throws after close', async () => {
+  const mock = await startMock();
+  await mock.close();
+  assert.throws(() => mock.useInProcess(), /The mock is closed\./);
+});
+
+test('listener options merge per listener', async (t) => {
+  const google = await startMock({
+    config: { listen: { google: { host: '127.0.0.1' } } },
+  });
+  t.after(() => google.close());
+  assert.ok(Number(new URL(google.googleUrl).port) > 0);
+  const proxy = await startMock({
+    config: { listen: { proxy: { port: 0 } } },
+  });
+  t.after(() => proxy.close());
+  const info = (await proxy.control('GET', '/info')) as {
+    listeners: { proxy: { passthrough: boolean } | null };
+  };
+  assert.equal(info.listeners.proxy?.passthrough, true);
+  const off = await startMock({ config: { listen: { proxy: null } } });
+  t.after(() => off.close());
+  assert.equal(off.proxyUrl, null);
+});
+
+test('a caller-supplied data directory survives close', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'api-test-'));
+  try {
+    const mock = await startMock({ config: { dataDir: dir } });
+    await mock.close();
+    assert.ok(existsSync(dir));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
