@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setImmediate as tick } from 'node:timers/promises';
 import { issueServiceAccount } from '../auth/accounts.ts';
-import { READ_SCOPES, SCOPES } from '../auth/scopes.ts';
+import { READ_SCOPES, READ_WRITE_SCOPES, SCOPES } from '../auth/scopes.ts';
 import { fakeClock } from '../clock.ts';
 import { rows } from '../store/sqlite.ts';
 import {
   adminOf,
+  directoryClient,
   grantToken,
   seedTestDomain,
   startHarness,
@@ -208,4 +209,38 @@ test('a fault must name a directory or Chrome route ID', async (t) => {
     }),
   );
   assert.doesNotThrow(() => add({ kind: 'reset', count: 1 }));
+});
+
+test('faults apply to write methods', async (t) => {
+  const { harness, domain, add } = await setup(t);
+  const write = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_WRITE_SCOPES),
+  );
+  add({
+    kind: 'status',
+    method: 'directory.users.insert',
+    status: 503,
+    reason: 'backendError',
+    count: 1,
+  });
+  const body = {
+    primaryEmail: `fault.user@${domain.spec.primaryDomain}`,
+    name: { givenName: 'Fault', familyName: 'User' },
+    password: 'correct horse battery',
+  };
+  assert.equal((await write('POST', '/users', { body })).status, 503);
+  assert.equal((await write('POST', '/users', { body })).status, 200);
+  const device = rows<{ device_id: string }>(
+    domain.db.prepare('SELECT device_id FROM devices LIMIT 1').all(),
+  )[0].device_id;
+  add({ kind: 'remove-entity', entityId: device });
+  assert.equal(
+    (
+      await write('PATCH', `/customer/my_customer/devices/chromeos/${device}`, {
+        body: { notes: 'x' },
+      })
+    ).status,
+    404,
+  );
 });

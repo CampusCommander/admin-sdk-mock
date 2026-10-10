@@ -4,6 +4,7 @@ import { MAX_SCALE } from '../clock.ts';
 import { DomainError } from '../domains.ts';
 import { FaultError } from '../faults/faults.ts';
 import type { Mock } from '../mock.ts';
+import { flushLag, pendingLag } from '../store/lag.ts';
 import { row } from '../store/sqlite.ts';
 
 const BODY_LIMIT = 1024 * 1024;
@@ -114,6 +115,14 @@ export function createControlHandler(mock: Mock) {
       orgUnits: count('orgunits'),
       users: count('users'),
       devices: count('devices'),
+      pendingWrites: domain
+        ? pendingLag(
+            domain.db,
+            mock.clock.now(),
+            (domain.record.settings.writes.searchDelaySeconds * 1000) /
+              mock.timing.scale,
+          )
+        : 0,
     };
   };
 
@@ -247,6 +256,13 @@ export function createControlHandler(mock: Mock) {
           return send(response, 204);
       }
     }
+    if (
+      parts.length === 4 &&
+      parts[2] === 'index' &&
+      parts[3] === 'flush' &&
+      method === 'POST'
+    )
+      return send(response, 200, { flushed: flushLag(domainOrThrow(id).db) });
     if (parts.length === 4 && parts[2] === 'delegation' && method === 'PUT') {
       domainOrThrow(id);
       const body = await readJson(request);

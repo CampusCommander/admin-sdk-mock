@@ -21,6 +21,7 @@ const USAGE = `Usage: mockctl <command>
   fault add <customerId> --json <rule>
   fault list <customerId>
   fault clear <customerId>
+  index flush <customerId>
   clock [--scale <n>] [--delays <on|off>]
   ca [--out <file>]
 
@@ -176,6 +177,10 @@ async function main(argv: string[]): Promise<void> {
           await call('DELETE', `/domains/${id(third)}/faults`);
           return print({ cleared: third });
       }
+      break;
+    case 'index':
+      if (sub === 'flush')
+        return print(await call('POST', `/domains/${id(third)}/index/flush`));
       break;
     case 'clock': {
       const body: Record<string, unknown> = {};

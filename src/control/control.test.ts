@@ -3,8 +3,13 @@ import { once } from 'node:events';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import { SCOPES } from '../auth/scopes.ts';
-import { startHarness } from '../testing/harness.ts';
+import { READ_WRITE_SCOPES, SCOPES } from '../auth/scopes.ts';
+import { saveBeforeImage } from '../store/lag.ts';
+import {
+  directoryClient,
+  grantToken,
+  startHarness,
+} from '../testing/harness.ts';
 import { signAssertion, tokenRequestBody } from '../testing/jwt.ts';
 import { createControlHandler } from './control.ts';
 
@@ -264,4 +269,90 @@ test('bodies need application/json and the Host must be local', async (t) => {
     'admin-sdk-mock:8080',
   ])
     assert.equal((await raw('GET', '/health', { host })).status, 200, host);
+});
+
+test('index flush makes pending writes visible, and GET /domains counts them', async (t) => {
+  const { harness, call } = await setup(t);
+  const created = (await call('POST', '/domains', SPEC)).json();
+  const domain = harness.mock.domains.get(created.customerId)!;
+  const deviceId = (
+    domain.db.prepare('SELECT device_id FROM devices LIMIT 1').get() as {
+      device_id: string;
+    }
+  ).device_id;
+  saveBeforeImage(
+    domain.db,
+    'devices',
+    deviceId,
+    harness.mock.clock.now(),
+    300_000,
+  );
+  const pending = async () =>
+    (await call('GET', '/domains'))
+      .json()
+      .find(
+        (entry: { customerId: string }) =>
+          entry.customerId === created.customerId,
+      ).counts.pendingWrites;
+  assert.equal(await pending(), 1);
+  const flushed = await call(
+    'POST',
+    `/domains/${created.customerId}/index/flush`,
+  );
+  assert.equal(flushed.status, 200, flushed.text);
+  assert.deepEqual(flushed.json(), { flushed: 1 });
+  assert.equal(await pending(), 0);
+  assert.equal(
+    (await call('POST', '/domains/C0missing/index/flush')).status,
+    404,
+  );
+});
+
+test('a reset discards every write, before-image, command, and deleted user', async (t) => {
+  const { harness, call } = await setup(t);
+  const created = (await call('POST', '/domains', SPEC)).json();
+  const domain = harness.mock.domains.get(created.customerId)!;
+  const api = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_WRITE_SCOPES),
+  );
+  const first = (sql: string) =>
+    Object.values(domain.db.prepare(sql).get() as Record<string, string>)[0];
+  const deviceId = first(
+    "SELECT device_id FROM devices WHERE status = 'ACTIVE' ORDER BY ord LIMIT 1",
+  );
+  const userId = first(
+    'SELECT id FROM users WHERE is_admin = 0 ORDER BY ord LIMIT 1',
+  );
+  const devices = '/customer/my_customer/devices/chromeos';
+  await api('PATCH', `${devices}/${deviceId}`, {
+    body: { notes: 'Before reset' },
+  });
+  await api('POST', `${devices}/${deviceId}:issueCommand`, {
+    body: { commandType: 'REBOOT' },
+  });
+  assert.equal((await api('DELETE', `/users/${userId}`)).status, 204);
+  assert.equal(
+    (await call('POST', `/domains/${created.customerId}/reset`)).status,
+    200,
+  );
+  const fresh = harness.mock.domains.get(created.customerId)!;
+  const count = (sql: string) =>
+    Number(
+      Object.values(fresh.db.prepare(sql).get() as Record<string, number>)[0],
+    );
+  assert.equal(count('SELECT count(*) FROM device_commands'), 0);
+  assert.equal(count('SELECT count(*) FROM deleted_users'), 0);
+  assert.equal(count('SELECT count(*) FROM devices_prior'), 0);
+  assert.equal(count(`SELECT count(*) FROM users WHERE id = '${userId}'`), 1);
+  assert.notEqual(
+    Object.values(
+      fresh.db
+        .prepare(
+          `SELECT COALESCE(notes, '') FROM devices WHERE device_id = '${deviceId}'`,
+        )
+        .get() as Record<string, string>,
+    )[0],
+    'Before reset',
+  );
 });
