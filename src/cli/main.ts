@@ -9,7 +9,7 @@ import {
 import { FixtureError, loadFixtures } from '../seed/fixtures.ts';
 import { SpecError } from '../seed/spec.ts';
 import { loadStartupConfig, startServer } from '../server.ts';
-import { runControlCommand } from './control-commands.ts';
+import { runControlCommand, UsageError } from './control-commands.ts';
 import { runDoctor } from './doctor.ts';
 import { runEnv } from './env.ts';
 import { HELP, usage, usageFailure } from './help.ts';
@@ -32,21 +32,46 @@ const HELP_FLAGS = ['--help', '-h'];
 const portFlag = (text: string | undefined) =>
   text === undefined ? undefined : /^\d+$/.test(text) ? Number(text) : NaN;
 
-/** Resolve after the first SIGTERM or SIGINT. */
-function nextSignal(): Promise<NodeJS.Signals> {
-  return new Promise((done) => {
-    const handle = (signal: NodeJS.Signals) => {
-      process.off('SIGTERM', handle);
-      process.off('SIGINT', handle);
-      done(signal);
-    };
-    process.on('SIGTERM', handle);
-    process.on('SIGINT', handle);
-  });
+/**
+ * Catch the first SIGTERM or SIGINT from now on. `received` resolves on that signal.
+ * The listeners then come off, so a second signal ends the process at once.
+ */
+function watchSignals(): {
+  received: Promise<NodeJS.Signals>;
+  stop: () => void;
+} {
+  let done: (signal: NodeJS.Signals) => void = () => undefined;
+  const received = new Promise<NodeJS.Signals>((resolve) => (done = resolve));
+  const stop = () => {
+    process.off('SIGTERM', handle);
+    process.off('SIGINT', handle);
+  };
+  const handle = (signal: NodeJS.Signals) => {
+    stop();
+    done(signal);
+  };
+  process.on('SIGTERM', handle);
+  process.on('SIGINT', handle);
+  return { received, stop };
 }
 
 /** Start the mock from the configuration and the flags, and run until a signal. */
 async function runStart(args: string[], io: Io): Promise<number> {
+  // Catch a signal that lands during startup, and act on it once startup settles.
+  const signals = watchSignals();
+  try {
+    return await startUntilSignal(args, io, signals.received);
+  } finally {
+    signals.stop();
+  }
+}
+
+/** Parse the flags, start the server, and close it once `signal` resolves. */
+async function startUntilSignal(
+  args: string[],
+  io: Io,
+  signal: Promise<NodeJS.Signals>,
+): Promise<number> {
   const { values } = parseArgs({
     args,
     options: {
@@ -93,7 +118,7 @@ async function runStart(args: string[], io: Io): Promise<number> {
   const server = await startServer(config, {
     log: (event) => io.stdout(`${JSON.stringify(event)}\n`),
   });
-  await nextSignal();
+  await signal;
   await server.close();
   return 0;
 }
@@ -190,7 +215,7 @@ export async function runCli(
       for (const line of error.errors) io.stderr(`${line}\n`);
       return 2;
     }
-    if (error instanceof SpecError) {
+    if (error instanceof SpecError || error instanceof UsageError) {
       io.stderr(`${error.message}\n`);
       return 2;
     }

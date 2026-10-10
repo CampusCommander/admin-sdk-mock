@@ -1,7 +1,7 @@
 import type { Io } from './main.ts';
 
 const CONTROL =
-  '  --control <url>   The control API. Default: MOCK_CONTROL_URL, then http://127.0.0.1:8080.';
+  '  --control <url>   The control API. Default: MOCK_CONTROL_URL, then ADMIN_SDK_MOCK_CONTROL, then http://127.0.0.1:8080.';
 const HELP_FLAG = '  --help            Print this usage.';
 
 /**
@@ -32,7 +32,10 @@ Control commands:
   ca                 Print or save the CA certificate.
 
 Run admin-sdk-mock <command> --help for the options of a command.
-Exit codes: 0 for success, 1 for a runtime failure, 2 for invalid usage or configuration.`,
+Control commands reach --control, then MOCK_CONTROL_URL, then ADMIN_SDK_MOCK_CONTROL, then http://127.0.0.1:8080.
+Exit codes: 0 for success, 1 for a runtime failure, 2 for invalid usage or configuration.
+For mockctl compatibility, domain, credential, settings, quota, fault, index, clock, and ca exit 1
+when a customer ID or option value is missing or invalid.`,
 
   start: `Usage: admin-sdk-mock start [options]
 
@@ -75,7 +78,8 @@ The environment holds the proxy, the CA variables, NO_PROXY, and the control URL
 
 Options:
   --format <sh|dotenv|json|github>   The output format. Default: sh. github appends to $GITHUB_ENV.
-  --control <url>                    The control API. Default: MOCK_CONTROL_URL, then the configuration.
+  --control <url>                    The control API. Default: MOCK_CONTROL_URL, then ADMIN_SDK_MOCK_CONTROL,
+                                     then the control listener of the configuration.
   --config <file>                    The configuration file that names the control listener.
 ${HELP_FLAG}
 
@@ -106,7 +110,7 @@ Print the token response as JSON.
 Options:
   --subject <email>                The user the token acts for. Default: the domain administrator.
   --scopes <read|read-write|a,b>   The scope set or a comma-separated scope list. Default: read-write.
-  --ttl <seconds>                  The token lifetime in seconds. Default: 3600.
+  --ttl <seconds>                  The token lifetime, from 1 to 3600 seconds. Default: 3600.
   --raw                            Print only the access token.
 ${CONTROL}
 ${HELP_FLAG}`,

@@ -6,13 +6,55 @@ import { usageFailure } from './help.ts';
 import type { Io } from './main.ts';
 
 const DEFAULT_CONTROL_URL = 'http://127.0.0.1:8080';
+const MAX_TOKEN_SECONDS = 3600;
 
-/** A control command failure. The CLI prints its message and exits with code 1. */
+/**
+ * A failure of a control command that mockctl had before 1.0. The CLI prints its message
+ * and exits with code 1, as mockctl always did, even for a missing or invalid value.
+ */
 class CliError extends Error {}
 
-/** The control URL: the --control flag, then MOCK_CONTROL_URL, then the default. */
-export const controlUrl = (flag: string | undefined, io: Io): string =>
-  (flag || io.env.MOCK_CONTROL_URL || DEFAULT_CONTROL_URL).replace(/\/+$/, '');
+/** Invalid usage. The CLI prints its message and exits with code 2. */
+export class UsageError extends Error {}
+
+/**
+ * The control URL: --control, then MOCK_CONTROL_URL, then ADMIN_SDK_MOCK_CONTROL (which
+ * `env` exports), then the fallback. A given value must be an http or https URL.
+ */
+export function controlUrl(
+  flag: string | undefined,
+  io: Io,
+  fallback: () => string = () => DEFAULT_CONTROL_URL,
+): string {
+  const given = (
+    [
+      ['--control', flag],
+      ['MOCK_CONTROL_URL', io.env.MOCK_CONTROL_URL],
+      ['ADMIN_SDK_MOCK_CONTROL', io.env.ADMIN_SDK_MOCK_CONTROL],
+    ] as const
+  ).find(([, value]) => value);
+  if (!given) return fallback();
+  const [source, value] = given as readonly [string, string];
+  let protocol: string | undefined;
+  try {
+    protocol = new URL(value).protocol;
+  } catch {
+    /* Not a URL. */
+  }
+  if (protocol !== 'http:' && protocol !== 'https:')
+    throw new UsageError(`${source} is not an http or https URL: ${value}.`);
+  return value.replace(/\/+$/, '');
+}
+
+/** The message for a mock that does not answer, with the cause: an error code or message. */
+export function noMockMessage(url: string, error: unknown): string {
+  const cause = (error as { cause?: unknown } | null)?.cause;
+  const source = cause instanceof Error ? cause : error;
+  const reason =
+    (source as NodeJS.ErrnoException | null)?.code ??
+    (source instanceof Error ? source.message : String(source));
+  return `No mock answers at ${url} (${reason}).`;
+}
 
 /** Expand `read` and `read-write`, or split a comma-separated scope list. */
 const scopeList = (text: string): string[] => {
@@ -72,8 +114,8 @@ export async function runControlCommand(
           body === undefined ? {} : { 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-    } catch {
-      throw new CliError(`No mock answers at ${base}.`);
+    } catch (error) {
+      throw new CliError(noMockMessage(base, error));
     }
     const text = await response.text();
     if (!response.ok) {
@@ -162,6 +204,7 @@ export async function runControlCommand(
       return print(account);
     }
     case 'token': {
+      if (!sub) throw new UsageError('A customer ID is required.');
       const path = `/domains/${id(sub)}/tokens`;
       const body: Record<string, unknown> = {};
       if (values.subject !== undefined) body.subject = values.subject;
@@ -171,9 +214,12 @@ export async function runControlCommand(
             ? values.scopes
             : scopeList(values.scopes);
       if (values.ttl !== undefined) {
-        if (!/^\d+$/.test(values.ttl))
-          throw new CliError('--ttl must be a whole number of seconds.');
-        body.ttlSeconds = Number(values.ttl);
+        const ttl = /^\d+$/.test(values.ttl) ? Number(values.ttl) : NaN;
+        if (!(ttl >= 1 && ttl <= MAX_TOKEN_SECONDS))
+          throw new UsageError(
+            `--ttl must be a whole number of seconds from 1 to ${MAX_TOKEN_SECONDS}.`,
+          );
+        body.ttlSeconds = ttl;
       }
       const token = (await call('POST', path, body)) as {
         access_token: string;

@@ -4,9 +4,10 @@ import { parseArgs } from 'node:util';
 import {
   clientEnvironment,
   loadStartupConfig,
+  urlHost,
   type ServerInfo,
 } from '../server.ts';
-import { controlUrl } from './control-commands.ts';
+import { controlUrl, noMockMessage } from './control-commands.ts';
 import type { Io } from './main.ts';
 
 export type EnvironmentFormat = 'sh' | 'dotenv' | 'json' | 'github';
@@ -51,26 +52,22 @@ export function formatEnvironment(
   }
 }
 
-/** A listener host as a client dials it in a URL: wildcards become loopback, IPv6 is bracketed. */
-function urlHost(host: string): string {
-  const name = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
-  return name.includes(':') ? `[${name}]` : name;
-}
-
-/** The control URL: --control, MOCK_CONTROL_URL, the configuration's control listener, then the default. */
-function envControlUrl(
+/**
+ * The control URL: --control, MOCK_CONTROL_URL, ADMIN_SDK_MOCK_CONTROL, then the control
+ * listener of the startup configuration, which defaults to 127.0.0.1:8080.
+ */
+const envControlUrl = (
   values: { control?: string; config?: string },
   io: Io,
-): string {
-  if (values.control || io.env.MOCK_CONTROL_URL)
-    return controlUrl(values.control, io);
-  const { host, port } = loadStartupConfig({
-    configFlag: values.config,
-    env: io.env,
-    cwd: io.cwd,
-  }).listen.control;
-  return `http://${urlHost(host)}:${port}`;
-}
+): string =>
+  controlUrl(values.control, io, () => {
+    const { host, port } = loadStartupConfig({
+      configFlag: values.config,
+      env: io.env,
+      cwd: io.cwd,
+    }).listen.control;
+    return `http://${urlHost(host)}:${port}`;
+  });
 
 /** Print the client environment of a running mock, or append it to $GITHUB_ENV. */
 export async function runEnv(args: string[], io: Io): Promise<number> {
@@ -96,11 +93,11 @@ export async function runEnv(args: string[], io: Io): Promise<number> {
   let info: ServerInfo;
   try {
     const response = await fetch(`${url}/info`);
-    if (!response.ok) throw new Error(`${response.status}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     info = (await response.json()) as ServerInfo;
-    if (!info?.listeners) throw new Error('The answer names no listeners.');
-  } catch {
-    io.stderr(`No mock answers at ${url}.\n`);
+    if (!info?.listeners) throw new Error('the answer names no listeners');
+  } catch (error) {
+    io.stderr(`${noMockMessage(url, error)}\n`);
     return 1;
   }
   if (!info.listeners.proxy)

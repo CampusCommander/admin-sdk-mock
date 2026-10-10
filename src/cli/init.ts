@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { resolveSpec } from '../seed/spec.ts';
@@ -36,12 +36,15 @@ export function runInit(args: string[], io: Io): number {
   });
   const out = values.out ?? DEFAULT_OUT;
   const path = resolve(io.cwd, out);
-  if (existsSync(path) && !values.force) {
+  mkdirSync(dirname(path), { recursive: true });
+  try {
+    // Without --force, `wx` refuses an existing file in the same step that creates it.
+    writeFileSync(path, STARTER_CONFIG, { flag: values.force ? 'w' : 'wx' });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     io.stderr(`${out} already exists. Pass --force to replace it.\n`);
     return 2;
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, STARTER_CONFIG);
 
   const config =
     path === join(io.cwd, DEFAULT_OUT) ? '' : ` --config ${shellWord(out)}`;

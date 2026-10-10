@@ -148,6 +148,12 @@ test('help prints the usage of the CLI and of each command', async () => {
     `${HELP.config}\n`,
   );
   assert.match(HELP.domain, /small\|medium\|large\|xlarge\|empty/);
+  assert.match(
+    HELP.token,
+    /--ttl <seconds> +The token lifetime, from 1 to 3600 seconds\./,
+  );
+  for (const name of ['', 'token', 'domain', 'env'])
+    assert.match(HELP[name], /MOCK_CONTROL_URL.*ADMIN_SDK_MOCK_CONTROL/s, name);
   assert.match(HELP[''], /^Usage: admin-sdk-mock <command>/);
 
   const unknown = await cli(['nonsense']);
@@ -334,10 +340,67 @@ test('start serves a configuration until SIGTERM, and env and token reach it', a
     env: { MOCK_CONTROL_URL: control },
   });
   assert.match(raw.stdout, /^ya29\.\S+\n$/);
+  const exported = await cli(['token', customerId, '--raw'], {
+    env: { ADMIN_SDK_MOCK_CONTROL: expected.ADMIN_SDK_MOCK_CONTROL },
+  });
+  assert.equal(exported.code, 0, exported.stderr);
+  assert.match(exported.stdout, /^ya29\.\S+\n$/);
 
   child.kill('SIGTERM');
   const [code] = (await once(child, 'exit')) as [number];
   assert.equal(code, 0, output.stderr);
+});
+
+/** Read JSON event lines from a child's standard output until `ready`, calling `onEvent` on each. */
+async function eventsUntilReady(
+  child: ReturnType<typeof spawn>,
+  onEvent: (event: Record<string, unknown>) => void = () => undefined,
+) {
+  const events: Record<string, unknown>[] = [];
+  for await (const line of createInterface({ input: child.stdout! })) {
+    events.push(JSON.parse(line) as Record<string, unknown>);
+    onEvent(events.at(-1)!);
+    if (events.at(-1)!.event === 'ready') break;
+  }
+  return events;
+}
+
+test('start stops with code 0 on SIGINT after ready', async (t) => {
+  const dir = tempDir(t);
+  const { child, output } = spawnStart(t, [
+    '--data-dir',
+    join(dir, 'data'),
+    '--google-port',
+    '0',
+    '--control-port',
+    '0',
+  ]);
+  await eventsUntilReady(child);
+  child.kill('SIGINT');
+  const [code, signal] = (await once(child, 'exit')) as [number, string];
+  assert.deepEqual({ code, signal }, { code: 0, signal: null }, output.stderr);
+});
+
+test('a signal during startup stops start with code 0 once startup settles', async (t) => {
+  const dir = tempDir(t);
+  const config = join(dir, 'slow.json');
+  writeFileSync(
+    config,
+    JSON.stringify({
+      dataDir: './data',
+      listen: { google: { port: 0 }, control: { port: 0 } },
+      timing: { delays: false },
+      domains: [{ spec: { tier: 'small', seed: 'slow-start' } }],
+    }),
+  );
+  const { child, output } = spawnStart(t, ['--config', config]);
+  const events = await eventsUntilReady(child, (event) => {
+    // The domain seeds synchronously after `started`, so this signal lands mid-startup.
+    if (event.event === 'started') child.kill('SIGTERM');
+  });
+  assert.equal(events.at(-1)!.event, 'ready');
+  const [code, signal] = (await once(child, 'exit')) as [number, string];
+  assert.deepEqual({ code, signal }, { code: 0, signal: null }, output.stderr);
 });
 
 test('start exits 2 with each configuration error on standard error', async (t) => {
@@ -457,11 +520,41 @@ test('doctor checks Node, the configuration, the data directory, and the ports',
 test('env reports a missing mock, a missing GITHUB_ENV, and a proxy that is off', async (t) => {
   const dropping = net.createServer((socket) => socket.destroy());
   const dead = `http://127.0.0.1:${await listen(t, dropping)}`;
-  assert.deepEqual(await cli(['env', '--control', dead]), {
-    code: 1,
-    stdout: '',
-    stderr: `No mock answers at ${dead}.\n`,
-  });
+  const missing = await cli(['env', '--control', dead]);
+  assert.equal(missing.code, 1);
+  assert.equal(missing.stdout, '');
+  assert.match(
+    missing.stderr,
+    new RegExp(`^No mock answers at ${dead} \\([A-Za-z_ ]+\\)\\.\n$`),
+  );
+  const control = await cli(['clock', '--control', dead]);
+  assert.equal(control.code, 1);
+  assert.match(
+    control.stderr,
+    new RegExp(`^No mock answers at ${dead} \\([A-Za-z_ ]+\\)\\.\n$`),
+  );
+  const notFound = await cli(['env', '--control', `${await fakeMock(t)}/x`]);
+  assert.match(notFound.stderr, /^No mock answers at .*\/x \(HTTP 404\)\.\n$/);
+  for (const args of [
+    ['env', '--control', 'not a url'],
+    ['clock', '--control', 'not a url'],
+    ['token', 'C0x', '--control', 'ftp://127.0.0.1:8080'],
+  ])
+    assert.deepEqual(await cli(args), {
+      code: 2,
+      stdout: '',
+      stderr: `--control is not an http or https URL: ${args.at(-1)}.\n`,
+    });
+  assert.deepEqual(
+    await cli(['quota', 'C0x'], {
+      env: { MOCK_CONTROL_URL: '127.0.0.1:8080' },
+    }),
+    {
+      code: 2,
+      stdout: '',
+      stderr: 'MOCK_CONTROL_URL is not an http or https URL: 127.0.0.1:8080.\n',
+    },
+  );
   assert.deepEqual(
     await cli(['env', '--format', 'github', '--control', dead]),
     {
@@ -531,7 +624,7 @@ test('every control command works through runCli with the same output', async (t
 
   const created = JSON.parse(
     await ok('domain', 'create', '--tier', 'empty', '--seed', 'cli-control'),
-  ) as { customerId: string; adminEmail: string };
+  ) as { customerId: string; adminEmail: string; counts: unknown };
   const id = created.customerId;
   assert.match(id, /^C0/);
   assert.equal(await ok('domain', 'list'), pretty(await api('/domains')));
@@ -635,7 +728,14 @@ test('every control command works through runCli with the same output', async (t
     READ_WRITE_SCOPES.join(' '),
   );
 
-  assert.equal((await ok('domain', 'reset', id)).length > 0, true);
+  const resetOutput = await ok('domain', 'reset', id);
+  const reset = JSON.parse(resetOutput) as Record<string, unknown>;
+  assert.equal(resetOutput, pretty(reset));
+  assert.equal(typeof reset.durationMs, 'number');
+  assert.deepEqual(
+    { ...reset, durationMs: 0 },
+    { counts: created.counts, adminEmail: created.adminEmail, durationMs: 0 },
+  );
   assert.deepEqual(JSON.parse(await ok('domain', 'delete', id)), {
     deleted: id,
   });
@@ -648,13 +748,22 @@ test('every control command works through runCli with the same output', async (t
     [['clock', '--delays', 'yes'], '--delays must be on or off.'],
     [['settings', 'C0x'], '--json is required.'],
     [['settings', 'C0x', '--json', '{'], '--json is not valid JSON.'],
-    [
-      ['token', 'C0x', '--ttl', 'soon'],
-      '--ttl must be a whole number of seconds.',
-    ],
+    [['domain', 'reset'], 'A customer ID is required.'],
   ] as const)
     assert.deepEqual(await ctl(...args), {
       code: 1,
+      stdout: '',
+      stderr: `${message}\n`,
+    });
+  const ttl = '--ttl must be a whole number of seconds from 1 to 3600.';
+  for (const [args, message] of [
+    [['token'], 'A customer ID is required.'],
+    [['token', 'C0x', '--ttl', 'soon'], ttl],
+    [['token', 'C0x', '--ttl', '0'], ttl],
+    [['token', 'C0x', '--ttl', '3601'], ttl],
+  ] as const)
+    assert.deepEqual(await ctl(...args), {
+      code: 2,
       stdout: '',
       stderr: `${message}\n`,
     });
@@ -673,6 +782,24 @@ test('every control command works through runCli with the same output', async (t
   }
   assert.equal(
     (await cli(['clock'], { env: { MOCK_CONTROL_URL: `${control}/` } })).code,
+    0,
+  );
+  assert.equal(
+    (await cli(['clock'], { env: { ADMIN_SDK_MOCK_CONTROL: control } })).code,
+    0,
+  );
+  const broken = 'http://127.0.0.1:1';
+  for (const [env, code] of [
+    [{ MOCK_CONTROL_URL: control, ADMIN_SDK_MOCK_CONTROL: broken }, 0],
+    [{ MOCK_CONTROL_URL: broken, ADMIN_SDK_MOCK_CONTROL: control }, 1],
+  ] as const)
+    assert.equal((await cli(['clock'], { env })).code, code);
+  assert.equal(
+    (
+      await cli(['clock', '--control', control], {
+        env: { MOCK_CONTROL_URL: broken },
+      })
+    ).code,
     0,
   );
 });

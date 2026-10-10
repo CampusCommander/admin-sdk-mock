@@ -1,26 +1,12 @@
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import net from 'node:net';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
-import {
-  ConfigError,
-  findConfigFile,
-  type MockConfig,
-} from '../config/config.ts';
-import { loadStartupConfig } from '../server.ts';
+import { ConfigError, type MockConfig } from '../config/config.ts';
+import { loadStartupConfig, startupConfigFile } from '../server.ts';
 import type { Io } from './main.ts';
 
 const MINIMUM_NODE = [24, 11] as const;
-
-/** The file loadStartupConfig reads: the flag, MOCK_CONFIG, ./admin-sdk-mock.json, then MOCK_CONFIG_DEFAULT. */
-function configFile(flag: string | undefined, io: Io): string | null {
-  const found = findConfigFile({ flag, env: io.env, cwd: io.cwd });
-  if (found) return found;
-  const fallback = io.env.MOCK_CONFIG_DEFAULT;
-  return fallback && existsSync(resolve(io.cwd, fallback))
-    ? resolve(io.cwd, fallback)
-    : null;
-}
 
 /**
  * Whether the process can write the path: the path itself when it exists, or else the
@@ -77,7 +63,11 @@ export async function runDoctor(args: string[], io: Io): Promise<number> {
     `Node.js ${version} ${supported ? 'satisfies' : 'does not satisfy'} >=${needMajor}.${needMinor}.`,
   );
 
-  const file = configFile(values.config, io);
+  const file = startupConfigFile({
+    configFlag: values.config,
+    env: io.env,
+    cwd: io.cwd,
+  });
   const label = file ? `Configuration ${file}` : 'Configuration';
   let config: MockConfig;
   try {
