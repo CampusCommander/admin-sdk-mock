@@ -27,6 +27,24 @@ export function reachedGroups(
   ).map((entry) => entry.id);
 }
 
+/**
+ * True when any membership before-image touches a group in `reachJson`, a JSON
+ * array of group IDs. Absent markers carry no group, so they match through
+ * their live row. Call it after `listedRelation` has purged expired images, so
+ * every remaining image waits.
+ */
+export function lagTouchesGroups(db: DatabaseSync, reachJson: string): boolean {
+  return (
+    row(
+      db
+        .prepare(
+          'SELECT 1 FROM group_members_prior p LEFT JOIN group_members m ON m.id = p.id WHERE COALESCE(p.group_id, m.group_id) IN (SELECT value FROM json_each(?)) LIMIT 1',
+        )
+        .get(reachJson),
+    ) !== undefined
+  );
+}
+
 /** True when `to` is `from` or lies below it through any live group link. Cycle checks use this. */
 export function reaches(db: DatabaseSync, from: string, to: string): boolean {
   return (

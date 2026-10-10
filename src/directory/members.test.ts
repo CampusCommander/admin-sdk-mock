@@ -451,3 +451,85 @@ test('a nested group hidden by ID removes its members from derived lists', async
   assert.ok(!after.includes(mid.id));
   assert.ok(!after.includes(u2.id) && !after.includes(outsideMemberId(parent)));
 });
+
+test('derived pages stay on the live index unless a waiting write touches a reached group', async (t) => {
+  const { clock, harness, domain, P, allIds, top, mid, leaf, u4, asUser } =
+    await setup(t);
+  const insert = domain.db.prepare(
+    "INSERT INTO group_members (group_id, member_id, email, type, role, delivery, added_at) VALUES (?, ?, ?, 'USER', 'MEMBER', 'ALL_MAIL', 0)",
+  );
+  domain.db.exec('BEGIN');
+  for (let n = 0; n < 5_200; n++)
+    insert.run(
+      leaf.id,
+      `9${String(n).padStart(20, '0')}`,
+      `bulk${String(n).padStart(5, '0')}@${P}`,
+    );
+  domain.db.exec('COMMIT');
+  /** Add a membership the way members.insert does: an absent marker at now, then the row. */
+  const pendingInsert = (groupId: string) => {
+    const id = Number(
+      row<{ n: number }>(
+        domain.db.prepare('SELECT MAX(id) + 1 AS n FROM group_members').get(),
+      )!.n,
+    );
+    saveBeforeImage(
+      domain.db,
+      'group_members',
+      id,
+      harness.mock.clock.now(),
+      D,
+    );
+    insert.run(groupId, u4.id, asUser(u4).email);
+  };
+  const expected = () =>
+    rows<{ member_id: string }>(
+      domain.db
+        .prepare(
+          'SELECT member_id FROM group_members WHERE group_id IN (?, ?, ?) GROUP BY email, member_id ORDER BY email, member_id',
+        )
+        .all(top.id, mid.id, leaf.id),
+    ).map((entry) => entry.member_id);
+  const seen: string[] = [];
+  const prepare = domain.db.prepare.bind(domain.db);
+  domain.db.prepare = (sql: string) => {
+    seen.push(sql);
+    return prepare(sql);
+  };
+  t.after(() => {
+    domain.db.prepare = prepare;
+  });
+  const pageQueries = () => seen.filter((sql) => sql.includes(' AS rank '));
+
+  const other = addTestGroup(domain.db, { email: `other@${P}` });
+  pendingInsert(other.id);
+  const unrelated = await allIds(top.email, {
+    includeDerivedMembership: 'true',
+  });
+  assert.deepEqual(unrelated, expected());
+  assert.equal(unrelated.length, 5_207);
+  assert.ok(pageQueries().length > 1);
+  assert.ok(
+    pageQueries().every((sql) =>
+      sql.includes('FROM group_members INDEXED BY group_members_email'),
+    ),
+    pageQueries()[0],
+  );
+
+  seen.length = 0;
+  pendingInsert(leaf.id);
+  const related = await allIds(top.email, {
+    includeDerivedMembership: 'true',
+  });
+  assert.ok(!related.includes(u4.id));
+  assert.deepEqual(related, unrelated);
+  assert.ok(
+    pageQueries().every((sql) => sql.includes('FROM group_members_listed')),
+    pageQueries()[0],
+  );
+
+  await clock.advance(D);
+  const after = await allIds(top.email, { includeDerivedMembership: 'true' });
+  assert.ok(after.includes(u4.id));
+  assert.deepEqual(after, expected());
+});

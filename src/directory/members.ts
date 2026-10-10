@@ -28,7 +28,7 @@ import {
   resolveMemberTarget,
   visibleGroup,
 } from './group-common.ts';
-import { reachedGroups } from './group-graph.ts';
+import { lagTouchesGroups, reachedGroups } from './group-graph.ts';
 
 /** Derived pages scan the email index once the reached groups hold more rows than this. */
 export const EMAIL_SCAN_ROWS = 5000;
@@ -199,11 +199,17 @@ export function listMembers(call: Call): ApiResponse {
         hidden,
       ),
     );
+    // Ruling: the page reads the live table and its index unless a waiting write
+    // touches a reached group. Untouched groups hold the same rows in both relations.
+    const source =
+      table !== 'group_members' && lagTouchesGroups(db, reach)
+        ? table
+        : 'group_members';
     scanned = Number(
       row<{ n: number }>(
         db
           .prepare(
-            `SELECT count(*) AS n FROM ${table} WHERE group_id IN (SELECT value FROM json_each(?))`,
+            `SELECT count(*) AS n FROM ${source} WHERE group_id IN (SELECT value FROM json_each(?))`,
           )
           .get(reach),
       )?.n ?? 0,
@@ -216,7 +222,7 @@ export function listMembers(call: Call): ApiResponse {
     }>(
       db
         .prepare(
-          derivedQuery(table, scanned, {
+          derivedQuery(source, scanned, {
             cursor: cursor !== null,
             roles: roles?.length ?? 0,
             hidden: hidden.length,

@@ -1,7 +1,7 @@
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { READ_SCOPES, READ_WRITE_SCOPES } from '../../src/auth/scopes.ts';
-import { flushLag, pendingLag } from '../../src/store/lag.ts';
+import { flushLag, pendingLag, saveBeforeImage } from '../../src/store/lag.ts';
 import { row, rows } from '../../src/store/sqlite.ts';
 import {
   batchBody,
@@ -216,6 +216,70 @@ try {
         `deep hasMember answered ${response.status}: ${response.text.slice(0, 200)}`,
       );
   } else failures.push('No deep group chain was seeded.');
+  // Lagged derived pages: one waiting membership write outside all-students' reach, then one inside it.
+  // A long search delay keeps every before-image waiting while a pass pages, here and in the writes below.
+  const delaySeconds = 3_600_000;
+  harness.mock.domains.updateSettings(domain.customerId, {
+    writes: { searchDelaySeconds: delaySeconds },
+  });
+  const delayMs = (delaySeconds * 1000) / scale;
+  const reachSql = `WITH RECURSIVE reach(id) AS (
+       SELECT id FROM groups WHERE email = '${allStudents}'
+       UNION SELECT m.member_id FROM group_members m JOIN reach r ON m.group_id = r.id WHERE m.type = 'GROUP')`;
+  const outsider = row<{ id: string; email: string }>(
+    domain.db
+      .prepare(
+        `${reachSql} SELECT id, primary_email AS email FROM users WHERE id NOT IN (SELECT member_id FROM group_members WHERE group_id IN (SELECT id FROM reach)) ORDER BY ord LIMIT 1`,
+      )
+      .get(),
+  )!;
+  const unrelatedGroup = row<{ id: string }>(
+    domain.db
+      .prepare(
+        `${reachSql} SELECT id FROM groups WHERE id NOT IN (SELECT id FROM reach) AND id NOT IN (SELECT group_id FROM group_members WHERE member_id = ?) ORDER BY id LIMIT 1`,
+      )
+      .get(outsider.id),
+  )!;
+  const gradeGroup = row<{ id: string }>(
+    domain.db
+      .prepare(
+        `SELECT g.member_id AS id FROM group_members s JOIN group_members g ON g.group_id = s.member_id AND g.type = 'GROUP'
+         WHERE s.group_id = (SELECT id FROM groups WHERE email = ?) AND s.type = 'GROUP' ORDER BY g.id LIMIT 1`,
+      )
+      .get(allStudents),
+  )!;
+  /** Add the outsider to a group as members.insert does: an absent marker, then the row. */
+  const laggedInsert = (groupId: string) => {
+    const id = count('SELECT MAX(id) + 1 AS n FROM group_members');
+    saveBeforeImage(domain.db, 'group_members', id, Date.now(), delayMs);
+    domain.db
+      .prepare(
+        "INSERT INTO group_members (id, group_id, member_id, email, type, role, delivery, added_at) VALUES (?, ?, ?, ?, 'USER', 'MEMBER', 'ALL_MAIL', ?)",
+      )
+      .run(id, groupId, outsider.id, outsider.email, Date.now());
+  };
+  const pageAllStudents = () =>
+    enumerate(
+      'admin.googleapis.com',
+      `/admin/directory/v1/groups/${encodeURIComponent(allStudents)}/members`,
+      'members',
+      { maxResults: 200, includeDerivedMembership: 'true' },
+    );
+  laggedInsert(unrelatedGroup.id);
+  const unrelatedLag = await pageAllStudents();
+  if (unrelatedLag.items !== derivedExpected)
+    failures.push(
+      `derived with unrelated lag: ${unrelatedLag.items} of ${derivedExpected}.`,
+    );
+  groupBound('derived with unrelated lag', unrelatedLag);
+  laggedInsert(gradeGroup.id);
+  // The new member stays hidden until the delay passes. This pass records its time without a bound.
+  const relatedLag = await pageAllStudents();
+  if (relatedLag.items !== derivedExpected)
+    failures.push(
+      `derived with related lag: ${relatedLag.items} of ${derivedExpected}.`,
+    );
+  const groupLagFlushed = flushLag(domain.db);
   const groups = {
     seeded: {
       groups: result.counts.groups,
@@ -226,12 +290,11 @@ try {
     memberSample,
     derived,
     deepCheck,
+    unrelatedLag,
+    relatedLag,
+    groupLagFlushed,
   };
   // Writes: move devices in batches, then page while their before-images wait.
-  const delaySeconds = 3_600_000;
-  harness.mock.domains.updateSettings(domain.customerId, {
-    writes: { searchDelaySeconds: delaySeconds },
-  });
   const writeToken = grantToken(harness, domain, READ_WRITE_SCOPES);
   const moves = Math.min(60_000, expected.devices);
   const target = row<{ path: string }>(
@@ -278,7 +341,6 @@ try {
       );
   }
   const moveMs = Math.round(performance.now() - moveStarted);
-  const delayMs = (delaySeconds * 1000) / scale;
   const pending = pendingLag(domain.db, Date.now(), delayMs);
   if (pending < moves)
     failures.push(`Only ${pending} of ${moves} before-images are pending.`);
