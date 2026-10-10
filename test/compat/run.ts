@@ -7,15 +7,17 @@ import { join } from 'node:path';
 import { issueServiceAccount } from '../../src/auth/accounts.ts';
 import { READ_SCOPES, READ_WRITE_SCOPES } from '../../src/auth/scopes.ts';
 import { createMock } from '../../src/mock.ts';
+import { startProxy } from '../../src/proxy.ts';
 import { row, rows } from '../../src/store/sqlite.ts';
-import { startConnectProxy } from './proxy.ts';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'compat-'));
 const mock = createMock({ dataDir, timing: { scale: 1, delays: false } });
 const google = await mock.listenGoogle(0, '127.0.0.1');
-const proxy = await startConnectProxy({
+const proxy = await startProxy({
   host: '127.0.0.1',
-  port: (google.address() as AddressInfo).port,
+  port: 0,
+  target: { host: '127.0.0.1', port: (google.address() as AddressInfo).port },
+  passthrough: false,
 });
 const { domain } = mock.domains.create(
   {
