@@ -95,6 +95,7 @@ Three timing rules apply to groups. The time scale divides each delay.
 - `members.insert` into a group younger than the ready delay, 60 seconds, answers `404`.
 
 `mockctl index flush <customerId>` also ends every pending nesting delay and ready delay.
+Its response reports `delaysEnded`, the number of group delays that the flush ended.
 Set `nestingDelaySeconds` or `groupReadySeconds` to 0 to remove one delay.
 `GET /domains` reports the group and membership counts of each domain.
 
@@ -179,7 +180,7 @@ ADMIN_SDK_MOCK_IMAGE=admin-sdk-mock:local docker compose -f <install>/docker-com
 ```
 
 A plain `docker run` needs `--sysctl net.ipv4.ip_unprivileged_port_start=0` to bind port 443.
-Seeding an `xlarge` domain blocks the mock for about 15 seconds. Seed before you connect Campus Commander.
+Seeding an `xlarge` domain blocks the mock for about 26 seconds. Seed before you connect Campus Commander.
 
 The overlay adds no file to Campus Commander. It routes the four Google hostnames to the mock inside the `internal` network.
 
