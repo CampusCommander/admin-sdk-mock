@@ -148,9 +148,12 @@ export function createControlHandler(
     body: Record<string, unknown>,
   ): Record<string, unknown> => {
     const domain = domainOrThrow(customerId);
-    const subject = body.subject ?? `admin@${domain.spec.primaryDomain}`;
-    if (typeof subject !== 'string' || !findUser(domain.db, subject))
+    const named = body.subject ?? `admin@${domain.spec.primaryDomain}`;
+    const user = typeof named === 'string' ? findUser(domain.db, named) : null;
+    if (!user)
       throw new ControlError(400, 'subject must name a user of the domain.');
+    // Store the primary email, so faults and quotas match a token minted by alias or ID.
+    const subject = user.primary_email;
     const words = body.scopes ?? 'read-write';
     if (
       !(words === 'read' || words === 'read-write') &&
