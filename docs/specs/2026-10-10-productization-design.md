@@ -1,6 +1,6 @@
 # Admin SDK mock: productization design
 
-Status: written under the owner's autonomy grant of 2026-10-10. Awaiting owner review.
+Status: written under the owner's autonomy grant of 2026-10-10 and implemented as version 1.0.0. Awaiting owner review.
 Source: owner request on 2026-10-10.
 Parents: [Admin SDK mock design](2026-10-09-admin-sdk-mock-design.md) and its milestone specs. Every rule of those specs still applies unless this spec changes it.
 
@@ -67,7 +67,7 @@ Install: `npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0`. 
 
 The image keeps its current base, user, volume, and health check. It gains:
 
-- `MOCK_CONFIG`, which names a configuration file. The default is `/config/admin-sdk-mock.json` when that file exists.
+- `MOCK_CONFIG_DEFAULT=/config/admin-sdk-mock.json`, a fallback configuration file that the mock reads when that file exists. `--config`, `MOCK_CONFIG`, and `./admin-sdk-mock.json` come before it (P-R30).
 - Port 3128 for the proxy, exposed and off unless the configuration enables it.
 - The `admin-sdk-mock` CLI on the path.
 
@@ -75,14 +75,21 @@ The image keeps its current base, user, volume, and health check. It gains:
 
 A composite action at the repository root, `action.yml`, starts the image on the runner:
 
-| Input     | Default                                       | Meaning                                   |
-| --------- | --------------------------------------------- | ----------------------------------------- |
-| `config`  | none                                          | Path to a configuration file in the repo. |
-| `image`   | `ghcr.io/campuscommander/admin-sdk-mock:main` | The image to run.                         |
-| `workdir` | `${{ runner.temp }}/admin-sdk-mock`           | Where CA and credential files land.       |
+| Input          | Default                             | Meaning                                    |
+| -------------- | ----------------------------------- | ------------------------------------------ |
+| `config`       | none                                | Path to a configuration file in the repo.  |
+| `image`        | empty                               | The image to run. See below.               |
+| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | Where CA and credential files land.        |
+| `passthrough`  | `'true'`                            | Whether the proxy tunnels other targets.   |
+| `control-port` | `18080`                             | The host port for the control API (P-R30). |
+| `proxy-port`   | `13128`                             | The host port for the proxy (P-R30).       |
 
-It waits for health, then writes `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
-It also sets each configured credential path as an output.
+An empty `image` resolves to `ghcr.io/campuscommander/admin-sdk-mock:<X.Y.Z>` when `github.action_ref` is `vX.Y.Z`, and to `:main` otherwise (P-R7).
+`passthrough` defaults to true, so later steps that share `HTTPS_PROXY` keep their network (P-R7).
+
+It waits for the ready file, then writes `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
+It sets five outputs: `workdir`, `ca-file`, `ca-bundle-file`, `proxy-url`, and `control-url`. It sets no credential-path output.
+A key file that the configuration writes under `/out` lands in `<workdir>/out` (P-R30).
 The action requires Docker on the runner. GitHub-hosted Ubuntu runners have it.
 
 ## Configuration
@@ -90,9 +97,11 @@ The action requires Docker on the runner. GitHub-hosted Ubuntu runners have it.
 ### File and precedence
 
 The CLI and the image read one JSON file. The CLI finds it in this order: `--config <file>`, then `MOCK_CONFIG`, then `./admin-sdk-mock.json` if present.
-A missing file is not an error. The defaults then apply.
+A missing `./admin-sdk-mock.json` is not an error. The defaults then apply.
+A file that `--config` or `MOCK_CONFIG` names must exist. A missing named file is an error with exit code 2 (P-R5).
 Values resolve in this order, highest first: command-line flags, environment variables, the file, the defaults.
 `schema/config.schema.json` describes the file. A `$schema` key in the file is allowed and ignored.
+Paths written in the file resolve against the file. A `dataDir` that the file does not set defaults to `./data` against the working directory (P-R4).
 
 ### Keys
 
@@ -105,7 +114,7 @@ Values resolve in this order, highest first: command-line flags, environment var
 | `timing.scale`      | 1                                       | The time scale.                                                                                 |
 | `timing.delays`     | true                                    | Whether modeled latency applies.                                                                |
 | `caFile`            | `<dataDir>/ca/ca.pem`                   | Where the CLI writes the CA certificate for clients.                                            |
-| `readyFile`         | none                                    | A file the CLI writes once every domain is ready. It holds the started event JSON.              |
+| `readyFile`         | none                                    | A file the CLI writes once every domain is ready. It holds the `ready` event JSON (P-R12).      |
 | `defaults.settings` | `{}`                                    | A settings patch applied to every configured domain before its own settings.                    |
 | `domains`           | `[]`                                    | The domains to ensure at startup. See below.                                                    |
 
@@ -166,7 +175,13 @@ One executable, `admin-sdk-mock`, holds every command. `mockctl` stays as an ali
 | Control commands                          | Every current `mockctl` command: `domain`, `credential`, `ca`, `clock`, `quota`, `fault`, `index`, `settings`.                                                                  |
 
 Exit codes: 0 for success, 1 for a runtime failure, 2 for invalid usage or configuration.
+Code 2 covers usage, configuration, fixture, and seed specification errors.
+The existing control commands, such as `domain`, `credential`, and `clock`, keep exit code 1 for their own validation messages (P-R14).
+The `token` command exits with code 2 on usage errors. A malformed control URL exits with code 2 for every command (P-R15).
+Control commands find the mock through `--control`, then `MOCK_CONTROL_URL`, then `ADMIN_SDK_MOCK_CONTROL`.
+Then `env` reads the configuration's control listener, and the other commands use `http://127.0.0.1:8080` (P-R16).
 `start` logs one JSON line per event to standard output, starting with the `started` event. It logs one `ready` event after every domain is ready.
+The `ready` event is `{ event: 'ready', ...ServerInfo }`. Its `domains[]` entries carry `customerId`, and `readyFile` receives it (P-R12).
 `--help` on every command prints its usage.
 
 ## Programmatic API
@@ -180,32 +195,32 @@ The package root exports `startMock(options?)` for in-process tests. It returns 
 | `proxy`   | Default `{ passthrough: true }`. `false` starts no proxy.               |
 | `timing`  | Default `{ scale: 1, delays: false }`, so tests run fast.               |
 
-| Handle member                         | Meaning                                                                                                                                                      |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `googleUrl`, `controlUrl`, `proxyUrl` | The listener URLs.                                                                                                                                           |
-| `caCert`, `caFile`                    | The CA certificate PEM and its file path.                                                                                                                    |
-| `domains`                             | The configured domains: customer ID, primary domain, administrator email, and key files.                                                                     |
-| `createDomain(spec, options?)`        | Seed one more domain. Options take `settings` and `fixtures`.                                                                                                |
-| `credential(customerId, scopes)`      | Issue a service account with the scopes and return its key object.                                                                                           |
-| `env()`                               | The client environment for child processes.                                                                                                                  |
-| `useInProcess()`                      | Trust the mock CA in this process through `tls.setDefaultCACertificates`, and set `HTTPS_PROXY` for Google hostnames. Returns a function that restores both. |
-| `flush(customerId)`                   | The control flush.                                                                                                                                           |
-| `control(method, path, body?)`        | Any control API call.                                                                                                                                        |
-| `close()`                             | Stop the listeners, restore in-process changes, and remove a temporary data directory.                                                                       |
+| Handle member                         | Meaning                                                                                                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `googleUrl`, `controlUrl`, `proxyUrl` | The listener URLs.                                                                                                                                                                                                  |
+| `caCert`, `caFile`                    | The CA certificate PEM and its file path.                                                                                                                                                                           |
+| `domains`                             | The configured domains: customer ID, primary domain, administrator email, and key files.                                                                                                                            |
+| `createDomain(spec, options?)`        | Seed one more domain. Options take `settings` and `fixtures`.                                                                                                                                                       |
+| `credential(customerId, scopes)`      | Issue a service account with the scopes and return its key object.                                                                                                                                                  |
+| `env()`                               | The client environment for child processes.                                                                                                                                                                         |
+| `useInProcess()`                      | Trust the mock CA in this process through `tls.setDefaultCACertificates`, and set `HTTPS_PROXY` and `https_proxy` for the whole process. `NO_PROXY` stays as it was. Returns a function that restores both (P-R30). |
+| `flush(customerId)`                   | The control flush.                                                                                                                                                                                                  |
+| `control(method, path, body?)`        | Any control API call.                                                                                                                                                                                               |
+| `close()`                             | Stop the listeners, restore in-process changes, and remove a temporary data directory.                                                                                                                              |
 
 `useInProcess()` lets the unmodified `googleapis` and `google-auth-library` clients reach the mock from the same process. gaxios reads `HTTPS_PROXY` on every request.
 The in-process proxy tunnels other targets by default, so the test's other HTTPS calls keep working.
 
 ## Fixtures
 
-A fixtures file declares exact entities for a domain. It applies after the generated seed, inside the same transaction.
+A fixtures file declares exact entities for a domain. It applies in its own transaction right after the generated seed (P-R9). A failure removes the whole domain.
 
 | Section    | Fields                                                                                                                                                                           |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `orgUnits` | `path` (required), `description`. Missing parents are created.                                                                                                                   |
 | `users`    | `primaryEmail`, `givenName`, `familyName` (required), `orgUnitPath` (default `/`), `isAdmin`, `suspended`, `aliases`, `externalIds`, `id`.                                       |
 | `devices`  | `serialNumber` (required), `model` (from the model catalog), `status`, `orgUnitPath`, `annotatedUser`, `annotatedAssetId`, `annotatedLocation`, `notes`, `lastSync`, `deviceId`. |
-| `groups`   | `email` (required), `name`, `description`, `aliases`, `members`: `{ email, role, type }` or `{ id, role }`.                                                                      |
+| `groups`   | `email` (required), `name`, `description`, `aliases`, `members`: `{ email, role, type }` or `{ id, role, type }`. `type` is optional (P-R8).                                     |
 
 Rules:
 
@@ -213,9 +228,10 @@ Rules:
 - Omitted IDs derive from the seed and the entry, so one fixtures file always yields the same IDs.
 - An omitted device field takes the generator's value for that serial number. Telemetry follows the device as it does for seeded devices.
 - A group member names a fixture or seeded user or group, the customer ID, or an outside address. Cycles are errors.
+- A member `type` of `USER`, `GROUP`, or `CUSTOMER` must match the kind of entity that the key names (P-R8).
 - Errors name the file, the JSON path, and the problem. A fixtures error fails startup with exit code 2.
 
-The `empty` tier seeds the primary, student, and alias domains, the root OU, and one super administrator, `admin@<primary domain>`.
+The `empty` tier seeds the primary domain, the student domain when it differs from the primary domain, the alias domain, the root OU, and one super administrator, `admin@<primary domain>` (P-R30).
 It seeds no other OU, user, device, or group, and its rates do not apply.
 
 ## Documentation
@@ -299,3 +315,24 @@ Version 1.0 is complete when all of these hold:
 5. Every documented example runs in CI. Every generated reference matches its source.
 6. Every test layer passes in CI, and the coverage gate holds.
 7. The existing milestone 1–3 behavior and the Campus Commander overlay keep working unchanged.
+
+## Amendments under the autonomy grant
+
+The execution ledger recorded these rulings while the plan ran. The text above already reflects each one.
+
+- P-R4: a `dataDir` that the file does not set defaults to `./data` against the working directory. Paths written in the file resolve against the file.
+- P-R5: an explicit `--config` or `MOCK_CONFIG` that names a missing file is an error with exit code 2. Only the implicit `./admin-sdk-mock.json` may be absent.
+- P-R7: the action's `image` input defaults to empty, which resolves to the version tag of a pinned action or to `:main`. A new `passthrough` input defaults to true.
+- P-R8: fixture group members accept an optional `type` of `USER`, `GROUP`, or `CUSTOMER`, which must match the key.
+- P-R9: fixtures apply in their own transaction right after the seed, not inside the seed transaction.
+- P-R12: `readyFile` holds the `ready` event with `domains[].customerId`, not the `started` event.
+- P-R14: the existing control commands keep exit code 1 for their own validation messages.
+- P-R15: the new `token` command exits with code 2 on usage errors, and a malformed control URL exits with code 2 for every command.
+- P-R16: the control URL comes from `--control`, then `MOCK_CONTROL_URL`, then `ADMIN_SDK_MOCK_CONTROL`, then the configuration's control listener for `env` or `http://127.0.0.1:8080`.
+- P-R30: the spec text matches the code in these places:
+  - The image sets `MOCK_CONFIG_DEFAULT=/config/admin-sdk-mock.json`, not `MOCK_CONFIG`. The lookup reads it last.
+  - The action has `control-port` (default 18080) and `proxy-port` (default 13128) inputs.
+  - The action waits for the ready file, not for health.
+  - The action sets five outputs, `workdir`, `ca-file`, `ca-bundle-file`, `proxy-url`, and `control-url`, and no credential-path output.
+  - `useInProcess()` sets `HTTPS_PROXY` and `https_proxy` for the whole process, not for the Google hostnames alone. `NO_PROXY` stays as it was.
+  - The `empty` tier adds the student domain only when it differs from the primary domain.
