@@ -129,10 +129,16 @@ export class ConfigError extends Error {
   }
 }
 
-/** Read and parse a configuration file. */
+/** Read and parse a configuration file. A missing, unreadable, or malformed file is a ConfigError. */
 export function loadConfigFile(path: string): unknown {
   if (!existsSync(path)) throw new ConfigError([`${path} does not exist.`]);
-  const text = readFileSync(path, 'utf8');
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    const { code, message } = error as NodeJS.ErrnoException;
+    throw new ConfigError([`${path} cannot be read: ${code ?? message}.`]);
+  }
   try {
     return JSON.parse(text);
   } catch (error) {

@@ -600,6 +600,29 @@ test('doctor checks Node, the configuration, the data directory, and the ports',
   }
 });
 
+test('a configuration path that names a directory exits 2, and doctor fails it', async (t) => {
+  const dir = tempDir(t);
+  const folder = join(dir, 'folder.json');
+  mkdirSync(folder);
+  const message = `${folder} cannot be read: EISDIR.`;
+  for (const args of [
+    ['start', '--config', folder],
+    ['config', 'validate', folder],
+    ['env', '--config', folder],
+  ])
+    assert.deepEqual(
+      await cli(args, { cwd: dir }),
+      { code: 2, stdout: '', stderr: `${message}\n` },
+      args[0],
+    );
+  const doctor = await cli(['doctor', '--config', folder], { cwd: dir });
+  assert.equal(doctor.code, 1);
+  assert.ok(
+    doctor.stdout.includes(`FAIL Configuration ${folder}: ${message}\n`),
+    doctor.stdout,
+  );
+});
+
 test('env reports a missing mock, a missing GITHUB_ENV, and a proxy that is off', async (t) => {
   const dropping = net.createServer((socket) => socket.destroy());
   const dead = `http://127.0.0.1:${await listen(t, dropping)}`;

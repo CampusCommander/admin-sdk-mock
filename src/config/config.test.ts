@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -316,5 +322,22 @@ test('loadConfigFile reports malformed JSON with the file name', (t) => {
   assert.deepEqual(
     errorsOf(() => loadConfigFile(join(dir, 'missing.json'))),
     [`${join(dir, 'missing.json')} does not exist.`],
+  );
+});
+
+test('loadConfigFile reports a directory or an unreadable file with its path', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'config-load-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.deepEqual(
+    errorsOf(() => loadConfigFile(dir)),
+    [`${dir} cannot be read: EISDIR.`],
+  );
+  if (process.getuid?.() === 0) return;
+  const locked = join(dir, 'locked.json');
+  writeFileSync(locked, '{}', { mode: 0o000 });
+  chmodSync(locked, 0o000);
+  assert.deepEqual(
+    errorsOf(() => loadConfigFile(locked)),
+    [`${locked} cannot be read: EACCES.`],
   );
 });
