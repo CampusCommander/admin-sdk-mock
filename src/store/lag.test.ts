@@ -290,3 +290,63 @@ test('listedSelect matches the listed view and merges the compound arms', (t) =>
     plan.map((step) => step.detail).join('\n'),
   );
 });
+
+test('group tables lag, and numeric member keys keep their before-images', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'lag-groups-'));
+  const db = openDomainDb(join(dir, 'domain.sqlite'));
+  t.after(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  for (const view of [
+    'groups_listed',
+    'group_aliases_listed',
+    'group_members_listed',
+  ])
+    assert.ok(
+      db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'view' AND name = ?")
+        .get(view),
+      view,
+    );
+  const insert = db.prepare(
+    "INSERT INTO group_members (id, group_id, member_id, email, type, role, delivery, added_at) VALUES (?, 'g1', ?, ?, 'USER', 'MEMBER', 'ALL_MAIL', 0)",
+  );
+  insert.run(1, 'u1', 'one@lake.test');
+  // A new membership hides behind an absent marker.
+  saveBeforeImage(db, 'group_members', 2, 1_000, 60_000);
+  insert.run(2, 'u2', 'two@lake.test');
+  // A removed membership stays listed through its before-image.
+  saveBeforeImage(db, 'group_members', 1, 1_000, 60_000);
+  db.prepare('DELETE FROM group_members WHERE id = 1').run();
+  const listed = (now: number) =>
+    db
+      .prepare(
+        `SELECT member_id FROM ${listedRelation(db, 'group_members', now, 60_000)} ORDER BY member_id`,
+      )
+      .all()
+      .map((entry) => (entry as { member_id: string }).member_id);
+  assert.deepEqual(listed(2_000), ['u1']);
+  assert.deepEqual(listed(70_000), ['u2']);
+});
+
+test('a milestone 2 file gains the group tables and deleted_users.memberships', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'lag-migrate-'));
+  const path = join(dir, 'domain.sqlite');
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const old = new DatabaseSync(path);
+  old.exec(
+    "CREATE TABLE deleted_users (id TEXT PRIMARY KEY, primary_email TEXT NOT NULL, given_name TEXT NOT NULL, family_name TEXT NOT NULL, full_name TEXT NOT NULL, org_unit_path TEXT NOT NULL, is_admin INTEGER NOT NULL, suspended INTEGER NOT NULL, suspension_reason TEXT, external_id TEXT, role TEXT NOT NULL, school INTEGER, creation_time INTEGER NOT NULL, last_login_time INTEGER, ord INTEGER NOT NULL, change_password_at_next_login INTEGER NOT NULL DEFAULT 0, external_ids TEXT, deleted_at INTEGER NOT NULL, aliases TEXT NOT NULL DEFAULT '[]')",
+  );
+  old.close();
+  const db = openDomainDb(path);
+  t.after(() => db.close());
+  const columns = (table: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+      (column) => column.name,
+    );
+  assert.ok(columns('deleted_users').includes('memberships'));
+  assert.ok(columns('deleted_users_prior').includes('memberships'));
+  for (const table of ['groups', 'group_aliases', 'group_members'])
+    assert.ok(columns(table).length > 0, table);
+});

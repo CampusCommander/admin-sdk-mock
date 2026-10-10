@@ -29,6 +29,8 @@ export interface WriteSettings {
   commandExpirySeconds: number;
   userCreatesPerSecond: number;
   orgUnitWritesPerSecond: number;
+  nestingDelaySeconds: number;
+  groupReadySeconds: number;
 }
 
 export interface DomainSettings {
@@ -75,6 +77,8 @@ export const DEFAULT_SETTINGS: DomainSettings = Object.freeze({
     commandExpirySeconds: 432_000,
     userCreatesPerSecond: 10,
     orgUnitWritesPerSecond: 1,
+    nestingDelaySeconds: 600,
+    groupReadySeconds: 60,
   },
 }) as DomainSettings;
 

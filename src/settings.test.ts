@@ -67,6 +67,8 @@ test('the write defaults match the milestone 2 spec', () => {
     commandExpirySeconds: 432_000,
     userCreatesPerSecond: 10,
     orgUnitWritesPerSecond: 1,
+    nestingDelaySeconds: 600,
+    groupReadySeconds: 60,
   });
   assert.equal(DEFAULT_SETTINGS.latency.writeBaseMs, 250);
   assert.equal(DEFAULT_SETTINGS.latency.perDeviceWriteMs, 10);
@@ -104,4 +106,17 @@ test('stored settings from milestone 1 read back with the write defaults', () =>
   delete stored.writes;
   delete stored.latency.writeBaseMs;
   assert.deepEqual(withDefaults(stored), DEFAULT_SETTINGS);
+});
+
+test('the group delays accept 0 and reject negative values', () => {
+  const merged = mergeSettings(DEFAULT_SETTINGS, {
+    writes: { nestingDelaySeconds: 0, groupReadySeconds: 0 },
+  });
+  assert.equal(merged.writes.nestingDelaySeconds, 0);
+  assert.equal(merged.writes.groupReadySeconds, 0);
+  assert.throws(
+    () =>
+      mergeSettings(DEFAULT_SETTINGS, { writes: { groupReadySeconds: -1 } }),
+    SettingsError,
+  );
 });

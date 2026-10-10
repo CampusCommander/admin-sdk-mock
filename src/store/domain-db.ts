@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS deleted_users (
   change_password_at_next_login INTEGER NOT NULL DEFAULT 0,
   external_ids TEXT,
   deleted_at INTEGER NOT NULL,
-  aliases TEXT NOT NULL DEFAULT '[]'
+  aliases TEXT NOT NULL DEFAULT '[]',
+  memberships TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS deleted_users_email ON deleted_users (primary_email);
 CREATE INDEX IF NOT EXISTS deleted_users_ord ON deleted_users (ord);
@@ -129,15 +130,44 @@ CREATE TABLE IF NOT EXISTS device_commands (
   applied INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS device_commands_due ON device_commands (applied, executed_at);
+CREATE TABLE IF NOT EXISTS groups (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  admin_created INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS group_aliases (
+  alias TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS group_aliases_group ON group_aliases (group_id);
+CREATE TABLE IF NOT EXISTS group_members (
+  id INTEGER PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  member_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  type TEXT NOT NULL,
+  role TEXT NOT NULL,
+  delivery TEXT NOT NULL,
+  added_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS group_members_order ON group_members (group_id, email, member_id);
+CREATE INDEX IF NOT EXISTS group_members_email ON group_members (email, member_id);
+CREATE INDEX IF NOT EXISTS group_members_links ON group_members (group_id, member_id) WHERE type = 'GROUP';
 `;
 
-/** Columns that milestone 2 added to tables in milestone 1 files. */
+/** Columns that later milestones added to tables in earlier files. */
 const ADDED_COLUMNS: Readonly<
   Record<string, Readonly<Record<string, string>>>
 > = {
   users: {
     change_password_at_next_login: 'INTEGER NOT NULL DEFAULT 0',
     external_ids: 'TEXT',
+  },
+  deleted_users: {
+    memberships: "TEXT NOT NULL DEFAULT '[]'",
   },
 };
 
