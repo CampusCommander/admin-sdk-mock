@@ -16,6 +16,7 @@ import {
   intParam,
   invalidArgument,
   iso,
+  listedTable,
   resolveCustomer,
   withEtag,
 } from './common.ts';
@@ -122,6 +123,8 @@ export function listDevices(call: Call): ApiResponse {
   const sortKey = enumParam<SortKey>(call, 'orderBy', ORDER_BY, 'ord');
   const descending = enumParam(call, 'sortOrder', SORT_ORDER, 'ASC') === 'DESC';
   const filter = emptyFilter();
+  const devices = listedTable(call, 'devices');
+  const units = listedTable(call, 'orgunits');
 
   const ouParam = query.get('orgUnitPath');
   const children = boolParam(call, 'includeChildOrgunits');
@@ -131,7 +134,7 @@ export function listDevices(call: Call): ApiResponse {
       'orgUnitPath is required when includeChildOrgunits is true.',
     );
   if (ouParam) {
-    const unit = resolveOrgUnit(call, domain.db, ouParam);
+    const unit = resolveOrgUnit(call, domain.db, ouParam, units);
     if (children) subtree('org_unit_path', unit.path, filter);
     else {
       filter.where.push('org_unit_path = ?');
@@ -173,7 +176,7 @@ export function listDevices(call: Call): ApiResponse {
   const found = rows<StoredDevice & { sort_key: string | number }>(
     domain.db
       .prepare(
-        `SELECT *, ${sort} AS sort_key FROM devices ${whereClause(filter)} ORDER BY ${sort} ${direction}, device_id ${direction} LIMIT ?`,
+        `SELECT *, ${sort} AS sort_key FROM ${devices} ${whereClause(filter)} ORDER BY ${sort} ${direction}, device_id ${direction} LIMIT ?`,
       )
       .all(...filter.params, maxResults + 1),
   );

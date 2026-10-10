@@ -6,6 +6,7 @@ export const LAGGED = {
   orgunits: 'org_unit_id',
   users: 'id',
   deleted_users: 'id',
+  user_aliases: 'alias',
   devices: 'device_id',
 } as const;
 export type LaggedTable = keyof typeof LAGGED;
@@ -15,6 +16,7 @@ const PRIOR_INDEXES: Readonly<Record<LaggedTable, readonly string[]>> = {
   orgunits: ['parent_id, ord', 'path'],
   users: ['primary_email', 'ord'],
   deleted_users: ['primary_email'],
+  user_aliases: ['user_id'],
   devices: ['org_unit_path, ord', 'ord'],
 };
 

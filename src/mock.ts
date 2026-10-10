@@ -196,6 +196,7 @@ export function createMock(options: MockOptions): Mock {
       try {
         let response: ApiResponse;
         try {
+          call.now = mock.clock.now();
           response = await route.handler(call);
         } catch (error) {
           if (error instanceof ApiError) response = error.response;

@@ -15,6 +15,7 @@ import {
   intParam,
   invalidArgument,
   iso,
+  listedTable,
   resolveCustomer,
   withEtag,
 } from './common.ts';
@@ -110,13 +111,14 @@ export function userResource(
 function aliasesFor(
   db: DatabaseSync,
   ids: readonly string[],
+  table = 'user_aliases',
 ): Map<string, string[]> {
   const out = new Map<string, string[]>();
   if (ids.length === 0) return out;
   for (const { alias, user_id } of rows<{ alias: string; user_id: string }>(
     db
       .prepare(
-        `SELECT alias, user_id FROM user_aliases WHERE user_id IN (${ids.map(() => '?').join(', ')}) ORDER BY alias`,
+        `SELECT alias, user_id FROM ${table} WHERE user_id IN (${ids.map(() => '?').join(', ')}) ORDER BY alias`,
       )
       .all(...ids),
   ))
@@ -139,6 +141,8 @@ export function listUsers(call: Call): ApiResponse {
   if (!customer && !domainName)
     throw invalidArgument(call, 'Bad Request', 'badRequest');
   const filter = emptyFilter();
+  const table = listedTable(call, 'users');
+  const aliasTable = listedTable(call, 'user_aliases');
   if (customer) resolveCustomer(call, customer);
   else {
     const known = row(
@@ -164,7 +168,7 @@ export function listUsers(call: Call): ApiResponse {
   const text = query.get('query');
   if (text) {
     try {
-      const parsed = parseUserQuery(text);
+      const parsed = parseUserQuery(text, aliasTable);
       filter.where.push(...parsed.where);
       filter.params.push(...parsed.params);
     } catch (error) {
@@ -197,7 +201,7 @@ export function listUsers(call: Call): ApiResponse {
   const found = rows<UserRow & { sort_key: string }>(
     domain.db
       .prepare(
-        `SELECT *, ${sort} AS sort_key FROM users ${whereClause(filter)} ORDER BY ${sort} ${direction}, id ${direction} LIMIT ?`,
+        `SELECT *, ${sort} AS sort_key FROM ${table} ${whereClause(filter)} ORDER BY ${sort} ${direction}, id ${direction} LIMIT ?`,
       )
       .all(...filter.params, maxResults + 1),
   );
@@ -205,6 +209,7 @@ export function listUsers(call: Call): ApiResponse {
   const aliases = aliasesFor(
     domain.db,
     page.map((user) => user.id),
+    aliasTable,
   );
   const last = page.at(-1);
   const nextPageToken =

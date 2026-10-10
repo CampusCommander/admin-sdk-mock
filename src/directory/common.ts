@@ -6,6 +6,7 @@ import {
   rpcError,
 } from '../http/errors.ts';
 import type { Call, OpenDomain } from '../http/types.ts';
+import { listedRelation, type LaggedTable } from '../store/lag.ts';
 
 export function etag(value: unknown): string {
   return `"${createHash('sha256').update(JSON.stringify(value)).digest('base64url').slice(0, 27)}"`;
@@ -166,5 +167,15 @@ export function searchDelayMs(call: Call): number {
   return (
     (domainOf(call).record.settings.writes.searchDelaySeconds * 1000) /
     call.scale
+  );
+}
+
+/** The relation that a list reads: the live table, or its listed view while before-images wait. */
+export function listedTable(call: Call, table: LaggedTable): string {
+  return listedRelation(
+    domainOf(call).db,
+    table,
+    call.now,
+    searchDelayMs(call),
   );
 }

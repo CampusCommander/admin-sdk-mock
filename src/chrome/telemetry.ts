@@ -1,5 +1,6 @@
 import {
   invalidArgument,
+  listedTable,
   domainOf,
   intParam,
   resolveCustomer,
@@ -92,6 +93,7 @@ export function listTelemetry(call: Call): ApiResponse {
     throw error;
   }
   const filter = parsed.sql;
+  const table = listedTable(call, 'devices');
   filter.where.push("status != 'DEPROVISIONED'");
   const hidden = [...call.overrides.hidden(domain.customerId)];
   if (hidden.length > 0) {
@@ -117,7 +119,7 @@ export function listTelemetry(call: Call): ApiResponse {
   const found = rows<StoredDevice>(
     domain.db
       .prepare(
-        `SELECT * FROM devices ${whereClause(filter)} ORDER BY ord LIMIT ?`,
+        `SELECT * FROM ${table} ${whereClause(filter)} ORDER BY ord LIMIT ?`,
       )
       .all(...filter.params, pageSize + 1),
   );

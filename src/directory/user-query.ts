@@ -19,6 +19,7 @@ function addClause(
   field: string,
   op: '=' | ':',
   value: string,
+  aliases: string,
 ): void {
   const text = (column: string) => {
     if (op === '=') {
@@ -49,7 +50,7 @@ function addClause(
     case 'email':
       if (op === '=') {
         filter.where.push(
-          '(primary_email = lower(?) OR id IN (SELECT user_id FROM user_aliases WHERE alias = lower(?)))',
+          `(primary_email = lower(?) OR id IN (SELECT user_id FROM ${aliases} WHERE alias = lower(?)))`,
         );
         filter.params.push(value, value);
         return;
@@ -57,7 +58,7 @@ function addClause(
       if (value.endsWith('*')) {
         const prefix = likePrefix(value.slice(0, -1).toLowerCase());
         filter.where.push(
-          "(primary_email LIKE ? ESCAPE '\\' OR id IN (SELECT user_id FROM user_aliases WHERE alias LIKE ? ESCAPE '\\'))",
+          `(primary_email LIKE ? ESCAPE '\\' OR id IN (SELECT user_id FROM ${aliases} WHERE alias LIKE ? ESCAPE '\\'))`,
         );
         filter.params.push(prefix, prefix);
         return;
@@ -87,11 +88,20 @@ function addClause(
 }
 
 /** Translate the documented user search syntax into SQL. Clauses combine with AND. */
-export function parseUserQuery(query: string): SqlFilter {
+export function parseUserQuery(
+  query: string,
+  aliases = 'user_aliases',
+): SqlFilter {
   const filter = emptyFilter();
   for (const match of query.matchAll(CLAUSE)) {
     if (match[1] !== undefined)
-      addClause(filter, match[1], match[2] as '=' | ':', unquote(match[3]));
+      addClause(
+        filter,
+        match[1],
+        match[2] as '=' | ':',
+        unquote(match[3]),
+        aliases,
+      );
     else {
       const value = unquote(match[4]);
       filter.where.push(

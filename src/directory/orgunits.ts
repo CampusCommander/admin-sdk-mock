@@ -2,7 +2,14 @@ import type { DatabaseSync } from 'node:sqlite';
 import { ApiError, directoryError } from '../http/errors.ts';
 import type { ApiResponse, Call } from '../http/types.ts';
 import { row, rows } from '../store/sqlite.ts';
-import { domainOf, enumParam, resolveCustomer, withEtag } from './common.ts';
+import {
+  domainOf,
+  enumParam,
+  invalidArgument,
+  listedTable,
+  resolveCustomer,
+  withEtag,
+} from './common.ts';
 
 export interface OuRow {
   org_unit_id: string;
@@ -36,25 +43,39 @@ export function resolveOrgUnit(
   _call: Call,
   db: DatabaseSync,
   raw: string | null | undefined,
+  table = 'orgunits',
 ): OuRow {
   const value = (raw ?? '').trim();
   const found =
     value === '' || value === '/'
-      ? row<OuRow>(db.prepare("SELECT * FROM orgunits WHERE path = '/'").get())
+      ? row<OuRow>(db.prepare(`SELECT * FROM ${table} WHERE path = '/'`).get())
       : value.startsWith('id:')
         ? row<OuRow>(
             db
-              .prepare('SELECT * FROM orgunits WHERE org_unit_id = ?')
+              .prepare(`SELECT * FROM ${table} WHERE org_unit_id = ?`)
               .get(value),
           )
         : row<OuRow>(
             db
-              .prepare('SELECT * FROM orgunits WHERE path = ?')
+              .prepare(`SELECT * FROM ${table} WHERE path = ?`)
               .get(`/${value.replace(/^\/+/, '')}`),
           );
   if (!found)
     throw new ApiError(directoryError(404, 'notFound', 'Org unit not found'));
   return found;
+}
+
+/** Resolve an OU that a write names. An unknown OU answers 400, not 404. */
+export function targetOrgUnit(call: Call, raw: string): OuRow {
+  const domain = call.domain;
+  if (!domain) throw new Error(`Route ${call.route.id} needs authentication.`);
+  try {
+    return resolveOrgUnit(call, domain.db, raw);
+  } catch (error) {
+    if (error instanceof ApiError && error.response.status === 404)
+      throw invalidArgument(call, 'Invalid Input: Org unit not found');
+    throw error;
+  }
 }
 
 const TYPES = {
@@ -67,16 +88,18 @@ export function listOrgUnits(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customerId);
   const type = enumParam(call, 'type', TYPES, 'children');
+  const table = listedTable(call, 'orgunits');
   const parent = resolveOrgUnit(
     call,
     domain.db,
     call.request.query.get('orgUnitPath'),
+    table,
   );
   let units: OuRow[];
   if (type === 'children')
     units = rows<OuRow>(
       domain.db
-        .prepare('SELECT * FROM orgunits WHERE parent_id = ? ORDER BY ord')
+        .prepare(`SELECT * FROM ${table} WHERE parent_id = ? ORDER BY ord`)
         .all(parent.org_unit_id),
     );
   else {
@@ -84,7 +107,7 @@ export function listOrgUnits(call: Call): ApiResponse {
     units = rows<OuRow>(
       domain.db
         .prepare(
-          'SELECT * FROM orgunits WHERE substr(path, 1, ?) = ? AND path != ? ORDER BY ord',
+          `SELECT * FROM ${table} WHERE substr(path, 1, ?) = ? AND path != ? ORDER BY ord`,
         )
         .all(prefix.length, prefix, parent.path),
     );

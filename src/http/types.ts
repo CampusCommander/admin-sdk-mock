@@ -71,7 +71,7 @@ export interface Call {
   domain: OpenDomain | null;
   batchPart: boolean;
   overrides: Overrides;
-  /** The dispatch time in epoch milliseconds. Writes stamp it on before-images. */
+  /** The time the handler starts, in epoch milliseconds. Writes stamp it on before-images. */
   now: number;
   /** The time scale at dispatch. Durations divide by it. */
   scale: number;
