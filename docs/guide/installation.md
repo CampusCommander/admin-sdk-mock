@@ -172,8 +172,11 @@ It writes the CA to `/ca-public/ca.pem` in the `admin-sdk-mock-ca` volume.
 Add `compose/with-config.yml` to mount a configuration directory:
 
 ```sh
-ADMIN_SDK_MOCK_CONFIG_DIR=./my-config docker compose -f compose/standalone.yml -f compose/with-config.yml up --detach --wait
+ADMIN_SDK_MOCK_CONFIG_DIR="$PWD/my-config" docker compose -f compose/standalone.yml -f compose/with-config.yml up --detach --wait
 ```
+
+Pass an absolute path. Compose resolves a relative path against `compose/`, the directory of the first file.
+A directory that does not exist fails the start. Compose does not create it.
 
 ## GitHub Actions
 
