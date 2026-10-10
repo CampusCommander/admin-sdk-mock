@@ -150,11 +150,15 @@ The proxy listener accepts HTTP `CONNECT host:port` requests. It never terminate
 | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | Port 443 of `oauth2.googleapis.com`, `admin.googleapis.com`, `www.googleapis.com`, or `chromemanagement.googleapis.com` | A tunnel to the mock's Google listener.            |
 | Any other target, with `passthrough` off                                                                                | `403 Forbidden`, and a log line naming the target. |
+| A local target, with `passthrough` on                                                                                   | `403 Forbidden`, and a log line naming the target. |
 | Any other target, with `passthrough` on                                                                                 | A plain tunnel to that target.                     |
 | A request that is not `CONNECT`                                                                                         | `405 Method Not Allowed`.                          |
 
 The Google listener's certificate already names the four hostnames, so a tunneled client sees a valid chain once it trusts the mock CA.
 `passthrough` lets an application under test reach its other services through the same `HTTPS_PROXY`.
+A local target is `localhost`, a name that ends in `.localhost`, or a literal loopback, link-local, or unspecified address (P-R32).
+The check covers IPv4-mapped IPv6 forms and IPv4 shorthand such as `127.1`. It never resolves a name, so a name that resolves to a local address still tunnels.
+`start` logs a `warning` event when passthrough is on and the proxy host is not loopback (P-R32).
 
 ## Control API additions
 
@@ -303,6 +307,7 @@ A tag `v*` runs the release workflow: every check, then the package tarball and 
 - Key files are written with mode 0600. Logs never print private keys.
 - The control API keeps its host and content-type guards. It binds to `127.0.0.1` outside the image.
 - The proxy refuses every target outside the four Google hostnames unless `passthrough` is on, and it never decrypts traffic. It binds to `127.0.0.1` outside the image.
+- With `passthrough` on, the proxy relays to any other host and port, but it refuses a local target. `SECURITY.md` states the relay risk and why every published port binds to `127.0.0.1` (P-R32).
 - `SECURITY.md` states that the mock is test infrastructure and gives the reporting route.
 
 ## Acceptance
@@ -337,3 +342,6 @@ The execution ledger recorded these rulings while the plan ran. The text above a
   - The action sets five outputs, `workdir`, `ca-file`, `ca-bundle-file`, `proxy-url`, and `control-url`, and no credential-path output.
   - `useInProcess()` sets `HTTPS_PROXY` and `https_proxy` for the whole process, not for the Google hostnames alone. It sets `NO_PROXY` and `no_proxy` to the loopback list.
   - The `empty` tier adds the student domain only when it differs from the primary domain.
+- P-R32: the final fix wave changed this behavior:
+  - With `passthrough` on, the proxy refuses a local target with `403`: `localhost`, a `.localhost` name, or a literal loopback, link-local, or unspecified address.
+  - `start` logs a `warning` event when passthrough is on and the proxy host is not loopback.

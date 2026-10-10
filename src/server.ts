@@ -20,7 +20,7 @@ import {
 } from './config/config.ts';
 import { createControlHandler } from './control/control.ts';
 import { createMock, type Mock } from './mock.ts';
-import { startProxy, type ProxyHandle } from './proxy.ts';
+import { isLoopbackHost, startProxy, type ProxyHandle } from './proxy.ts';
 import { ensureDomain, type EnsuredDomain } from './startup/ensure-domains.ts';
 import { VERSION } from './version.ts';
 import { writeAtomically } from './write-file.ts';
@@ -182,6 +182,12 @@ export async function startServer(
       caFile,
       timing: { ...mock.timing },
     });
+    const proxyListen = config.listen.proxy;
+    if (proxyListen?.passthrough && !isLoopbackHost(proxyListen.host))
+      log({
+        event: 'warning',
+        message: `The proxy listens on ${proxyListen.host} with passthrough on. Any client that reaches it can relay to any host and port. Publish the proxy port on 127.0.0.1 only.`,
+      });
 
     config.domains.forEach((entry, index) => {
       const startedAt = Date.now();

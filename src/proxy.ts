@@ -34,6 +34,62 @@ export interface ProxyHandle {
   close(): Promise<void>;
 }
 
+/** Loopback addresses: 127.0.0.0/8 and ::1. BlockList also matches their IPv4-mapped forms. */
+const LOOPBACK = new net.BlockList();
+LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4');
+LOOPBACK.addAddress('::1', 'ipv6');
+
+/**
+ * The addresses that passthrough never tunnels to: loopback, link-local, and unspecified.
+ * They reach the mock's own listeners and cloud metadata endpoints such as 169.254.169.254.
+ */
+const LOCAL = new net.BlockList();
+LOCAL.addSubnet('127.0.0.0', 8, 'ipv4');
+LOCAL.addSubnet('169.254.0.0', 16, 'ipv4');
+LOCAL.addAddress('0.0.0.0', 'ipv4');
+LOCAL.addAddress('::1', 'ipv6');
+LOCAL.addSubnet('fe80::', 10, 'ipv6');
+LOCAL.addAddress('::', 'ipv6');
+
+/**
+ * The address a host names, or null for a host name. A literal IPv6 address loses its zone
+ * ID. An IPv4 literal is normalized the way the resolver reads it, so `127.1`, `2130706433`,
+ * and `0x7f.1` all become `127.0.0.1`.
+ */
+function literalAddress(
+  host: string,
+): { address: string; type: 'ipv4' | 'ipv6' } | null {
+  if (host.includes(':')) {
+    const address = host.replace(/%.*$/, '');
+    return net.isIPv6(address) ? { address, type: 'ipv6' } : null;
+  }
+  let name: string;
+  try {
+    name = new URL(`http://${host}`).hostname;
+  } catch {
+    return null;
+  }
+  return net.isIPv4(name) ? { address: name, type: 'ipv4' } : null;
+}
+
+/** Whether a listener host is `localhost` or a literal loopback address. */
+export function isLoopbackHost(host: string): boolean {
+  if (host.toLowerCase() === 'localhost') return true;
+  const literal = literalAddress(host);
+  return literal !== null && LOOPBACK.check(literal.address, literal.type);
+}
+
+/**
+ * Whether a passthrough target names this host or its link: `localhost`, a `.localhost`
+ * name, or a literal loopback, link-local, or unspecified address. A host name that
+ * resolves to such an address is not caught.
+ */
+function isLocalTarget(host: string): boolean {
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  const literal = literalAddress(host);
+  return literal !== null && LOCAL.check(literal.address, literal.type);
+}
+
 /**
  * Split `host:port`, including a bracketed IPv6 host, and drop one trailing dot from the
  * host, so `admin.googleapis.com.` matches as a Google hostname. Returns null for a
@@ -54,7 +110,8 @@ function parseTarget(target: string): { host: string; port: number } | null {
 /**
  * A CONNECT proxy. Port 443 of a Google hostname tunnels to the mock's Google
  * listener. Any other target is refused with 403, or tunneled as-is with
- * passthrough. The proxy never terminates TLS.
+ * passthrough. Passthrough still refuses a local target (see isLocalTarget).
+ * The proxy never terminates TLS.
  */
 export async function startProxy(options: {
   host: string;
@@ -92,7 +149,10 @@ export async function startProxy(options: {
         target !== null &&
         target.port === 443 &&
         GOOGLE_HOSTS.includes(target.host);
-      if (!target || (!google && !options.passthrough)) {
+      if (
+        !target ||
+        (!google && (!options.passthrough || isLocalTarget(target.host)))
+      ) {
         record('refused', raw);
         options.log?.({ event: 'proxy-refused', target: raw });
         client.end('HTTP/1.1 403 Forbidden\r\n\r\n');

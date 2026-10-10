@@ -180,6 +180,38 @@ test('startServer logs started, one domain event per domain, then ready, and wri
   assert.deepEqual(readdirSync(join(dir, 'out')), ['ready.json']);
 });
 
+test('startServer warns after started when a passthrough proxy listens beyond loopback', async (t) => {
+  const { events } = await start(t, {
+    listen: {
+      ...LISTEN,
+      proxy: { host: '0.0.0.0', port: 0, passthrough: true },
+    },
+  });
+  assert.deepEqual(
+    events.map((event) => event.event),
+    ['started', 'warning', 'ready'],
+  );
+  assert.deepEqual(events[1], {
+    event: 'warning',
+    message:
+      'The proxy listens on 0.0.0.0 with passthrough on. Any client that reaches it can relay to any host and port. Publish the proxy port on 127.0.0.1 only.',
+  });
+});
+
+test('startServer logs no warning for a loopback passthrough proxy or a closed one', async (t) => {
+  for (const proxy of [
+    { host: '127.0.0.1', port: 0, passthrough: true },
+    { host: '0.0.0.0', port: 0, passthrough: false },
+  ]) {
+    const { events } = await start(t, { listen: { ...LISTEN, proxy } });
+    assert.deepEqual(
+      events.map((event) => event.event),
+      ['started', 'ready'],
+      JSON.stringify(proxy),
+    );
+  }
+});
+
 test('GET /info on the control listener answers info(), and /health still answers', async (t) => {
   const { handle } = await start(t, { domains: [{ spec: EMPTY }] });
   const response = await fetch(`${handle.controlUrl}/info`);

@@ -31,6 +31,11 @@ The `init` starter and every configuration file default to `passthrough: false`.
 Fix: add the other hosts to `NO_PROXY`, or turn passthrough on with `--passthrough`, `MOCK_PROXY_PASSTHROUGH=true`, or `"listen": { "proxy": { "passthrough": true } }`.
 The GitHub Action and `startMock()` turn passthrough on by default.
 
+Cause with passthrough on: the target is local, such as `127.0.0.1`, `localhost`, `[::1]`, or `169.254.169.254`. Passthrough still refuses it.
+[SECURITY.md](../../SECURITY.md#passthrough) lists every refused form.
+
+Fix: add the local host to `NO_PROXY`, so the client connects to it directly. The exported `NO_PROXY` already holds `localhost,127.0.0.1,::1`.
+
 ## Connection refused
 
 Symptoms: `ECONNREFUSED` on the proxy port, or a control command prints `No mock answers at http://127.0.0.1:8080 (ECONNREFUSED).`
