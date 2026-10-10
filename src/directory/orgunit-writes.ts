@@ -1,6 +1,6 @@
+import { randomBytes } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { ApiResponse, Call } from '../http/types.ts';
-import { createRandom } from '../random.ts';
 import { saveBeforeImage, saveBeforeImagesWhere } from '../store/lag.ts';
 import { row, transaction } from '../store/sqlite.ts';
 import { settleCommands } from './command-effects.ts';
@@ -18,6 +18,8 @@ import {
   targetOrgUnit,
   type OuRow,
 } from './orgunits.ts';
+
+const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 
 /** Ruling: a name already used under the same parent answers 400. Names compare without case. */
 const NAME_TAKEN =
@@ -54,14 +56,20 @@ function pathTaken(db: DatabaseSync, path: string, exceptId = ''): boolean {
   );
 }
 
-function newOrgUnitId(call: Call, path: string): string {
+/** 13 lowercase alphanumeric characters from crypto randomness, so a deleted ID is never reused. */
+function randomId(): string {
+  let out = '';
+  for (const byte of randomBytes(13)) out += ALPHABET[byte % 36];
+  return out;
+}
+
+function newOrgUnitId(call: Call): string {
   const domain = domainOf(call);
-  const random = createRandom(`ou/${domain.spec.seed}/${path}/${call.now}`);
   const exists = domain.db.prepare(
     'SELECT 1 FROM orgunits WHERE org_unit_id = ?',
   );
   for (;;) {
-    const id = `id:0${random.string(13)}`;
+    const id = `id:0${randomId()}`;
     if (exists.get(id) === undefined) return id;
   }
 }
@@ -85,10 +93,10 @@ function cascade(
   delay: number,
 ): number {
   const old = unit.path;
-  const tail = old.length + 1;
-  const tree = [old, tail, `${old}/`];
-  const units = '(path = ? OR substr(path, 1, ?) = ?)';
-  const members = '(org_unit_path = ? OR substr(org_unit_path, 1, ?) = ?)';
+  const tree = [old, `${old}/`, `${old}0`];
+  const units = '(path = ? OR (path >= ? AND path < ?))';
+  const members =
+    '(org_unit_path = ? OR (org_unit_path >= ? AND org_unit_path < ?))';
   saveBeforeImagesWhere(db, 'orgunits', units, tree, now, delay);
   saveBeforeImagesWhere(db, 'users', members, tree, now, delay);
   saveBeforeImagesWhere(db, 'devices', members, tree, now, delay);
@@ -96,18 +104,18 @@ function cascade(
   let changed = Number(
     db
       .prepare(
-        `UPDATE orgunits SET path = ? || substr(path, ?), depth = depth + ?, parent_path = CASE WHEN org_unit_id = ? THEN parent_path ELSE ? || substr(parent_path, ?) END WHERE ${units}`,
+        `UPDATE orgunits SET path = ? || substr(path, length(?) + 1), depth = depth + ?, parent_path = CASE WHEN org_unit_id = ? THEN parent_path ELSE ? || substr(parent_path, length(?) + 1) END WHERE ${units}`,
       )
-      .run(newPath, tail, depthDelta, unit.org_unit_id, newPath, tail, ...tree)
+      .run(newPath, old, depthDelta, unit.org_unit_id, newPath, old, ...tree)
       .changes,
   );
   for (const table of ['users', 'devices'])
     changed += Number(
       db
         .prepare(
-          `UPDATE ${table} SET org_unit_path = ? || substr(org_unit_path, ?) WHERE ${members}`,
+          `UPDATE ${table} SET org_unit_path = ? || substr(org_unit_path, length(?) + 1) WHERE ${members}`,
         )
-        .run(newPath, tail, ...tree).changes,
+        .run(newPath, old, ...tree).changes,
     );
   return changed;
 }
@@ -123,7 +131,7 @@ export function insertOrgUnit(call: Call): ApiResponse {
   const path = childPath(parent, name);
   if (pathTaken(domain.db, path)) throw invalidArgument(call, NAME_TAKEN);
   const description = stringField(call, body, 'description') ?? '';
-  const id = newOrgUnitId(call, path);
+  const id = newOrgUnitId(call);
   const ord = Number(
     row<{ next: number }>(
       domain.db
@@ -219,6 +227,7 @@ export function updateOrgUnit(call: Call): ApiResponse {
 export function deleteOrgUnit(call: Call): ApiResponse {
   const domain = domainOf(call);
   resolveCustomer(call, call.params.customerId);
+  settleCommands(call);
   const unit = resolveOrgUnit(call, domain.db, call.params.orgUnitPath);
   if (unit.parent_id === null)
     throw invalidArgument(

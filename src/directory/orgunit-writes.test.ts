@@ -267,3 +267,44 @@ test('delete removes an empty OU and refuses an OU in use', async (t) => {
   assert.equal((await api('DELETE', `${OUS}/%2F`)).status, 400);
   assert.equal((await api('DELETE', ou('/No/Such/Unit'))).status, 404);
 });
+
+test('a rename cascades through a name with a character outside the BMP', async (t) => {
+  const { clock, api, device, user, insert } = await setup(t);
+  await insert('🏫 Lab', '/');
+  await insert('Carts', '/🏫 Lab');
+  await api('PATCH', `${DEVICES}/${device}`, {
+    body: { orgUnitPath: '/🏫 Lab/Carts' },
+  });
+  await api('PATCH', `/users/${user}`, { body: { orgUnitPath: '/🏫 Lab' } });
+  await clock.advance(D);
+  const response = await api('PATCH', ou('/🏫 Lab'), { body: { name: 'Lab' } });
+  assert.equal(response.status, 200, response.text);
+  const carts = await api('GET', ou('/Lab/Carts'));
+  assert.equal(carts.status, 200, carts.text);
+  assert.equal(carts.json().parentOrgUnitPath, '/Lab');
+  assert.equal(
+    (await api('GET', `${DEVICES}/${device}`)).json().orgUnitPath,
+    '/Lab/Carts',
+  );
+  assert.equal((await api('GET', `/users/${user}`)).json().orgUnitPath, '/Lab');
+  assert.equal((await api('GET', ou('/🏫 Lab/Carts'))).status, 404);
+});
+
+test('a rename onto a sibling name answers 400 and changes nothing', async (t) => {
+  const { api, fixture } = await setup(t);
+  await fixture();
+  const response = await api('PATCH', ou('/Fixture/A B'), {
+    body: { name: 'a bc' },
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await api('GET', ou('/Fixture/A B'))).status, 200);
+  assert.equal((await api('GET', ou('/Fixture/A B/Carts'))).status, 200);
+});
+
+test('insert with an unknown parent ID answers 400', async (t) => {
+  const { api } = await setup(t);
+  const response = await api('POST', OUS, {
+    body: { name: 'Orphan', parentOrgUnitId: 'id:0nosuchunit00' },
+  });
+  assert.equal(response.status, 400);
+});

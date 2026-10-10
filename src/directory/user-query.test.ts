@@ -11,15 +11,15 @@ test('clauses become SQL with parameters', () => {
     'cc_contains_words(given_name, ?)',
     'cc_word_prefix(family_name, ?)',
     'suspended = ?',
-    '(org_unit_path = ? OR substr(org_unit_path, 1, ?) = ?)',
+    '(org_unit_path = ? OR (org_unit_path >= ? AND org_unit_path < ?))',
   ]);
   assert.deepEqual(filter.params, [
     'Jane',
     'Smi',
     1,
     '/Staff/Lincoln Elementary',
-    '/Staff/Lincoln Elementary'.length + 1,
     '/Staff/Lincoln Elementary/',
+    '/Staff/Lincoln Elementary0',
   ]);
 });
 

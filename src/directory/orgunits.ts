@@ -103,13 +103,16 @@ export function listOrgUnits(call: Call): ApiResponse {
         .all(parent.org_unit_id),
     );
   else {
-    const prefix = parent.path === '/' ? '/' : `${parent.path}/`;
     units = rows<OuRow>(
-      domain.db
-        .prepare(
-          `SELECT * FROM ${table} WHERE substr(path, 1, ?) = ? AND path != ? ORDER BY ord`,
-        )
-        .all(prefix.length, prefix, parent.path),
+      parent.path === '/'
+        ? domain.db
+            .prepare(`SELECT * FROM ${table} WHERE path != '/' ORDER BY ord`)
+            .all()
+        : domain.db
+            .prepare(
+              `SELECT * FROM ${table} WHERE path >= ? AND path < ? ORDER BY ord`,
+            )
+            .all(`${parent.path}/`, `${parent.path}0`),
     );
     if (type === 'allIncludingParent') units = [parent, ...units];
   }

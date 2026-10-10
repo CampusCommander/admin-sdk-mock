@@ -18,6 +18,6 @@ export const likePrefix = (value: string): string => `${escapeLike(value)}%`;
 /** Match `path` and every OU below it. The root matches everything. */
 export function subtree(column: string, path: string, filter: SqlFilter): void {
   if (path === '/') return;
-  filter.where.push(`(${column} = ? OR substr(${column}, 1, ?) = ?)`);
-  filter.params.push(path, path.length + 1, `${path}/`);
+  filter.where.push(`(${column} = ? OR (${column} >= ? AND ${column} < ?))`);
+  filter.params.push(path, `${path}/`, `${path}0`);
 }
