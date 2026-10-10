@@ -1,6 +1,7 @@
-import { SCOPES } from '../auth/scopes.ts';
+import { SCOPES, WRITE_SCOPES } from '../auth/scopes.ts';
 import type { Route } from '../http/types.ts';
-import { directoryRoute } from '../route-helpers.ts';
+import { directoryRoute, writeRoute } from '../route-helpers.ts';
+import { deleteMember, insertMember, updateMember } from './member-writes.ts';
 import { getMember, listMembers } from './members.ts';
 
 const MEMBERS = /^\/admin\/directory\/v1\/groups\/(?<groupKey>[^/]+)\/members$/;
@@ -17,5 +18,33 @@ export function memberRoutes(): Route[] {
       listMembers,
     ),
     directoryRoute('directory.members.get', MEMBER, SCOPES.member, getMember),
+    writeRoute(
+      'directory.members.insert',
+      'POST',
+      MEMBERS,
+      WRITE_SCOPES.member,
+      insertMember,
+    ),
+    writeRoute(
+      'directory.members.update',
+      'PUT',
+      MEMBER,
+      WRITE_SCOPES.member,
+      updateMember,
+    ),
+    writeRoute(
+      'directory.members.patch',
+      'PATCH',
+      MEMBER,
+      WRITE_SCOPES.member,
+      updateMember,
+    ),
+    writeRoute(
+      'directory.members.delete',
+      'DELETE',
+      MEMBER,
+      WRITE_SCOPES.member,
+      deleteMember,
+    ),
   ];
 }
