@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS deleted_users (
   aliases TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS deleted_users_email ON deleted_users (primary_email);
+CREATE INDEX IF NOT EXISTS deleted_users_ord ON deleted_users (ord);
 CREATE TABLE IF NOT EXISTS device_commands (
   command_id INTEGER PRIMARY KEY,
   device_id TEXT NOT NULL,

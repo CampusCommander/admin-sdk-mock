@@ -178,6 +178,62 @@ test('a side effect lags in lists from its execution time', async (t) => {
   assert.equal(await listedSync(), new Date(executed).toISOString());
 });
 
+test('a write settles a due command first, so list states follow each timestamp', async (t) => {
+  const { clock, domain, api, online, issue } = await setup(t);
+  const id = online[0];
+  const stored = (column: string) =>
+    (
+      domain.db
+        .prepare(`SELECT ${column} AS value FROM devices WHERE device_id = ?`)
+        .get(id) as { value: string | number | null }
+    ).value;
+  const serial = String(stored('serial_number'));
+  const oldNotes = stored('notes');
+  const oldSync = new Date(Number(stored('last_sync'))).toISOString();
+  const listed = async () => {
+    const entry = (
+      await api('GET', DEVICES, {
+        query: {
+          query: `id:${serial}`,
+          fields: 'chromeosdevices(deviceId,lastSync,notes)',
+        },
+      })
+    ).json().chromeosdevices[0];
+    return { lastSync: entry.lastSync, notes: entry.notes ?? null };
+  };
+  // Retry until the REBOOT succeeds. Read the table, not the API, so nothing settles the command.
+  let executed = 0;
+  for (let attempt = 0; attempt < 10 && executed === 0; attempt++) {
+    const { commandId } = (await issue(id, { commandType: 'REBOOT' })).json();
+    await clock.advance(61_000);
+    const command = domain.db
+      .prepare(
+        'SELECT executed_at, result FROM device_commands WHERE command_id = ?',
+      )
+      .get(Number(commandId)) as { executed_at: number; result: string };
+    if (command.result === 'SUCCESS') executed = command.executed_at;
+  }
+  assert.ok(executed > 0);
+  const patchTime = clock.now();
+  assert.ok(executed < patchTime);
+  const patched = await api('PATCH', `${DEVICES}/${id}`, {
+    body: { notes: 'Settled first' },
+  });
+  assert.equal(patched.status, 200, patched.text);
+  await clock.advance(executed + D - 1 - clock.now());
+  assert.deepEqual(await listed(), { lastSync: oldSync, notes: oldNotes });
+  await clock.advance(1);
+  assert.deepEqual(await listed(), {
+    lastSync: new Date(executed).toISOString(),
+    notes: oldNotes,
+  });
+  await clock.advance(patchTime + D - clock.now());
+  assert.deepEqual(await listed(), {
+    lastSync: new Date(executed).toISOString(),
+    notes: 'Settled first',
+  });
+});
+
 test('payloads follow the documented rules', async (t) => {
   const { online, issue } = await setup(t);
   const id = online[0];
@@ -209,6 +265,67 @@ test('payloads follow the documented rules', async (t) => {
   assert.equal(await status({ commandType: 'COMMAND_TYPE_UNSPECIFIED' }), 400);
   assert.equal(await status({ commandType: 'NOPE' }), 400);
   assert.equal(await status({}), 400);
+});
+
+test('documented payloads for reboot, remote sessions, and support packets', async (t) => {
+  const { online, issue } = await setup(t);
+  const id = online[0];
+  const status = async (commandType: string, payload: unknown) =>
+    (await issue(id, { commandType, payload: JSON.stringify(payload) })).status;
+  assert.equal(
+    await status('REBOOT', { user_session_delay_seconds: 120 }),
+    200,
+  );
+  assert.equal(
+    await status('REBOOT', { user_session_delay_seconds: 301 }),
+    400,
+  );
+  assert.equal(
+    await status('REBOOT', { user_session_delay_seconds: 1.5 }),
+    400,
+  );
+  assert.equal(
+    await status('REBOOT', { user_session_delay_seconds: '5' }),
+    400,
+  );
+  assert.equal(
+    await status('DEVICE_START_CRD_SESSION', {
+      ackedUserPresence: true,
+      crdSessionType: 'private',
+    }),
+    200,
+  );
+  assert.equal(
+    await status('DEVICE_START_CRD_SESSION', { crdSessionType: 'exclusive' }),
+    400,
+  );
+  assert.equal(
+    await status('DEVICE_START_CRD_SESSION', { ackedUserPresence: 'yes' }),
+    400,
+  );
+  assert.equal(
+    await status('FETCH_SUPPORT_PACKET', {
+      supportPacketDetails: {
+        issueCaseId: 'case-1',
+        issueDescription: 'Slow',
+        requestedDataCollectors: [1, 23],
+      },
+    }),
+    200,
+  );
+  assert.equal(
+    await status('FETCH_SUPPORT_PACKET', {
+      supportPacketDetails: { requestedDataCollectors: [24] },
+    }),
+    400,
+  );
+  assert.equal(
+    await status('FETCH_SUPPORT_PACKET', {
+      supportPacketDetails: { issueCaseId: 5 },
+    }),
+    400,
+  );
+  assert.equal(await status('CAPTURE_LOGS', {}), 400);
 });
 
 test('only active devices accept commands, and unknown commands answer 404', async (t) => {

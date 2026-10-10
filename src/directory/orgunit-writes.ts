@@ -19,6 +19,13 @@ import {
   type OuRow,
 } from './orgunits.ts';
 
+/** Google limit: an OU sits at most 35 levels below the root, which has depth 0. */
+const MAX_OU_DEPTH = 35;
+/** Google limit: a customer holds at most 40,000 OUs, root included. */
+const MAX_ORG_UNITS = 40_000;
+const TOO_DEEP = `Invalid Input: org units nest at most ${MAX_OU_DEPTH} levels deep.`;
+const TOO_MANY = `Invalid Input: a customer holds at most ${MAX_ORG_UNITS} org units.`;
+
 const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 
 /** Ruling: a name already used under the same parent answers 400. Names compare without case. */
@@ -130,6 +137,13 @@ export function insertOrgUnit(call: Call): ApiResponse {
   if (!parent) throw invalidArgument(call, 'Invalid Input: parentOrgUnitPath');
   const path = childPath(parent, name);
   if (pathTaken(domain.db, path)) throw invalidArgument(call, NAME_TAKEN);
+  if (parent.depth + 1 > MAX_OU_DEPTH) throw invalidArgument(call, TOO_DEEP);
+  const count = Number(
+    row<{ n: number }>(
+      domain.db.prepare('SELECT count(*) AS n FROM orgunits').get(),
+    )!.n,
+  );
+  if (count >= MAX_ORG_UNITS) throw invalidArgument(call, TOO_MANY);
   const description = stringField(call, body, 'description') ?? '';
   const id = newOrgUnitId(call);
   const ord = Number(
@@ -196,6 +210,17 @@ export function updateOrgUnit(call: Call): ApiResponse {
     path = childPath(parent, name);
     if (path !== unit.path && pathTaken(domain.db, path, unit.org_unit_id))
       throw invalidArgument(call, NAME_TAKEN);
+    const deepest = Number(
+      row<{ deepest: number }>(
+        domain.db
+          .prepare(
+            'SELECT MAX(depth) AS deepest FROM orgunits WHERE path = ? OR (path >= ? AND path < ?)',
+          )
+          .get(unit.path, `${unit.path}/`, `${unit.path}0`),
+      )!.deepest,
+    );
+    if (deepest + (parent.depth + 1 - unit.depth) > MAX_OU_DEPTH)
+      throw invalidArgument(call, TOO_DEEP);
   }
   const delay = searchDelayMs(call);
   let cascaded = 0;

@@ -180,6 +180,20 @@ try {
     failures.push(
       `lagged devices: mean server time per page ${lagged.meanPageMs} ms.`,
     );
+  const laggedTelemetry = await enumerate(
+    'chromemanagement.googleapis.com',
+    '/v1/customers/my_customer/telemetry/devices',
+    'devices',
+    { readMask: 'deviceId', pageSize: 1000 },
+  );
+  if (laggedTelemetry.items !== expected.telemetry)
+    failures.push(
+      `lagged telemetry: ${laggedTelemetry.items} of ${expected.telemetry}.`,
+    );
+  if (laggedTelemetry.meanPageMs - 2000 / scale > 250)
+    failures.push(
+      `lagged telemetry: mean server time per page ${laggedTelemetry.meanPageMs} ms.`,
+    );
   const underTarget = async () =>
     (
       await enumerate('admin.googleapis.com', devicePath, 'chromeosdevices', {
@@ -232,6 +246,7 @@ try {
     moveMs,
     pending,
     lagged,
+    laggedTelemetry,
     beforeFlush,
     flushed,
     afterFlush,

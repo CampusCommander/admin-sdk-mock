@@ -1,3 +1,4 @@
+import type { DatabaseSync } from 'node:sqlite';
 import type { Call } from '../http/types.ts';
 import { saveBeforeImage } from '../store/lag.ts';
 import { rows, transaction } from '../store/sqlite.ts';
@@ -53,38 +54,50 @@ const EFFECTS: Readonly<
 };
 
 /**
- * Apply the side effects of every successful command that has executed.
+ * Apply the side effects of every successful command that has executed by `now`.
  * Each side effect is a write stamped at its execution time.
- * Run this before any handler reads or writes device rows.
+ * A delay of 0 saves no before-images, so effects show in lists at once.
+ * Callers must not hold an open transaction, because `transaction()` cannot nest.
  */
-export function settleCommands(call: Call): void {
-  const domain = domainOf(call);
+export function settleDueCommands(
+  db: DatabaseSync,
+  now: number,
+  delayMs: number,
+): void {
   const due = rows<CommandRow>(
-    domain.db
+    db
       .prepare(
         'SELECT * FROM device_commands WHERE applied = 0 AND executed_at IS NOT NULL AND executed_at <= ? AND executed_at <= expire_at ORDER BY executed_at, command_id',
       )
-      .all(call.now),
+      .all(now),
   );
   if (due.length === 0) return;
-  const delay = searchDelayMs(call);
-  transaction(domain.db, () => {
+  transaction(db, () => {
     for (const command of due) {
       const effect = EFFECTS[command.type];
       if (effect && command.result === 'SUCCESS') {
         saveBeforeImage(
-          domain.db,
+          db,
           'devices',
           command.device_id,
           command.executed_at!,
-          delay,
+          delayMs,
         );
         const [sql, params] = effect(command);
-        domain.db.prepare(sql).run(...params);
+        db.prepare(sql).run(...params);
       }
-      domain.db
-        .prepare('UPDATE device_commands SET applied = 1 WHERE command_id = ?')
-        .run(command.command_id);
+      db.prepare(
+        'UPDATE device_commands SET applied = 1 WHERE command_id = ?',
+      ).run(command.command_id);
     }
   });
+}
+
+/**
+ * Apply the due command side effects of a call's domain at the call time.
+ * Run this before any handler reads or writes device rows.
+ * Callers must not hold an open transaction, because `transaction()` cannot nest.
+ */
+export function settleCommands(call: Call): void {
+  settleDueCommands(domainOf(call).db, call.now, searchDelayMs(call));
 }

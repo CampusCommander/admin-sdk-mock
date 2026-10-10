@@ -4,6 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { READ_WRITE_SCOPES, SCOPES } from '../auth/scopes.ts';
+import { fakeClock } from '../clock.ts';
 import { saveBeforeImage } from '../store/lag.ts';
 import {
   directoryClient,
@@ -19,8 +20,11 @@ const SPEC = {
   counts: { schools: 2, students: 60, staff: 10, devices: 80 },
 };
 
-async function setup(t: import('node:test').TestContext) {
-  const harness = await startHarness();
+async function setup(
+  t: import('node:test').TestContext,
+  options: Parameters<typeof startHarness>[0] = {},
+) {
+  const harness = await startHarness(options);
   const server = http.createServer(createControlHandler(harness.mock));
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -306,6 +310,69 @@ test('index flush makes pending writes visible, and GET /domains counts them', a
     (await call('POST', '/domains/C0missing/index/flush')).status,
     404,
   );
+});
+
+test('a flush settles due commands so lists show their effects', async (t) => {
+  const clock = fakeClock();
+  const { harness, call } = await setup(t, {
+    clock,
+    timing: { scale: 1, delays: false },
+  });
+  const created = (await call('POST', '/domains', SPEC)).json();
+  const domain = harness.mock.domains.get(created.customerId)!;
+  const api: ReturnType<typeof directoryClient> = (method, path, options) =>
+    directoryClient(harness, grantToken(harness, domain, READ_WRITE_SCOPES))(
+      method,
+      path,
+      options,
+    );
+  const DEVICES = '/customer/my_customer/devices/chromeos';
+  const device = domain.db
+    .prepare(
+      "SELECT device_id, serial_number FROM devices WHERE status = 'ACTIVE' AND last_sync >= ? ORDER BY ord LIMIT 1",
+    )
+    .get(clock.now() - 86_400_000) as {
+    device_id: string;
+    serial_number: string;
+  };
+  let succeeded = false;
+  for (let attempt = 0; attempt < 10 && !succeeded; attempt++) {
+    const issued = await api(
+      'POST',
+      `${DEVICES}/${device.device_id}:issueCommand`,
+      {
+        body: { commandType: 'REBOOT' },
+      },
+    );
+    assert.equal(issued.status, 200, issued.text);
+    await clock.advance(61_000);
+    // No device read here, so the command stays unsettled until the flush.
+    const flushed = await call(
+      'POST',
+      `/domains/${created.customerId}/index/flush`,
+    );
+    assert.equal(flushed.status, 200, flushed.text);
+    // Read the list and the device before the command itself, so nothing else settles it.
+    const listed = (
+      await api('GET', DEVICES, {
+        query: {
+          query: `id:${device.serial_number}`,
+          fields: 'chromeosdevices(deviceId,lastSync)',
+        },
+      })
+    ).json().chromeosdevices[0].lastSync;
+    const got = (await api('GET', `${DEVICES}/${device.device_id}`)).json();
+    assert.equal(listed, got.lastSync);
+    const command = (
+      await api(
+        'GET',
+        `${DEVICES}/${device.device_id}/commands/${issued.json().commandId}`,
+      )
+    ).json();
+    succeeded = command.commandResult.result === 'SUCCESS';
+    if (succeeded) assert.equal(listed, command.commandResult.executeTime);
+  }
+  assert.ok(succeeded);
 });
 
 test('a reset discards every write, before-image, command, and deleted user', async (t) => {

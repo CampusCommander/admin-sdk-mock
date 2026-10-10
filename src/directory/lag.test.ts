@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { READ_SCOPES } from '../auth/scopes.ts';
+import { READ_SCOPES, READ_WRITE_SCOPES } from '../auth/scopes.ts';
 import { fakeClock } from '../clock.ts';
 import { columnsOf, saveBeforeImage } from '../store/lag.ts';
 import { row } from '../store/sqlite.ts';
@@ -187,6 +187,105 @@ test('telemetry lists lag an OU change', async (t) => {
   assert.equal(await listed(), false);
   await clock.advance(D);
   assert.equal(await listed(), true);
+});
+
+test('a lagging telemetry page plans as a merge of two index scans', async (t) => {
+  const { harness, domain, db, moveDevice } = await setup(t);
+  const token = grantToken(harness, domain, READ_SCOPES);
+  moveDevice();
+  const prepare = db.prepare.bind(db);
+  const statements: string[] = [];
+  db.prepare = (sql: string) => {
+    statements.push(sql);
+    return prepare(sql);
+  };
+  const response = await harness.request({
+    host: 'chromemanagement.googleapis.com',
+    path: '/v1/customers/my_customer/telemetry/devices',
+    token,
+    query: { readMask: 'deviceId', pageSize: 10 },
+  });
+  db.prepare = prepare;
+  assert.equal(response.status, 200, response.text);
+  assert.equal(response.json().devices.length, 10);
+  assert.equal(
+    Object.keys(response.json().devices[0]).join(),
+    'deviceId',
+    'the sort column stays out of the output',
+  );
+  const list = statements.find(
+    (sql) => sql.includes('UNION ALL') && sql.includes('devices_prior'),
+  );
+  assert.ok(list, statements.join('\n'));
+  const plan = (
+    prepare(`EXPLAIN QUERY PLAN ${list}`).all(
+      ...Array((list.match(/\?/g) ?? []).length).fill(10),
+    ) as {
+      detail: string;
+    }[]
+  ).map((step) => step.detail);
+  assert.ok(
+    plan.some((detail) => detail.includes('MERGE')),
+    plan.join('\n'),
+  );
+});
+
+test('default-order paging during writes lists every device exactly once', async (t) => {
+  const { clock, harness, domain, db, target } = await setup(t);
+  const DEVICES = '/customer/my_customer/devices/chromeos';
+  const api: ReturnType<typeof directoryClient> = (method, path, options) =>
+    directoryClient(harness, grantToken(harness, domain, READ_WRITE_SCOPES))(
+      method,
+      path,
+      options,
+    );
+  const total = Number(
+    row<{ n: number }>(db.prepare('SELECT count(*) AS n FROM devices').get())!
+      .n,
+  );
+  const everyId = (
+    db.prepare('SELECT device_id FROM devices ORDER BY ord').all() as {
+      device_id: string;
+    }[]
+  ).map((entry) => entry.device_id);
+  const seen: string[] = [];
+  let pageToken: string | undefined;
+  let page = 0;
+  do {
+    const response = await api('GET', DEVICES, {
+      query: { maxResults: 7, ...(pageToken ? { pageToken } : {}) },
+    });
+    assert.equal(response.status, 200, response.text);
+    const body = response.json();
+    for (const entry of body.chromeosdevices ?? []) seen.push(entry.deviceId);
+    pageToken = body.nextPageToken;
+    page++;
+    // Writes between pages: one or two moves and a notes patch each time.
+    const mover = everyId[(page * 11) % everyId.length];
+    const noted = everyId[(page * 17 + 3) % everyId.length];
+    const move = await api('PATCH', `${DEVICES}/${mover}`, {
+      body: { orgUnitPath: page % 2 === 0 ? target.path : '/' },
+    });
+    assert.equal(move.status, 200, move.text);
+    if (page % 3 === 0) {
+      const second = await api(
+        'PATCH',
+        `${DEVICES}/${everyId[(page * 13 + 5) % everyId.length]}`,
+        { body: { orgUnitPath: target.path } },
+      );
+      assert.equal(second.status, 200, second.text);
+    }
+    const patched = await api('PATCH', `${DEVICES}/${noted}`, {
+      body: { notes: `page ${page}` },
+    });
+    assert.equal(patched.status, 200, patched.text);
+    // Some before-images expire mid-enumeration.
+    if (page % 4 === 0) await clock.advance(D / 2);
+  } while (pageToken);
+  assert.ok(page > 5, String(page));
+  assert.equal(seen.length, total);
+  assert.equal(new Set(seen).size, total);
+  assert.deepEqual(new Set(seen), new Set(everyId));
 });
 
 test('a new alias is missing from list bodies and email queries until the delay passes', async (t) => {

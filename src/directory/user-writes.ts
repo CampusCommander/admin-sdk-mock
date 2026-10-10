@@ -184,7 +184,7 @@ export function insertUser(call: Call): ApiResponse {
     row<{ next: number }>(
       domain.db
         .prepare(
-          'SELECT COALESCE(MAX(ord), -1) + 1 AS next FROM (SELECT ord FROM users UNION ALL SELECT ord FROM deleted_users)',
+          'SELECT MAX(COALESCE((SELECT MAX(ord) FROM users), -1), COALESCE((SELECT MAX(ord) FROM deleted_users), -1)) + 1 AS next',
         )
         .get(),
     )!.next,

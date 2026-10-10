@@ -308,3 +308,129 @@ test('insert with an unknown parent ID answers 400', async (t) => {
   });
   assert.equal(response.status, 400);
 });
+
+/** Insert a chain of OUs /c1/c2/... directly, one per level up to `levels`. Returns the paths by depth. */
+function chain(
+  db: import('node:sqlite').DatabaseSync,
+  levels: number,
+): string[] {
+  const paths = ['/'];
+  let ord = Number(
+    row<{ next: number }>(
+      db.prepare('SELECT MAX(ord) + 1 AS next FROM orgunits').get(),
+    )!.next,
+  );
+  for (let depth = 1; depth <= levels; depth++) {
+    const parent = paths[depth - 1];
+    const path = parent === '/' ? '/c1' : `${parent}/c${depth}`;
+    const parentId =
+      parent === '/'
+        ? row<{ org_unit_id: string }>(
+            db
+              .prepare("SELECT org_unit_id FROM orgunits WHERE path = '/'")
+              .get(),
+          )!.org_unit_id
+        : `id:chain${depth - 1}`;
+    db.prepare(
+      "INSERT INTO orgunits (org_unit_id, path, name, description, parent_id, parent_path, depth, kind, ord) VALUES (?, ?, ?, '', ?, ?, ?, 'container', ?)",
+    ).run(
+      `id:chain${depth}`,
+      path,
+      `c${depth}`,
+      parentId,
+      parent,
+      depth,
+      ord++,
+    );
+    paths.push(path);
+  }
+  return paths;
+}
+
+test('OUs nest at most 35 levels deep', async (t) => {
+  const { domain, api, insert } = await setup(t);
+  const paths = chain(domain.db, 35);
+  const refused = await api('POST', OUS, {
+    body: { name: 'Deeper', parentOrgUnitPath: paths[35] },
+  });
+  assert.equal(refused.status, 400, refused.text);
+  assert.equal(refused.json().error.errors[0].reason, 'invalid');
+  assert.equal(
+    (
+      await api('POST', OUS, {
+        body: { name: 'Level35', parentOrgUnitPath: paths[34] },
+      })
+    ).status,
+    200,
+  );
+  // A subtree moves only when its deepest OU stays within 35 levels.
+  await insert('Mover', '/');
+  await insert('Kid', '/Mover');
+  await insert('Leaf', '/');
+  const tooDeep = await api('PATCH', ou('/Mover'), {
+    body: { parentOrgUnitPath: paths[34] },
+  });
+  assert.equal(tooDeep.status, 400, tooDeep.text);
+  assert.equal(tooDeep.json().error.errors[0].reason, 'invalid');
+  assert.equal((await api('GET', ou('/Mover/Kid'))).status, 200);
+  assert.equal(
+    (
+      await api('PATCH', ou('/Mover'), {
+        body: { parentOrgUnitPath: paths[33] },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await api('PATCH', ou('/Leaf'), {
+        body: { parentOrgUnitPath: paths[34] },
+      })
+    ).status,
+    200,
+  );
+});
+
+test('a customer holds at most 40,000 OUs, root included', async (t) => {
+  const { domain, api } = await setup(t);
+  const db = domain.db;
+  const have = Number(
+    row<{ n: number }>(db.prepare('SELECT count(*) AS n FROM orgunits').get())!
+      .n,
+  );
+  const base = Number(
+    row<{ next: number }>(
+      db.prepare('SELECT MAX(ord) + 1 AS next FROM orgunits').get(),
+    )!.next,
+  );
+  const rootId = row<{ org_unit_id: string }>(
+    db.prepare("SELECT org_unit_id FROM orgunits WHERE path = '/'").get(),
+  )!.org_unit_id;
+  db.prepare(
+    `WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+     INSERT INTO orgunits (org_unit_id, path, name, description, parent_id, parent_path, depth, kind, ord)
+     SELECT 'id:fill' || i, '/fill' || i, 'fill' || i, '', ?, '/', 1, 'container', ? + i FROM n`,
+  ).run(40_000 - have - 1, rootId, base);
+  assert.equal(
+    Number(
+      row<{ n: number }>(
+        db.prepare('SELECT count(*) AS n FROM orgunits').get(),
+      )!.n,
+    ),
+    40_000,
+  );
+  const refused = await api('POST', OUS, {
+    body: { name: 'One more', parentOrgUnitPath: '/' },
+  });
+  assert.equal(refused.status, 400, refused.text);
+  assert.equal(refused.json().error.errors[0].reason, 'invalid');
+  db.prepare("DELETE FROM orgunits WHERE org_unit_id = 'id:fill0'").run();
+  assert.equal(
+    (
+      await api('POST', OUS, {
+        body: { name: 'One more', parentOrgUnitPath: '/' },
+      })
+    ).status,
+    200,
+  );
+});

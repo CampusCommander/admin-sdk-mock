@@ -26,8 +26,14 @@ node bin/mockctl.ts domain create --tier small --seed demo
 node bin/mockctl.ts credential <customerId> --out ./demo-credential.json
 ```
 
-The credential grants the read-only milestone 1 scopes. Pass `--scopes` to grant a different list.
-Pass the read-write scopes, such as `admin.directory.device.chromeos`, to use the milestone 2 writes.
+The credential grants the read-only milestone 1 scopes. The `--scopes` option replaces that default list.
+Pass full `https://www.googleapis.com/auth/...` URLs, one for each read scope and each write scope that you need.
+The next command grants the six read scopes and the three write scopes.
+
+```sh
+node bin/mockctl.ts credential <customerId> --out ./demo-credential.json --scopes https://www.googleapis.com/auth/admin.directory.customer.readonly,https://www.googleapis.com/auth/admin.directory.domain.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly,https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/chrome.management.telemetry.readonly,https://www.googleapis.com/auth/admin.directory.device.chromeos,https://www.googleapis.com/auth/admin.directory.user,https://www.googleapis.com/auth/admin.directory.orgunit
+```
+
 Delegate to the `adminEmail` that `domain create` prints.
 
 `mockctl clock --scale 60` compresses every quota window, flag, and delay by 60.

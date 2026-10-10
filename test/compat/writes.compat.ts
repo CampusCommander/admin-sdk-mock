@@ -160,6 +160,23 @@ test('OU insert, patch, update, and delete work through the Google client', asyn
 test('write parts inside a batch answer one by one', async () => {
   const devices = '/admin/directory/v1/customer/my_customer/devices/chromeos';
   const [first] = expected.deviceIds;
+  const insertUser = async (name: string) =>
+    (
+      await directory.users.insert({
+        requestBody: {
+          primaryEmail: `${name}@${expected.primaryDomain}`,
+          name: { givenName: name, familyName: 'Batch' },
+          password: 'correct horse battery',
+        },
+      })
+    ).data.id!;
+  const patchedUser = await insertUser('batch.patched');
+  const deletedUser = await insertUser('batch.deleted');
+  await directory.orgunits.insert({
+    customerId,
+    requestBody: { name: 'Batch Unit', parentOrgUnitPath: '/' },
+  });
+  const users = '/admin/directory/v1/users';
   const response = await auth.request<string>({
     url: 'https://www.googleapis.com/batch/admin/directory_v1',
     method: 'POST',
@@ -184,6 +201,23 @@ test('write parts inside a batch answer one by one', async () => {
           path: `${devices}/missing-device`,
           body: { notes: 'x' },
         },
+        {
+          id: 'user-patch',
+          method: 'PATCH',
+          path: `${users}/${patchedUser}`,
+          body: { name: { givenName: 'Batch' } },
+        },
+        {
+          id: 'user-delete',
+          method: 'DELETE',
+          path: `${users}/${deletedUser}`,
+        },
+        {
+          id: 'ou-patch',
+          method: 'PATCH',
+          path: `/admin/directory/v1/customer/${customerId}/orgunits/${encodeURIComponent('Batch Unit')}`,
+          body: { description: 'Batch' },
+        },
       ],
       'compat',
     ),
@@ -195,6 +229,9 @@ test('write parts inside a batch answer one by one', async () => {
       ['patch', 200],
       ['move', 204],
       ['missing', 404],
+      ['user-patch', 200],
+      ['user-delete', 204],
+      ['ou-patch', 200],
     ],
   );
 });

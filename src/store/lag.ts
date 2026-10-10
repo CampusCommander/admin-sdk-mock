@@ -150,16 +150,17 @@ export function listedSelect(
   table: LaggedTable,
   relation: string,
   options: {
-    /** Extra result columns, such as `ord AS sort_key`. */
+    /** Extra result columns, such as `ord AS sort_key`. They must take no parameters. */
     extra: string;
-    /** WHERE conditions joined with AND. May be empty. */
+    /** WHERE conditions. Each is wrapped in parentheses and joined with AND. May be empty. */
     where: readonly string[];
     params: readonly (string | number)[];
     /** ORDER BY and LIMIT, written against result column names only. */
     tail: string;
   },
 ): { sql: string; params: (string | number)[] } {
-  const { extra, where, params, tail } = options;
+  const { extra, params, tail } = options;
+  const where = options.where.map((condition) => `(${condition})`);
   if (relation === table) {
     const clause = where.length > 0 ? `WHERE ${where.join(' AND ')} ` : '';
     return {

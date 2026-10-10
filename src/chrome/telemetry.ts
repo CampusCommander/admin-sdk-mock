@@ -15,7 +15,7 @@ import {
   encodePageToken,
   fingerprint,
 } from '../store/page-token.ts';
-import { whereClause } from '../store/sql.ts';
+import { listedSelect } from '../store/lag.ts';
 import { row, rows } from '../store/sqlite.ts';
 import { FilterError, parseTelemetryFilter } from './telemetry-filter.ts';
 
@@ -118,12 +118,14 @@ export function listTelemetry(call: Call): ApiResponse {
     filter.where.push('ord > ?');
     filter.params.push(cursor[0]);
   }
+  const built = listedSelect(domain.db, 'devices', table, {
+    extra: 'ord AS sort_key',
+    where: filter.where,
+    params: filter.params,
+    tail: 'ORDER BY sort_key, device_id LIMIT ?',
+  });
   const found = rows<StoredDevice>(
-    domain.db
-      .prepare(
-        `SELECT * FROM ${table} ${whereClause(filter)} ORDER BY ord LIMIT ?`,
-      )
-      .all(...filter.params, pageSize + 1),
+    domain.db.prepare(built.sql).all(...built.params, pageSize + 1),
   );
   const page = found.slice(0, pageSize);
   const last = page.at(-1);

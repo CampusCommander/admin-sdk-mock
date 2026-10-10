@@ -4,6 +4,7 @@ import { MAX_SCALE } from '../clock.ts';
 import { DomainError } from '../domains.ts';
 import { FaultError } from '../faults/faults.ts';
 import type { Mock } from '../mock.ts';
+import { settleDueCommands } from '../directory/command-effects.ts';
 import { flushLag, pendingLag } from '../store/lag.ts';
 import { row } from '../store/sqlite.ts';
 
@@ -261,8 +262,11 @@ export function createControlHandler(mock: Mock) {
       parts[2] === 'index' &&
       parts[3] === 'flush' &&
       method === 'POST'
-    )
-      return send(response, 200, { flushed: flushLag(domainOrThrow(id).db) });
+    ) {
+      const domain = domainOrThrow(id);
+      settleDueCommands(domain.db, mock.clock.now(), 0);
+      return send(response, 200, { flushed: flushLag(domain.db) });
+    }
     if (parts.length === 4 && parts[2] === 'delegation' && method === 'PUT') {
       domainOrThrow(id);
       const body = await readJson(request);

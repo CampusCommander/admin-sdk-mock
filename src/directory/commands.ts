@@ -46,7 +46,63 @@ function parseObject(text: string): Record<string, unknown> | undefined {
   }
 }
 
-/** Validate the payload of a command. Only SET_VOLUME and DEVICE_START_CRD_SESSION take one. */
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const inRange = (value: unknown, min: number, max: number): boolean =>
+  typeof value === 'number' &&
+  Number.isInteger(value) &&
+  value >= min &&
+  value <= max;
+
+/** Whether an object holds only the named keys. */
+const onlyKeys = (value: Record<string, unknown>, keys: string[]): boolean =>
+  Object.keys(value).every((key) => keys.includes(key));
+
+/** The documented payload shapes. Each check returns true for a valid payload object. */
+const PAYLOADS: Readonly<
+  Record<string, (value: Record<string, unknown>) => boolean>
+> = {
+  SET_VOLUME: (value) =>
+    onlyKeys(value, ['volume']) && inRange(value.volume, 0, 100),
+  REBOOT: (value) =>
+    onlyKeys(value, ['user_session_delay_seconds']) &&
+    (value.user_session_delay_seconds === undefined ||
+      inRange(value.user_session_delay_seconds, 0, 300)),
+  DEVICE_START_CRD_SESSION: (value) =>
+    onlyKeys(value, ['ackedUserPresence', 'crdSessionType']) &&
+    (value.ackedUserPresence === undefined ||
+      typeof value.ackedUserPresence === 'boolean') &&
+    (value.crdSessionType === undefined ||
+      value.crdSessionType === 'private' ||
+      value.crdSessionType === 'shared'),
+  FETCH_SUPPORT_PACKET: (value) => {
+    if (!onlyKeys(value, ['supportPacketDetails'])) return false;
+    const details = value.supportPacketDetails;
+    if (details === undefined) return true;
+    if (
+      !isObject(details) ||
+      !onlyKeys(details, [
+        'issueCaseId',
+        'issueDescription',
+        'requestedDataCollectors',
+      ])
+    )
+      return false;
+    const collectors = details.requestedDataCollectors;
+    return (
+      (details.issueCaseId === undefined ||
+        typeof details.issueCaseId === 'string') &&
+      (details.issueDescription === undefined ||
+        typeof details.issueDescription === 'string') &&
+      (collectors === undefined ||
+        (Array.isArray(collectors) &&
+          collectors.every((collector) => inRange(collector, 1, 23))))
+    );
+  },
+};
+
+/** Validate the payload of a command. Only the commands in `PAYLOADS` take one. */
 function payloadFor(call: Call, type: string, raw: unknown): string | null {
   const invalid = () => invalidArgument(call, 'Invalid Input: payload');
   if (raw === undefined || raw === null || raw === '') {
@@ -54,22 +110,12 @@ function payloadFor(call: Call, type: string, raw: unknown): string | null {
     return null;
   }
   if (typeof raw !== 'string') throw invalid();
-  if (type === 'SET_VOLUME') {
-    const volume = parseObject(raw)?.volume;
-    if (
-      typeof volume !== 'number' ||
-      !Number.isInteger(volume) ||
-      volume < 0 ||
-      volume > 100
-    )
-      throw invalid();
-    return raw;
-  }
-  if (type === 'DEVICE_START_CRD_SESSION') {
-    if (!parseObject(raw)) throw invalid();
-    return raw;
-  }
-  throw invalidArgument(call, `Invalid Input: ${type} takes no payload.`);
+  const check = PAYLOADS[type];
+  if (!check)
+    throw invalidArgument(call, `Invalid Input: ${type} takes no payload.`);
+  const value = parseObject(raw);
+  if (!value || !check(value)) throw invalid();
+  return raw;
 }
 
 /** `customer.devices.chromeos.issueCommand`. The response holds the new command ID. */
