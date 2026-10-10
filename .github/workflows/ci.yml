@@ -26,9 +26,36 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run test:contract
       - run: npm run test:compat
+      - run: npm run test:examples
+  python:
+    runs-on: ubuntu-24.04
+    needs: [check]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r examples/python/requirements.txt
+      - run: npm run test:python
+  package:
+    runs-on: ubuntu-24.04
+    needs: [check]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run test:package
   image:
     runs-on: ubuntu-24.04
     needs: [check]
@@ -52,12 +79,13 @@ jobs:
       - name: Show the Compose logs after a smoke failure
         if: failure()
         run: docker compose -f compose/smoke.yml -f compose/campus-commander.overlay.yml logs
+      - name: Smoke-test a mounted configuration and the proxy
+        run: bash scripts/image-smoke.sh admin-sdk-mock:ci
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         name: Publish the image
         run: |
@@ -67,6 +95,30 @@ jobs:
             docker push "ghcr.io/campuscommander/admin-sdk-mock:${tag}"
           done
           docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/campuscommander/admin-sdk-mock:main
+  action:
+    runs-on: ubuntu-24.04
+    needs: [check]
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t admin-sdk-mock:ci .
+      - id: mock
+        uses: ./
+        with:
+          image: admin-sdk-mock:ci
+          config: examples/github-actions/admin-sdk-mock.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: List users through the mock
+        run: node examples/node-cli/list-users.mjs
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.mock.outputs.workdir }}/out/credentials/ci.json
+          ADMIN_SUBJECT: admin@vernon-school-district.test
+      - name: Show the mock logs after a failure
+        if: failure()
+        run: docker logs admin-sdk-mock
   scale:
     runs-on: ubuntu-24.04
     needs: [check]
