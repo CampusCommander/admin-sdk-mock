@@ -7,3 +7,5 @@ parity
 docs
 compose
 *.sqlite*
+dist
+examples

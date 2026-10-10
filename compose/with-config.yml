@@ -1,0 +1,6 @@
+# Mount a configuration directory that holds admin-sdk-mock.json:
+#   ADMIN_SDK_MOCK_CONFIG_DIR=./my-config docker compose -f compose/standalone.yml -f compose/with-config.yml up --detach --wait
+services:
+  admin-sdk-mock:
+    volumes:
+      - ${ADMIN_SDK_MOCK_CONFIG_DIR:?Set ADMIN_SDK_MOCK_CONFIG_DIR to a directory that holds admin-sdk-mock.json}:/config:ro

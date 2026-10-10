@@ -1,0 +1,10 @@
+{
+  "domains": [
+    {
+      "spec": { "tier": "empty", "seed": "image-smoke" },
+      "serviceAccounts": [
+        { "out": "/out/credentials/smoke.json", "scopes": "read" }
+      ]
+    }
+  ]
+}

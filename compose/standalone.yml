@@ -8,6 +8,7 @@ services:
     environment:
       MOCK_TIME_SCALE: ${MOCK_TIME_SCALE:-1}
       MOCK_DELAYS: ${MOCK_DELAYS:-on}
+      MOCK_PROXY_PORT: ${MOCK_PROXY_PORT:-3128}
       MOCK_CA_EXPORT: /ca-public/ca.pem
     volumes:
       - admin-sdk-mock-data:/data
@@ -15,6 +16,7 @@ services:
     ports:
       - '127.0.0.1:18080:8080'
       - '127.0.0.1:18443:443'
+      - '127.0.0.1:13128:3128'
 volumes:
   admin-sdk-mock-data: {}
   admin-sdk-mock-ca: {}
