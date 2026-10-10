@@ -30,6 +30,7 @@ export function createDelays(deps: {
             ? deps.limits.inFlight(call.access.customerId)
             : 0,
           parts: call.route.api === 'batch' ? (response.items ?? 0) : 0,
+          write: call.route.write === true,
         },
         settings,
         deps.random,
