@@ -6,3 +6,4 @@ data/
 .env
 *credential*.json
 dist/
+.admin-sdk-mock/

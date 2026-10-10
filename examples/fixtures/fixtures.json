@@ -1,0 +1,61 @@
+{
+  "orgUnits": [
+    { "path": "/Staff", "description": "Teachers and office staff" },
+    { "path": "/Students" }
+  ],
+  "users": [
+    {
+      "primaryEmail": "ada.admin@lexington-public-schools.test",
+      "givenName": "Ada",
+      "familyName": "Admin",
+      "orgUnitPath": "/Staff",
+      "isAdmin": true
+    },
+    {
+      "primaryEmail": "sam.student@lexington-public-schools.test",
+      "givenName": "Sam",
+      "familyName": "Student",
+      "orgUnitPath": "/Students"
+    },
+    {
+      "primaryEmail": "pat.paused@lexington-public-schools.test",
+      "givenName": "Pat",
+      "familyName": "Paused",
+      "orgUnitPath": "/Students",
+      "suspended": true
+    }
+  ],
+  "devices": [
+    {
+      "serialNumber": "FIX-0001",
+      "orgUnitPath": "/Students",
+      "annotatedUser": "sam.student@lexington-public-schools.test"
+    },
+    {
+      "serialNumber": "FIX-0002",
+      "orgUnitPath": "/Staff",
+      "status": "DISABLED"
+    }
+  ],
+  "groups": [
+    {
+      "email": "staff@lexington-public-schools.test",
+      "name": "Staff",
+      "members": [
+        { "email": "ada.admin@lexington-public-schools.test", "role": "OWNER" },
+        { "email": "sam.student@lexington-public-schools.test" }
+      ]
+    },
+    {
+      "email": "students@lexington-public-schools.test",
+      "name": "Students",
+      "members": [
+        { "email": "sam.student@lexington-public-schools.test" },
+        {
+          "email": "pat.paused@lexington-public-schools.test",
+          "role": "MANAGER"
+        }
+      ]
+    }
+  ]
+}

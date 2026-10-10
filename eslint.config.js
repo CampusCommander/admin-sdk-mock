@@ -22,4 +22,10 @@ export default defineConfig(
       ],
     },
   },
+  {
+    files: ['examples/**/*.mjs'],
+    languageOptions: {
+      globals: { console: 'readonly', process: 'readonly' },
+    },
+  },
 );
