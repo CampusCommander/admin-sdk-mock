@@ -69,6 +69,66 @@ const writeExpected = {
   )!.path,
 };
 
+const groups = mock.domains.create(
+  {
+    tier: 'small',
+    seed: 'compat-groups',
+    counts: { schools: 2, students: 150, staff: 20, devices: 20 },
+  },
+  Date.now(),
+).domain;
+mock.domains.updateSettings(groups.customerId, {
+  writes: { groupReadySeconds: 0 },
+});
+const groupAccount = issueServiceAccount(mock.registry, groups.customerId);
+mock.registry.setGrant(
+  groups.customerId,
+  groupAccount.client_id,
+  READ_WRITE_SCOPES,
+);
+const groupAccountFile = join(dataDir, 'group-account.json');
+writeFileSync(groupAccountFile, JSON.stringify(groupAccount), { mode: 0o600 });
+const groupCount = (sql: string, ...params: string[]) =>
+  Number(row<{ n: number }>(groups.db.prepare(sql).get(...params))?.n);
+const grade = row<{ email: string; member: string }>(
+  groups.db
+    .prepare(
+      "SELECT g.email, m.email AS member FROM groups g JOIN group_members m ON m.group_id = g.id WHERE g.description LIKE 'Students in %' AND m.type = 'USER' ORDER BY g.email, m.email LIMIT 1",
+    )
+    .get(),
+)!;
+const groupExpected = {
+  primaryDomain: groups.spec.primaryDomain,
+  groups: groupCount('SELECT count(*) AS n FROM groups'),
+  grade: grade.email,
+  gradeMembers: groupCount(
+    'SELECT count(*) AS n FROM group_members m JOIN groups g ON g.id = m.group_id WHERE g.email = ?',
+    grade.email,
+  ),
+  student: grade.member,
+  studentsGroup: row<{ email: string }>(
+    groups.db
+      .prepare(
+        "SELECT g.email FROM groups g JOIN group_members m ON m.group_id = g.id WHERE m.email = ? AND m.type = 'GROUP'",
+      )
+      .get(grade.email),
+  )!.email,
+  alias: row<{ alias: string; email: string }>(
+    groups.db
+      .prepare(
+        'SELECT a.alias, g.email FROM group_aliases a JOIN groups g ON g.id = a.group_id ORDER BY a.alias LIMIT 1',
+      )
+      .get(),
+  )!,
+  staff: row<{ primary_email: string }>(
+    groups.db
+      .prepare(
+        "SELECT primary_email FROM users WHERE role = 'staff' ORDER BY ord LIMIT 1",
+      )
+      .get(),
+  )!.primary_email,
+};
+
 const count = (sql: string) =>
   Number(row<{ n: number }>(domain.db.prepare(sql).get())?.n);
 const expected = {
@@ -100,6 +160,9 @@ const env: NodeJS.ProcessEnv = {
   MOCK_WRITE_SA_FILE: writeAccountFile,
   MOCK_WRITE_SUBJECT: `admin@${writes.spec.primaryDomain}`,
   MOCK_WRITE_EXPECT: JSON.stringify(writeExpected),
+  MOCK_GROUP_SA_FILE: groupAccountFile,
+  MOCK_GROUP_SUBJECT: `admin@${groups.spec.primaryDomain}`,
+  MOCK_GROUP_EXPECT: JSON.stringify(groupExpected),
 };
 delete env.NO_PROXY;
 delete env.no_proxy;
@@ -112,6 +175,7 @@ const child = spawn(
     'test/compat/directory.compat.ts',
     'test/compat/chrome.compat.ts',
     'test/compat/writes.compat.ts',
+    'test/compat/groups.compat.ts',
   ],
   { stdio: 'inherit', env },
 );
