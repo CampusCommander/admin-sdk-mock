@@ -1,4 +1,3 @@
-import { ApiError, directoryError } from '../http/errors.ts';
 import type { ApiResponse, Call, OpenDomain } from '../http/types.ts';
 import type { StoredDevice } from '../seed/devices.ts';
 import { deviceReports } from '../seed/reports.ts';
@@ -17,6 +16,7 @@ import {
   invalidArgument,
   iso,
   listedTable,
+  notFound,
   resolveCustomer,
   withEtag,
 } from './common.ts';
@@ -201,20 +201,23 @@ export function listDevices(call: Call): ApiResponse {
   };
 }
 
-export function getDevice(call: Call): ApiResponse {
+/** Find a device that requests may see. Unknown and hidden devices answer 404. */
+export function visibleDevice(call: Call, id: string): StoredDevice {
   const domain = domainOf(call);
-  resolveCustomer(call, call.params.customerId);
-  const projection = enumParam(call, 'projection', PROJECTION, 'FULL');
-  const id = call.params.deviceId;
   const device = call.overrides.hidden(domain.customerId).has(id)
     ? undefined
     : row<StoredDevice>(
         domain.db.prepare('SELECT * FROM devices WHERE device_id = ?').get(id),
       );
-  if (!device)
-    throw new ApiError(
-      directoryError(404, 'notFound', 'Resource Not Found: deviceId'),
-    );
+  if (!device) throw notFound('deviceId');
+  return device;
+}
+
+export function getDevice(call: Call): ApiResponse {
+  const domain = domainOf(call);
+  resolveCustomer(call, call.params.customerId);
+  const projection = enumParam(call, 'projection', PROJECTION, 'FULL');
+  const device = visibleDevice(call, call.params.deviceId);
   return {
     status: 200,
     items: 1,

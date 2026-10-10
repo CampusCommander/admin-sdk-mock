@@ -1,9 +1,10 @@
 import { handleBatch } from './batch/batch.ts';
 import { handleToken } from './auth/token.ts';
 import { handleTokenInfo } from './auth/tokeninfo.ts';
-import { SCOPES } from './auth/scopes.ts';
+import { SCOPES, WRITE_SCOPES } from './auth/scopes.ts';
 import { getTelemetry, listTelemetry } from './chrome/telemetry.ts';
 import { getCustomer } from './directory/customers.ts';
+import { moveDevicesToOu, updateDevice } from './directory/device-writes.ts';
 import { getDevice, listDevices } from './directory/devices.ts';
 import { listDomains } from './directory/domains.ts';
 import { getOrgUnit, listOrgUnits } from './directory/orgunits.ts';
@@ -13,6 +14,8 @@ import type { Mock } from './mock.ts';
 
 const OAUTH = ['oauth2.googleapis.com'];
 const ADMIN = ['admin.googleapis.com'];
+const DEVICE =
+  /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/]+)$/;
 
 /** A Directory API read route on admin.googleapis.com. */
 export function directoryRoute(
@@ -110,7 +113,7 @@ export function buildRoutes(mock: Mock): Route[] {
     ),
     directoryRoute(
       'directory.chromeosdevices.get',
-      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/]+)$/,
+      DEVICE,
       SCOPES.device,
       getDevice,
     ),
@@ -127,6 +130,27 @@ export function buildRoutes(mock: Mock): Route[] {
       SCOPES.user,
       getUser,
       false,
+    ),
+    writeRoute(
+      'directory.chromeosdevices.update',
+      'PUT',
+      DEVICE,
+      WRITE_SCOPES.device,
+      updateDevice,
+    ),
+    writeRoute(
+      'directory.chromeosdevices.patch',
+      'PATCH',
+      DEVICE,
+      WRITE_SCOPES.device,
+      updateDevice,
+    ),
+    writeRoute(
+      'directory.chromeosdevices.moveDevicesToOu',
+      'POST',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/moveDevicesToOu$/,
+      WRITE_SCOPES.device,
+      moveDevicesToOu,
     ),
     {
       id: 'chrome.telemetry.devices.list',
