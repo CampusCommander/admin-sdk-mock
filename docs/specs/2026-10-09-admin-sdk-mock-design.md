@@ -316,7 +316,7 @@ A `get` request returns written data at once.
 | Group aliases | `list`, `insert`, `delete`                               |
 
 Group and member pages hold 200 items at most. Group membership cycles are rejected.
-Milestone 3 needs its own seed rules for groups. They are decided before milestone 3 starts.
+The [milestone 3 groups design](2026-10-10-milestone-3-groups-design.md) holds the seed rules and the detailed rules.
 
 ## Quota model
 
