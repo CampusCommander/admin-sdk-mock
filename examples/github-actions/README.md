@@ -13,15 +13,25 @@ Inside this repository, use `uses: ./` instead of `uses: CampusCommander/admin-s
 The image is private. Run `docker/login-action@v3` for `ghcr.io` before the action. Pass `GITHUB_TOKEN` as the password.
 Give the job `packages: read` permission.
 
+`GITHUB_TOKEN` pulls the image only from repositories that the package grants access to, such as repositories in the same organization with access granted.
+Other repositories need a token with `read:packages`. Pass it as the login password.
+To use the action from another repository, allow access from other repositories in the Actions settings of the action repository.
+
 ## Inputs
 
-| Input          | Default                                       | Meaning                                            |
-| -------------- | --------------------------------------------- | -------------------------------------------------- |
-| `config`       | none                                          | The path to an `admin-sdk-mock.json` in your repo. |
-| `image`        | `ghcr.io/campuscommander/admin-sdk-mock:main` | The image to run.                                  |
-| `workdir`      | `${{ runner.temp }}/admin-sdk-mock`           | The host directory for data and output files.      |
-| `control-port` | `18080`                                       | The host port for the control API.                 |
-| `proxy-port`   | `13128`                                       | The host port for the proxy.                       |
+| Input          | Default                             | Meaning                                                                                |
+| -------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
+| `config`       | none                                | The path to an `admin-sdk-mock.json` in your repo.                                     |
+| `image`        | empty                               | The image to run. Empty picks `:X.Y.Z` for an action pinned to `vX.Y.Z`, else `:main`. |
+| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files.                                          |
+| `control-port` | `18080`                             | The host port for the control API.                                                     |
+| `proxy-port`   | `13128`                             | The host port for the proxy.                                                           |
+| `passthrough`  | `true`                              | Whether the proxy tunnels non-Google targets.                                          |
+
+## Passthrough
+
+The action sets `HTTPS_PROXY` for every later step. With `passthrough: 'true'`, non-Google targets tunnel, so npm install, caches, and artifacts keep working.
+With `passthrough: 'false'`, the proxy refuses every non-Google target. Later steps then need `NO_PROXY` or must run before the action.
 
 ## Outputs
 

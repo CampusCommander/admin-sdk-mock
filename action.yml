@@ -6,9 +6,9 @@ inputs:
     required: false
     default: ''
   image:
-    description: The image to run. A private image needs docker login first.
+    description: The image to run. Empty picks the image tag that matches a pinned action version, else main. A private image needs docker login first.
     required: false
-    default: ghcr.io/campuscommander/admin-sdk-mock:main
+    default: ''
   workdir:
     description: The host directory for data and output files.
     required: false
@@ -21,6 +21,10 @@ inputs:
     description: The host port for the proxy.
     required: false
     default: '13128'
+  passthrough:
+    description: Whether the proxy tunnels non-Google targets. With false, the proxy refuses them and later steps need NO_PROXY.
+    required: false
+    default: 'true'
 outputs:
   workdir:
     description: The host directory. Files written under /out in the container land in <workdir>/out.
@@ -48,22 +52,40 @@ runs:
         INPUT_WORKDIR: ${{ inputs.workdir }}
         CONTROL_PORT: ${{ inputs.control-port }}
         PROXY_PORT: ${{ inputs.proxy-port }}
+        PASSTHROUGH: ${{ inputs.passthrough }}
+        ACTION_REF: ${{ github.action_ref }}
       run: |
         set -euo pipefail
+        image="$INPUT_IMAGE"
+        if [ -z "$image" ]; then
+          if [[ "$ACTION_REF" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            image="ghcr.io/campuscommander/admin-sdk-mock:${BASH_REMATCH[1]}"
+          else
+            image="ghcr.io/campuscommander/admin-sdk-mock:main"
+          fi
+        fi
+        if [ -n "$INPUT_CONFIG" ] && [ ! -f "$INPUT_CONFIG" ]; then
+          echo "::error::config $INPUT_CONFIG does not exist."
+          exit 1
+        fi
         workdir="${INPUT_WORKDIR:-$RUNNER_TEMP/admin-sdk-mock}"
         mkdir -p "$workdir/data" "$workdir/out"
+        rm -f "$workdir/out/ready.json"
+        docker rm -f admin-sdk-mock >/dev/null 2>&1 || true
         args=(--detach --name admin-sdk-mock --user "$(id -u):$(id -g)"
           -p "127.0.0.1:${CONTROL_PORT}:8080" -p "127.0.0.1:${PROXY_PORT}:3128"
           -v "$workdir/data:/data" -v "$workdir/out:/out"
           -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128
+          -e MOCK_PROXY_PASSTHROUGH="$PASSTHROUGH"
           -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json)
         if [ -n "$INPUT_CONFIG" ]; then
           args+=(-v "$(realpath "$INPUT_CONFIG"):/config/admin-sdk-mock.json:ro")
         fi
-        docker run "${args[@]}" "$INPUT_IMAGE" > /dev/null
+        docker run "${args[@]}" "$image" > /dev/null
         for _ in $(seq 1 600); do
           [ -f "$workdir/out/ready.json" ] && break
           if [ "$(docker inspect -f '{{.State.Running}}' admin-sdk-mock)" != "true" ]; then
+            echo "::error::The Admin SDK mock exited before it became ready."
             docker logs admin-sdk-mock
             exit 1
           fi
