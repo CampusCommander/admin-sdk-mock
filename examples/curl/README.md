@@ -10,7 +10,7 @@ This example mints an access token with the CLI and calls `users.list` with `cur
 
 ## Run it
 
-Run these commands from your project root. The mock must already run. Pass the customer ID of the domain. The `ready` event of `start` prints it.
+Copy `list-users.sh` into your project. These commands assume it sits at `examples/curl/list-users.sh` under your project root, and they run from that root. The mock must already run. Pass the customer ID of the domain. The `ready` event of `start` prints it.
 
 ```bash
 eval "$(npx admin-sdk-mock env)"

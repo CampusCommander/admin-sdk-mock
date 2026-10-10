@@ -11,8 +11,12 @@ const python = process.env.PYTHON ?? 'python3';
 const check = spawnSync(
   python,
   ['-c', 'import googleapiclient, google.oauth2, google_auth_httplib2, socks'],
-  { encoding: 'utf8' },
+  { encoding: 'utf8', timeout: 120_000, killSignal: 'SIGKILL' },
 );
+if (check.error) {
+  console.error(`Could not run ${python}: ${check.error.message}`);
+  process.exit(1);
+}
 if (check.status !== 0) {
   console.error(
     'Install examples/python/requirements.txt into the active Python first.',
