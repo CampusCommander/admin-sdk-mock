@@ -5,9 +5,9 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { issueServiceAccount } from '../../src/auth/accounts.ts';
-import { READ_SCOPES } from '../../src/auth/scopes.ts';
+import { READ_SCOPES, READ_WRITE_SCOPES } from '../../src/auth/scopes.ts';
 import { createMock } from '../../src/mock.ts';
-import { row } from '../../src/store/sqlite.ts';
+import { row, rows } from '../../src/store/sqlite.ts';
 import { startConnectProxy } from './proxy.ts';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'compat-'));
@@ -31,6 +31,43 @@ const caFile = join(dataDir, 'ca-export.pem');
 const accountFile = join(dataDir, 'account.json');
 writeFileSync(caFile, mock.certificates.caCert);
 writeFileSync(accountFile, JSON.stringify(account), { mode: 0o600 });
+
+const writes = mock.domains.create(
+  {
+    tier: 'small',
+    seed: 'compat-writes',
+    counts: { schools: 2, students: 100, staff: 20, devices: 100 },
+  },
+  Date.now(),
+).domain;
+mock.domains.updateSettings(writes.customerId, {
+  writes: { orgUnitWritesPerSecond: 1000 },
+});
+const writeAccount = issueServiceAccount(mock.registry, writes.customerId);
+mock.registry.setGrant(
+  writes.customerId,
+  writeAccount.client_id,
+  READ_WRITE_SCOPES,
+);
+const writeAccountFile = join(dataDir, 'write-account.json');
+writeFileSync(writeAccountFile, JSON.stringify(writeAccount), { mode: 0o600 });
+const writeExpected = {
+  primaryDomain: writes.spec.primaryDomain,
+  deviceIds: rows<{ device_id: string }>(
+    writes.db
+      .prepare(
+        "SELECT device_id FROM devices WHERE status = 'ACTIVE' ORDER BY ord LIMIT 3",
+      )
+      .all(),
+  ).map((device) => device.device_id),
+  targetOu: row<{ path: string }>(
+    writes.db
+      .prepare(
+        "SELECT path FROM orgunits WHERE path != '/' AND path NOT IN (SELECT org_unit_path FROM devices) ORDER BY ord LIMIT 1",
+      )
+      .get(),
+  )!.path,
+};
 
 const count = (sql: string) =>
   Number(row<{ n: number }>(domain.db.prepare(sql).get())?.n);
@@ -60,6 +97,9 @@ const env: NodeJS.ProcessEnv = {
   MOCK_SA_FILE: accountFile,
   MOCK_SUBJECT: `admin@${domain.spec.primaryDomain}`,
   MOCK_EXPECT: JSON.stringify(expected),
+  MOCK_WRITE_SA_FILE: writeAccountFile,
+  MOCK_WRITE_SUBJECT: `admin@${writes.spec.primaryDomain}`,
+  MOCK_WRITE_EXPECT: JSON.stringify(writeExpected),
 };
 delete env.NO_PROXY;
 delete env.no_proxy;
@@ -67,7 +107,12 @@ delete env.https_proxy;
 
 const child = spawn(
   process.execPath,
-  ['--test', 'test/compat/directory.compat.ts', 'test/compat/chrome.compat.ts'],
+  [
+    '--test',
+    'test/compat/directory.compat.ts',
+    'test/compat/chrome.compat.ts',
+    'test/compat/writes.compat.ts',
+  ],
   { stdio: 'inherit', env },
 );
 const [code] = (await once(child, 'exit')) as [number | null];
