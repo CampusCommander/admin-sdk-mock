@@ -1,5 +1,11 @@
-import { READ_SCOPES } from '../../src/auth/scopes.ts';
-import { row } from '../../src/store/sqlite.ts';
+import { READ_SCOPES, READ_WRITE_SCOPES } from '../../src/auth/scopes.ts';
+import { flushLag, pendingLag } from '../../src/store/lag.ts';
+import { row, rows } from '../../src/store/sqlite.ts';
+import {
+  batchBody,
+  batchStatuses,
+  type BatchRequestPart,
+} from '../../src/testing/batch.ts';
 import { grantToken, startHarness } from '../../src/testing/harness.ts';
 
 const tier = process.env.SCALE_TIER ?? 'xlarge';
@@ -102,6 +108,135 @@ try {
         `${name}: mean server time per page ${value.meanPageMs} ms.`,
       );
   }
+  // Writes: move devices in batches, then page while their before-images wait.
+  const delaySeconds = 3_600_000;
+  harness.mock.domains.updateSettings(domain.customerId, {
+    writes: { searchDelaySeconds: delaySeconds },
+  });
+  const writeToken = grantToken(harness, domain, READ_WRITE_SCOPES);
+  const moves = Math.min(60_000, expected.devices);
+  const target = row<{ path: string }>(
+    domain.db
+      .prepare(
+        "SELECT path FROM orgunits WHERE path != '/' AND path NOT IN (SELECT org_unit_path FROM devices) ORDER BY ord LIMIT 1",
+      )
+      .get(),
+  )!.path;
+  const moveIds = rows<{ device_id: string }>(
+    domain.db
+      .prepare('SELECT device_id FROM devices ORDER BY ord LIMIT ?')
+      .all(moves),
+  ).map((device) => device.device_id);
+  const movePath = `/admin/directory/v1/customer/my_customer/devices/chromeos/moveDevicesToOu?orgUnitPath=${encodeURIComponent(target)}`;
+  const parts: BatchRequestPart[] = [];
+  for (let start = 0; start < moveIds.length; start += 50)
+    parts.push({
+      id: `move-${start}`,
+      method: 'POST',
+      path: movePath,
+      body: { deviceIds: moveIds.slice(start, start + 50) },
+    });
+  const moveStarted = performance.now();
+  for (let start = 0; start < parts.length; start += 1000) {
+    const slice = parts.slice(start, start + 1000);
+    const response = await harness.request({
+      host: 'www.googleapis.com',
+      method: 'POST',
+      path: '/batch/admin/directory_v1',
+      token: writeToken,
+      headers: { 'content-type': 'multipart/mixed; boundary=batch' },
+      body: batchBody(slice),
+    });
+    const statuses = [...batchStatuses(response.text).values()];
+    const failed = statuses.filter((status) => status !== 204).length;
+    if (
+      response.status !== 200 ||
+      statuses.length !== slice.length ||
+      failed > 0
+    )
+      failures.push(
+        `Move batch at part ${start}: status ${response.status}, ${statuses.length} parts, ${failed} failed.`,
+      );
+  }
+  const moveMs = Math.round(performance.now() - moveStarted);
+  const delayMs = (delaySeconds * 1000) / scale;
+  const pending = pendingLag(domain.db, Date.now(), delayMs);
+  if (pending < moves)
+    failures.push(`Only ${pending} of ${moves} before-images are pending.`);
+  const devicePath =
+    '/admin/directory/v1/customer/my_customer/devices/chromeos';
+  const lagged = await enumerate(
+    'admin.googleapis.com',
+    devicePath,
+    'chromeosdevices',
+    {
+      maxResults: 300,
+      fields: DEVICE_FIELDS,
+    },
+  );
+  if (lagged.items !== expected.devices)
+    failures.push(`lagged devices: ${lagged.items} of ${expected.devices}.`);
+  if (lagged.meanPageMs - 2000 / scale > 250)
+    failures.push(
+      `lagged devices: mean server time per page ${lagged.meanPageMs} ms.`,
+    );
+  const underTarget = async () =>
+    (
+      await enumerate('admin.googleapis.com', devicePath, 'chromeosdevices', {
+        maxResults: 300,
+        orgUnitPath: target,
+        fields: 'nextPageToken,chromeosdevices(deviceId)',
+      })
+    ).items;
+  const beforeFlush = await underTarget();
+  if (beforeFlush !== 0)
+    failures.push(
+      `${beforeFlush} moved devices listed before the delay passed.`,
+    );
+  const flushed = flushLag(domain.db);
+  const afterFlush = await underTarget();
+  if (afterFlush !== moves)
+    failures.push(
+      `${afterFlush} of ${moves} moved devices listed after a flush.`,
+    );
+
+  // A top-level OU rename cascades to every device and user below it.
+  const tops = new Map<string, number>();
+  for (const entry of rows<{ org_unit_path: string; n: number }>(
+    domain.db
+      .prepare(
+        'SELECT org_unit_path, count(*) AS n FROM devices GROUP BY org_unit_path',
+      )
+      .all(),
+  )) {
+    const top = `/${entry.org_unit_path.split('/')[1] ?? ''}`;
+    if (top !== '/') tops.set(top, (tops.get(top) ?? 0) + Number(entry.n));
+  }
+  const [renamed, renamedDevices] = [...tops].sort((a, b) => b[1] - a[1])[0];
+  const renameStarted = performance.now();
+  const rename = await harness.request({
+    host: 'admin.googleapis.com',
+    method: 'PATCH',
+    path: `/admin/directory/v1/customer/my_customer/orgunits${renamed.split('/').map(encodeURIComponent).join('/')}`,
+    token: writeToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: `${renamed.slice(1)} Renamed` }),
+  });
+  const renameMs = Math.round(performance.now() - renameStarted);
+  if (rename.status !== 200)
+    failures.push(
+      `OU rename answered ${rename.status}: ${rename.text.slice(0, 200)}`,
+    );
+  const writes = {
+    moves,
+    moveMs,
+    pending,
+    lagged,
+    beforeFlush,
+    flushed,
+    afterFlush,
+    rename: { ou: renamed, devices: renamedDevices, ms: renameMs },
+  };
   console.log(
     JSON.stringify(
       {
@@ -109,6 +244,7 @@ try {
         scale,
         seed: { ...result, durationMs: seedMs },
         measured,
+        writes,
         rssMb: Math.round(process.memoryUsage().rss / 1_048_576),
         failures,
       },
