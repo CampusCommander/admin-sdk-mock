@@ -19,6 +19,16 @@ export interface Rates {
   expired: number;
   suspended: number;
   deepBranches: number;
+  /** Section groups per student. A whole number from 0 to 10. */
+  sectionsPerStudent: number;
+  /** Share of groups with outside members. */
+  externalMemberGroups: number;
+  /** Share of groups without members. At most 0.5. */
+  emptyGroups: number;
+  /** Share of groups with one alias. */
+  groupAliases: number;
+  /** Chains of 8 to 10 nested groups. A whole number from 0 to 10. */
+  deepGroupChains: number;
 }
 
 export interface SeedSpec {
@@ -59,6 +69,11 @@ export const DEFAULT_RATES: Readonly<Rates> = {
   expired: 0.15,
   suspended: 0.04,
   deepBranches: 3,
+  sectionsPerStudent: 4,
+  externalMemberGroups: 0.03,
+  emptyGroups: 0.02,
+  groupAliases: 0.1,
+  deepGroupChains: 1,
 };
 
 export class SpecError extends Error {
@@ -155,10 +170,14 @@ export function resolveSpec(input: unknown): ResolvedSpec {
       spec.rates,
       'rates',
       Object.keys(DEFAULT_RATES),
-      (number, key) =>
-        key === 'deepBranches'
-          ? Number.isInteger(number) && number >= 0 && number <= 20
-          : number >= 0 && number <= 1,
+      (number, key) => {
+        if (key === 'deepBranches')
+          return Number.isInteger(number) && number >= 0 && number <= 20;
+        if (key === 'sectionsPerStudent' || key === 'deepGroupChains')
+          return Number.isInteger(number) && number >= 0 && number <= 10;
+        if (key === 'emptyGroups') return number >= 0 && number <= 0.5;
+        return number >= 0 && number <= 1;
+      },
     ),
   } as Rates;
   if (rates.disabled + rates.deprovisioned > 1)

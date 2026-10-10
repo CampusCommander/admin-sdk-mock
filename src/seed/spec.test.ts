@@ -80,3 +80,51 @@ test('invalid specifications fail with a message', () => {
   for (const input of bad)
     assert.throws(() => resolveSpec(input), SpecError, JSON.stringify(input));
 });
+
+test('the group rates have their spec defaults and ranges', () => {
+  const spec = resolveSpec({ tier: 'small', seed: 'rates' });
+  assert.equal(spec.rates.sectionsPerStudent, 4);
+  assert.equal(spec.rates.externalMemberGroups, 0.03);
+  assert.equal(spec.rates.emptyGroups, 0.02);
+  assert.equal(spec.rates.groupAliases, 0.1);
+  assert.equal(spec.rates.deepGroupChains, 1);
+  const custom = resolveSpec({
+    tier: 'small',
+    seed: 'rates',
+    rates: {
+      sectionsPerStudent: 0,
+      externalMemberGroups: 1,
+      emptyGroups: 0.5,
+      groupAliases: 0,
+      deepGroupChains: 10,
+    },
+  });
+  assert.equal(custom.rates.sectionsPerStudent, 0);
+  assert.equal(custom.rates.deepGroupChains, 10);
+  for (const rates of [
+    { sectionsPerStudent: 11 },
+    { sectionsPerStudent: 2.5 },
+    { emptyGroups: 0.6 },
+    { externalMemberGroups: 1.5 },
+    { groupAliases: -0.1 },
+    { deepGroupChains: 11 },
+    { deepGroupChains: 1.5 },
+  ])
+    assert.throws(
+      () => resolveSpec({ tier: 'small', seed: 'rates', rates }),
+      SpecError,
+      JSON.stringify(rates),
+    );
+});
+
+test('the group rates do not change any derived identity value', () => {
+  const plain = resolveSpec({ tier: 'small', seed: 'identity' });
+  const tuned = resolveSpec({
+    tier: 'small',
+    seed: 'identity',
+    rates: { sectionsPerStudent: 2 },
+  });
+  assert.equal(tuned.customerId, plain.customerId);
+  assert.equal(tuned.primaryDomain, plain.primaryDomain);
+  assert.equal(tuned.studentDomain, plain.studentDomain);
+});
