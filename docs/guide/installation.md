@@ -184,7 +184,7 @@ A directory that does not exist fails the start. Compose does not create it.
 - id: mock
   uses: CampusCommander/admin-sdk-mock@v1.0.0
   with:
-    config: admin-sdk-mock.json
+    config: .github/admin-sdk-mock.json
 ```
 
 The [CI guide](ci.md) covers the login, the inputs, and the outputs.
@@ -208,7 +208,15 @@ To seed it with the new version, set `onStart` to `reset` for one start, or dele
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | npm            | Run `npm uninstall @campuscommander/admin-sdk-mock`. Delete the data directory and the key files.                                  |
 | Docker         | Run `docker rm -f <container>` and `docker image rm ghcr.io/campuscommander/admin-sdk-mock:<tag>`. Delete the mounted directories. |
-| GitHub Actions | Remove the step. The runner discards the container.                                                                                |
+| GitHub Actions | Remove the step. Hosted runners discard the container.                                                                             |
+
+A self-hosted runner keeps the container after the job. A composite action has no post step, so end the job with this step:
+
+```yaml
+- name: Stop the Admin SDK mock
+  if: always()
+  run: docker rm -f admin-sdk-mock
+```
 
 The starter configuration keeps its data and its key file under `.admin-sdk-mock/`. Delete that folder.
 The mock never installs its CA into a system trust store. Remove the CA only from a store that you added it to yourself.

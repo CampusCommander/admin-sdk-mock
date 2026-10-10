@@ -119,11 +119,28 @@ A control URL that is not an `http` or `https` URL exits with code 2.
 
 `"listen": { "proxy": {} }` turns the proxy on at `127.0.0.1:3128` with `passthrough` off.
 Port 0 picks a free port. The `ready` event and `GET /info` report the ports in use.
-The image overrides every host to `0.0.0.0`, so other containers reach the listeners.
 
 `start` writes the CA certificate to `caFile`, `<dataDir>/ca/ca.pem` by default.
 It writes a bundle beside it, `ca-bundle.pem`, that holds the mock CA followed by the public roots.
 With `readyFile` set, `start` writes the `ready` event there once every domain is ready.
+
+### In the image
+
+The image sets these variables. A variable outranks the file, so each one overrides the key in a mounted file:
+
+| Variable                                                   | Value     | Overrides             |
+| ---------------------------------------------------------- | --------- | --------------------- |
+| `MOCK_DATA_DIR`                                            | `/data`   | `dataDir`             |
+| `MOCK_GOOGLE_PORT`                                         | `443`     | `listen.google.port`  |
+| `MOCK_CONTROL_PORT`                                        | `8080`    | `listen.control.port` |
+| `MOCK_GOOGLE_HOST`, `MOCK_CONTROL_HOST`, `MOCK_PROXY_HOST` | `0.0.0.0` | Every listener `host` |
+
+The `0.0.0.0` hosts let other containers reach the listeners. The file's proxy port, timing, `caFile`, `readyFile`, and domains still apply.
+To change an overridden value, pass its variable to `docker run`, for example `-e MOCK_GOOGLE_PORT=8443`.
+
+`admin-sdk-mock env` against a container prints the container's view, because it reads the container's `GET /info`.
+Its paths, such as `NODE_EXTRA_CA_CERTS=/out/ca.pem`, name files inside the container. Map each one to the mounted host directory, for example `/out` to `<workdir>/out`.
+Its proxy URL names the container's proxy port, such as `3128`. Replace that port with the published host port, for example `13128`.
 
 ## Domains
 
