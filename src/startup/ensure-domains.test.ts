@@ -277,3 +277,28 @@ test('a second run replaces the faults, and an invalid rule names its path', (t)
     ['domains[0].faults[0]: Unknown fault kind.'],
   );
 });
+
+test('a name taken at run time or a bad project ID still fails as a configuration error', (t) => {
+  const { mock, entry } = setup(t);
+  // A domain from the control API holds the name, so resolveConfig cannot see the clash.
+  mock.domains.create({ ...EMPTY, seed: 'earlier' }, NOW);
+  assert.deepEqual(
+    configErrors(() => ensureDomain(mock, entry({ spec: EMPTY }), 0, {}, NOW)),
+    [
+      `domains[0]: The domain name ${PRIMARY} is in use. Pass a different name.`,
+    ],
+  );
+  const other = { tier: 'empty', seed: 'project', name: 'Project District' };
+  const bad = {
+    ...entry({ spec: other }),
+    serviceAccounts: [
+      { out: 'keys/bad.json', scopes: 'read' as const, projectId: 'Bad' },
+    ],
+  };
+  assert.deepEqual(
+    configErrors(() => ensureDomain(mock, bad, 0, {}, NOW)),
+    [
+      'domains[0].serviceAccounts[0]: projectId must be 6 to 30 lower-case letters, digits, or hyphens, and start with a letter.',
+    ],
+  );
+});
