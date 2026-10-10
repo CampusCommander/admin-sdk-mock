@@ -261,23 +261,23 @@ The [CLI reference](../reference/cli.md) lists every command and flag.
 The control listener serves plain HTTP on `127.0.0.1:8080` by default.
 Every request and response body is JSON, except `GET /ca.pem`, which returns the CA certificate as PEM.
 
-| Request                                      | Effect                                                                                                |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `GET /health`                                | `{ "status": "ok", "domains": <count> }`.                                                             |
-| `GET /info`                                  | The version, `ready`, the listeners, `caFile`, `caBundleFile`, `dataDir`, and the configured domains. |
-| `GET /ca.pem`                                | The CA certificate.                                                                                   |
-| `GET /clock`, `PUT /clock`                   | Show or set `scale` (1 to 100000) and `delays`.                                                       |
-| `GET /domains`                               | Every domain with its `counts`.                                                                       |
-| `POST /domains`                              | Create a domain from a seed specification.                                                            |
-| `GET /domains/{id}`, `DELETE /domains/{id}`  | Show or delete one domain.                                                                            |
-| `POST /domains/{id}/reset`                   | Seed the domain again. Every write, before-image, command, and deleted user disappears.               |
-| `POST /domains/{id}/service-accounts`        | Issue a service account key. The body takes an optional `projectId`.                                  |
-| `PUT /domains/{id}/delegation/{clientId}`    | Set the scopes granted to a client ID: `{ "scopes": [<scope URLs>] }`.                                |
-| `POST /domains/{id}/tokens`                  | Mint an access token: `subject`, `scopes`, and `ttlSeconds`.                                          |
-| `PUT /domains/{id}/settings`                 | Merge a settings patch.                                                                               |
-| `GET /domains/{id}/quota`                    | The quota buckets, the flag state, and the in-flight requests.                                        |
-| `GET`, `POST`, `DELETE /domains/{id}/faults` | List, add, or clear fault rules.                                                                      |
-| `POST /domains/{id}/index/flush`             | End the search lag and the group delays.                                                              |
+| Request                                      | Effect                                                                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`                                | `503` with `{ "status": "starting" }` until every domain is ready, then `200` with `{ "status": "ok", "domains": <count> }`. |
+| `GET /info`                                  | The version, `ready`, the listeners, `caFile`, `caBundleFile`, `dataDir`, and the configured domains.                        |
+| `GET /ca.pem`                                | The CA certificate.                                                                                                          |
+| `GET /clock`, `PUT /clock`                   | Show or set `scale` (1 to 100000) and `delays`.                                                                              |
+| `GET /domains`                               | Every domain with its `counts`.                                                                                              |
+| `POST /domains`                              | Create a domain from a seed specification.                                                                                   |
+| `GET /domains/{id}`, `DELETE /domains/{id}`  | Show or delete one domain.                                                                                                   |
+| `POST /domains/{id}/reset`                   | Seed the domain again. Every write, before-image, command, and deleted user disappears.                                      |
+| `POST /domains/{id}/service-accounts`        | Issue a service account key. The body takes an optional `projectId`.                                                         |
+| `PUT /domains/{id}/delegation/{clientId}`    | Set the scopes granted to a client ID: `{ "scopes": [<scope URLs>] }`.                                                       |
+| `POST /domains/{id}/tokens`                  | Mint an access token: `subject`, `scopes`, and `ttlSeconds`.                                                                 |
+| `PUT /domains/{id}/settings`                 | Merge a settings patch.                                                                                                      |
+| `GET /domains/{id}/quota`                    | The quota buckets, the flag state, and the in-flight requests.                                                               |
+| `GET`, `POST`, `DELETE /domains/{id}/faults` | List, add, or clear fault rules.                                                                                             |
+| `POST /domains/{id}/index/flush`             | End the search lag and the group delays.                                                                                     |
 
 `GET /domains` reports `counts` of `orgUnits`, `users`, `devices`, `groups`, `memberships`, and `pendingWrites` for each domain.
 An `/info` domain entry holds `customerId`, `primaryDomain`, `adminEmail`, `action`, and its `serviceAccounts` with their key file paths.

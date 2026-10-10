@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
+import { networkInterfaces } from 'node:os';
 import test from 'node:test';
-import { GOOGLE_HOSTS, startProxy } from './proxy.ts';
+import { GOOGLE_HOSTS, isLoopbackHost, startProxy } from './proxy.ts';
 
 /** A TCP server that answers every connection with one line naming itself. */
-async function echoServer(name: string) {
+async function echoServer(name: string, host = '127.0.0.1') {
   const server = net.createServer((socket) => socket.end(`${name}\n`));
-  server.listen(0, '127.0.0.1');
+  server.listen(0, host);
   await once(server, 'listening');
   return {
     port: (server.address() as AddressInfo).port,
@@ -93,9 +94,24 @@ test('other targets get 403 without passthrough, and the proxy stays healthy', a
   );
 });
 
+/** An IPv4 address of this host that is neither loopback nor link-local, if it has one. */
+const outsideAddress = Object.values(networkInterfaces())
+  .flat()
+  .find(
+    (address) =>
+      address !== undefined &&
+      !address.internal &&
+      address.family === 'IPv4' &&
+      !address.address.startsWith('169.254.'),
+  )?.address;
+
 test('passthrough tunnels other targets to themselves', async (t) => {
+  if (!outsideAddress) {
+    t.skip('This host has no IPv4 address outside loopback and link-local.');
+    return;
+  }
   const google = await echoServer('google');
-  const other = await echoServer('other');
+  const other = await echoServer('other', outsideAddress);
   const proxy = await startProxy({
     host: '127.0.0.1',
     port: 0,
@@ -107,10 +123,94 @@ test('passthrough tunnels other targets to themselves', async (t) => {
     google.close();
     other.close();
   });
-  const result = await connect(proxy.port, `127.0.0.1:${other.port}`);
+  const target = `${outsideAddress}:${other.port}`;
+  const result = await connect(proxy.port, target);
   assert.equal(result.status, 'HTTP/1.1 200 Connection Established');
   assert.equal(result.body, 'other\n');
-  assert.deepEqual(proxy.tunneled, [`127.0.0.1:${other.port}`]);
+  assert.deepEqual(proxy.tunneled, [target]);
+});
+
+test('passthrough refuses loopback, link-local, and unspecified targets with 403', async (t) => {
+  const google = await echoServer('google');
+  const events: Record<string, unknown>[] = [];
+  const proxy = await startProxy({
+    host: '127.0.0.1',
+    port: 0,
+    target: { host: '127.0.0.1', port: google.port },
+    passthrough: true,
+    log: (event) => events.push(event),
+  });
+  t.after(async () => {
+    await proxy.close();
+    google.close();
+  });
+  const port = google.port;
+  const targets = [
+    `127.0.0.1:${port}`,
+    `127.255.0.9:${port}`,
+    // Shorthand and numeric IPv4 forms that the resolver also dials as 127.0.0.1.
+    `127.1:${port}`,
+    `2130706433:${port}`,
+    `0x7f.1:${port}`,
+    `0177.0.0.1:${port}`,
+    '169.254.169.254:80',
+    `0.0.0.0:${port}`,
+    `0:${port}`,
+    `[::1]:${port}`,
+    `[0:0:0:0:0:0:0:1]:${port}`,
+    `[::1%lo]:${port}`,
+    `[::]:${port}`,
+    '[fe80::1]:80',
+    '[fe80::1%eth0]:80',
+    '[fe80::1%25eth0]:80',
+    '[febf::1]:80',
+    `[::ffff:127.0.0.1]:${port}`,
+    `[::ffff:7f00:1]:${port}`,
+    '[::ffff:169.254.169.254]:80',
+    `localhost:${port}`,
+    `LOCALHOST:${port}`,
+    `localhost.:${port}`,
+    `api.localhost:${port}`,
+  ];
+  for (const target of targets)
+    assert.equal(
+      (await connect(proxy.port, target)).status,
+      'HTTP/1.1 403 Forbidden',
+      target,
+    );
+  assert.deepEqual(proxy.counts(), {
+    accepted: 0,
+    refused: targets.length,
+    tunneled: 0,
+  });
+  assert.deepEqual(proxy.refused, targets);
+  assert.deepEqual(
+    events,
+    targets.map((target) => ({ event: 'proxy-refused', target })),
+  );
+});
+
+test('isLoopbackHost names loopback hosts only', () => {
+  for (const host of [
+    '127.0.0.1',
+    '127.0.0.2',
+    '127.1',
+    '::1',
+    '::ffff:127.0.0.1',
+    'localhost',
+    'LOCALHOST',
+  ])
+    assert.equal(isLoopbackHost(host), true, host);
+  // name.123 is no valid URL host, and fe80::zz is no IPv6 address. Neither is loopback.
+  for (const host of [
+    '0.0.0.0',
+    '::',
+    '192.168.1.5',
+    'example.com',
+    'name.123',
+    'fe80::zz',
+  ])
+    assert.equal(isLoopbackHost(host), false, host);
 });
 
 test('a request that is not CONNECT gets 405', async (t) => {

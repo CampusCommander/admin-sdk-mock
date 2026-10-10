@@ -2,8 +2,10 @@
  * Proves that the packed tarball installs into an empty project and works there:
  * as a CLI, as an API, and with TypeScript types.
  *
- * Task 10 note: installing from the private Git repository needs repository access,
- * so this test packs the same files that the repository install would produce.
+ * Installing from the private GitHub repository needs repository access, so the test
+ * packs the same files that the repository install would produce. A last step installs
+ * `git+file://<repo>#<HEAD>`, which clones the commit and builds dist/ through the
+ * prepare script, as a GitHub install does.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
@@ -311,13 +313,15 @@ try {
   ])
     if (!existsSync(join(installed, file)))
       throw new StepFailure(`The package lacks ${file}.`);
-  for (const directory of ['src', 'test'])
+  for (const directory of ['src', 'test', 'dist/src/docs', 'dist/src/testing'])
     if (existsSync(join(installed, directory)))
       throw new StepFailure(`The package holds a ${directory}/ directory.`);
   const tests = walk(installed).filter((file) => file.endsWith('.test.js'));
   if (tests.length > 0)
     throw new StepFailure(`The package holds test files:\n${tests.join('\n')}`);
-  step('the installed package holds the expected files and no tests');
+  step(
+    'the installed package holds the expected files, and no tests or development modules',
+  );
 
   // 4. The help output of both executables.
   for (const name of ['admin-sdk-mock', 'mockctl']) {
@@ -423,12 +427,53 @@ try {
     120_000,
   );
   step('consumer.ts type checks under strict nodenext');
+
+  // 9. Install the HEAD commit from a clean Git clone into a second empty project.
+  // npm clones the commit, installs its dev dependencies, and runs prepare to build dist/.
+  const sha = run('git', ['rev-parse', 'HEAD'], repo).trim();
+  const gitConsumer = join(tmp, 'git-consumer');
+  mkdirSync(gitConsumer);
+  writeFileSync(
+    join(gitConsumer, 'package.json'),
+    JSON.stringify({ name: 'git-consumer', private: true, type: 'module' }),
+  );
+  // An empty user configuration, so a developer's allow-scripts or ignore-scripts
+  // setting cannot break or skip prepare. The installation guide documents both.
+  const userconfig = join(tmp, 'empty.npmrc');
+  writeFileSync(userconfig, '');
+  const spec = `git+file://${repo}#${sha}`;
+  run(
+    'npm',
+    ['install', spec, '--userconfig', userconfig, '--no-audit', '--no-fund'],
+    gitConsumer,
+    300_000,
+  );
+  const built = join(
+    gitConsumer,
+    'node_modules',
+    packageName,
+    'dist',
+    'bin',
+    'admin-sdk-mock.js',
+  );
+  if (!existsSync(built))
+    throw new StepFailure(
+      `The Git install lacks ${built}. prepare did not run.`,
+    );
+  const gitHelp = run('npx', ['admin-sdk-mock', '--help'], gitConsumer);
+  if (!gitHelp.includes('Usage: admin-sdk-mock <command> [options]'))
+    throw new StepFailure(
+      `admin-sdk-mock --help after the Git install lacks its usage line:\n${gitHelp}`,
+    );
+  step(
+    `installed git+file://<repo>#${sha.slice(0, 7)}: prepare built dist/, and admin-sdk-mock --help prints usage`,
+  );
 } catch (error) {
   failed = true;
   console.error(error instanceof Error ? error.message : error);
 } finally {
   await stopMock();
-  // 9. Remove the temporary directory.
+  // 10. Remove the temporary directory.
   rmSync(tmp, { recursive: true, force: true });
 }
 process.exit(signalExit ?? (failed ? 1 : 0));

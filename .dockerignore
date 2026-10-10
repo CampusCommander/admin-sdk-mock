@@ -9,3 +9,6 @@ compose
 *.sqlite*
 dist
 examples
+**/*.test.ts
+src/testing
+src/docs

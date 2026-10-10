@@ -65,11 +65,12 @@ Install: `npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0`. 
 
 ### Docker image
 
-The image keeps its current base, user, volume, and health check. It gains:
+The image keeps its current base, user, and volume. It gains:
 
 - `MOCK_CONFIG_DEFAULT=/config/admin-sdk-mock.json`, a fallback configuration file that the mock reads when that file exists. `--config`, `MOCK_CONFIG`, and `./admin-sdk-mock.json` come before it (P-R30).
 - Port 3128 for the proxy, exposed and off unless the configuration enables it.
 - The `admin-sdk-mock` CLI on the path.
+- A health check on `GET /health` at `MOCK_CONTROL_PORT`, with a 600-second start period for large seeds. It replaces the fixed check on port 8080 (P-R32).
 
 ### GitHub Action
 
@@ -85,6 +86,8 @@ A composite action at the repository root, `action.yml`, starts the image on the
 | `proxy-port`   | `13128`                             | The host port for the proxy (P-R30).       |
 
 An empty `image` resolves to `ghcr.io/campuscommander/admin-sdk-mock:<X.Y.Z>` when `github.action_ref` is `vX.Y.Z`, and to `:main` otherwise (P-R7).
+A 40-character commit SHA in `github.action_ref` resolves to the SHA tag that CI publishes for each push to `main` (P-R32).
+A `workdir`, `config`, or `image` value with a line break fails the step, and so does a port outside 1 to 65535 (P-R32).
 `passthrough` defaults to true, so later steps that share `HTTPS_PROXY` keep their network (P-R7).
 
 It waits for the ready file, then writes `HTTPS_PROXY`, `NODE_USE_ENV_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
@@ -150,29 +153,34 @@ The proxy listener accepts HTTP `CONNECT host:port` requests. It never terminate
 | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | Port 443 of `oauth2.googleapis.com`, `admin.googleapis.com`, `www.googleapis.com`, or `chromemanagement.googleapis.com` | A tunnel to the mock's Google listener.            |
 | Any other target, with `passthrough` off                                                                                | `403 Forbidden`, and a log line naming the target. |
+| A local target, with `passthrough` on                                                                                   | `403 Forbidden`, and a log line naming the target. |
 | Any other target, with `passthrough` on                                                                                 | A plain tunnel to that target.                     |
 | A request that is not `CONNECT`                                                                                         | `405 Method Not Allowed`.                          |
 
 The Google listener's certificate already names the four hostnames, so a tunneled client sees a valid chain once it trusts the mock CA.
 `passthrough` lets an application under test reach its other services through the same `HTTPS_PROXY`.
+A local target is `localhost`, a name that ends in `.localhost`, or a literal loopback, link-local, or unspecified address (P-R32).
+The check covers IPv4-mapped IPv6 forms and IPv4 shorthand such as `127.1`. It never resolves a name, so a name that resolves to a local address still tunnels.
+`start` logs a `warning` event when passthrough is on and the proxy host is not loopback (P-R32).
 
 ## Control API additions
 
 `GET /info` answers the version, the listener addresses, the CA file path, and the configured domains with their key file paths.
 It follows the existing host and content-type guards.
+`GET /health` answers `503` with `{ "status": "starting" }` until every domain is ready, then `200` as before (P-R32).
 
 ## Command-line interface
 
 One executable, `admin-sdk-mock`, holds every command. `mockctl` stays as an alias for the control commands.
 
-| Command                                   | Effect                                                                                                                                                                          |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start`                                   | Validate the configuration, start the listeners, ensure the domains, write the CA, key, and ready files, and run until a signal.                                                |
-| `init [--out <file>]`                     | Write a starter configuration with one small domain, a proxy, and a read-write service account. Print the next steps.                                                           |
-| `env [--format sh\|dotenv\|json\|github]` | Ask a running mock's `GET /info` for its listeners, then print the client environment: proxy, CA variables, `NO_PROXY`, and the control URL. `github` appends to `$GITHUB_ENV`. |
-| `doctor`                                  | Check the Node version, the data directory, free ports, and the CA file. Print a pass or fail line for each.                                                                    |
-| `config validate <file>`                  | Validate a configuration file and print every error.                                                                                                                            |
-| Control commands                          | Every current `mockctl` command: `domain`, `credential`, `ca`, `clock`, `quota`, `fault`, `index`, `settings`.                                                                  |
+| Command                                   | Effect                                                                                                                                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`                                   | Validate the configuration, start the listeners, ensure the domains, write the CA, key, and ready files, and run until a signal.                                                                              |
+| `init [--out <file>]`                     | Write a starter configuration with one small domain, a proxy, and a read-write service account. Print the next steps.                                                                                         |
+| `env [--format sh\|dotenv\|json\|github]` | Ask a running mock's `GET /info` for its listeners, then print the client environment: proxy, `NODE_USE_ENV_PROXY`, CA variables, `NO_PROXY`, and the control URL (P-R29). `github` appends to `$GITHUB_ENV`. |
+| `doctor`                                  | Check the Node version, the data directory, free ports, and the CA file. Print a pass or fail line for each.                                                                                                  |
+| `config validate <file>`                  | Validate a configuration file and print every error.                                                                                                                                                          |
+| Control commands                          | Every current `mockctl` command: `domain`, `credential`, `ca`, `clock`, `quota`, `fault`, `index`, `settings`.                                                                                                |
 
 Exit codes: 0 for success, 1 for a runtime failure, 2 for invalid usage or configuration.
 Code 2 covers usage, configuration, fixture, and seed specification errors.
@@ -260,7 +268,8 @@ Documentation prose follows the repository writing rules.
 
 ## Examples
 
-`examples/` holds runnable projects. Each one has a README and a test that runs it.
+`examples/` holds runnable projects. Each one has a README.
+`test/examples/run.ts` and `test/python/run.ts` run every example except `github-actions`. The CI `action` job runs the action with that example's configuration.
 
 | Example           | Shows                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------- |
@@ -275,27 +284,29 @@ Documentation prose follows the repository writing rules.
 
 ### Test layers
 
-| Layer                | Command                 | Proves                                                                                                  |
-| -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| Unit                 | `npm test`              | Every module's behavior, including configuration, fixtures, proxy, CLI, and API.                        |
-| Coverage             | `npm run test:coverage` | The unit layer exercises at least the gated share of lines, branches, and functions.                    |
-| Contract             | `npm run test:contract` | Every response matches Google's discovery schemas.                                                      |
-| Node compatibility   | `npm run test:compat`   | Google's Node clients work unmodified through the proxy.                                                |
-| Python compatibility | `npm run test:python`   | Google's Python clients work unmodified through the proxy.                                              |
-| Package              | `npm run test:package`  | `npm pack` installs into an empty project, the CLI starts, and the API imports with its types.          |
-| Examples             | `npm run test:examples` | Every documented Node, curl, and fixtures example runs as written.                                      |
-| Docs                 | part of `npm test`      | Generated references match the schema, the CLI, and the route table.                                    |
-| Image                | CI `image` job          | The image starts from a mounted configuration, serves the proxy, and passes the Campus Commander smoke. |
-| Action               | CI `action` job         | The action starts the mock and exports a working client environment.                                    |
-| Scale                | `npm run test:scale`    | Chicago-size domains page within the latency bound.                                                     |
+| Layer                | Command                 | Proves                                                                                                                                        |
+| -------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit                 | `npm test`              | Every module's behavior, including configuration, fixtures, proxy, CLI, and API.                                                              |
+| Coverage             | `npm run test:coverage` | The unit layer exercises at least the gated share of lines, branches, and functions.                                                          |
+| Contract             | `npm run test:contract` | Every response matches Google's discovery schemas.                                                                                            |
+| Node compatibility   | `npm run test:compat`   | Google's Node clients work unmodified through the proxy.                                                                                      |
+| Python compatibility | `npm run test:python`   | Google's Python clients work unmodified through the proxy.                                                                                    |
+| Package              | `npm run test:package`  | `npm pack` installs into an empty project, the CLI starts, and the API imports with its types.                                                |
+| Examples             | `npm run test:examples` | Every documented Node, curl, and fixtures example runs against the built package. The CLI examples get port 0 and a temporary data directory. |
+| Docs                 | part of `npm test`      | Generated references match the schema, the CLI, and the route table.                                                                          |
+| Image                | CI `image` job          | The image starts from a mounted configuration, serves the proxy, and passes the Campus Commander smoke.                                       |
+| Action               | CI `action` job         | The action starts the mock and exports a working client environment.                                                                          |
+| Scale                | `npm run test:scale`    | Chicago-size domains page within the latency bound.                                                                                           |
 
 `docs/trust.md` maps each spec requirement to the tests that prove it.
 
 ### CI
 
-CI runs every layer on pull requests and on `main`. The Python and package layers run in their own jobs.
-`workflow_dispatch` runs CI on any branch.
-A tag `v*` runs the release workflow: every check, then the package tarball and the versioned image tags, attached to a GitHub release.
+CI runs every layer on pull requests and on `main`, except the scale layer, which skips pull requests. The Python and package layers run in their own jobs.
+`workflow_dispatch` runs CI, the scale layer included, on any branch.
+A plain `vX.Y.Z` tag runs the release workflow. Its `verify` job checks the tag against `package.json` and the `CHANGELOG.md` notes for the version.
+It then runs the format, lint, type, coverage, contract, Node compatibility, examples, package, and Python checks.
+Its `publish` job smoke-tests the image before it pushes the versioned tags, then attaches the package tarball to a GitHub release.
 
 ## Security
 
@@ -303,6 +314,7 @@ A tag `v*` runs the release workflow: every check, then the package tarball and 
 - Key files are written with mode 0600. Logs never print private keys.
 - The control API keeps its host and content-type guards. It binds to `127.0.0.1` outside the image.
 - The proxy refuses every target outside the four Google hostnames unless `passthrough` is on, and it never decrypts traffic. It binds to `127.0.0.1` outside the image.
+- With `passthrough` on, the proxy relays to any other host and port, but it refuses a local target. `SECURITY.md` states the relay risk and why every published port binds to `127.0.0.1` (P-R32).
 - `SECURITY.md` states that the mock is test infrastructure and gives the reporting route.
 
 ## Acceptance
@@ -330,6 +342,7 @@ The execution ledger recorded these rulings while the plan ran. The text above a
 - P-R14: the existing control commands keep exit code 1 for their own validation messages.
 - P-R15: the new `token` command exits with code 2 on usage errors, and a malformed control URL exits with code 2 for every command.
 - P-R16: the control URL comes from `--control`, then `MOCK_CONTROL_URL`, then `ADMIN_SDK_MOCK_CONTROL`, then the configuration's control listener for `env` or `http://127.0.0.1:8080`.
+- P-R29: when the proxy is on, `env`, `startMock().env()`, and the action also export `NODE_USE_ENV_PROXY=1`. Without it, Node's built-in `fetch` skips the proxy and reaches real Google. `useInProcess()` cannot set it, because Node reads it only at startup.
 - P-R30: the spec text matches the code in these places:
   - The image sets `MOCK_CONFIG_DEFAULT=/config/admin-sdk-mock.json`, not `MOCK_CONFIG`. The lookup reads it last.
   - The action has `control-port` (default 18080) and `proxy-port` (default 13128) inputs.
@@ -337,3 +350,8 @@ The execution ledger recorded these rulings while the plan ran. The text above a
   - The action sets five outputs, `workdir`, `ca-file`, `ca-bundle-file`, `proxy-url`, and `control-url`, and no credential-path output.
   - `useInProcess()` sets `HTTPS_PROXY` and `https_proxy` for the whole process, not for the Google hostnames alone. It sets `NO_PROXY` and `no_proxy` to the loopback list.
   - The `empty` tier adds the student domain only when it differs from the primary domain.
+- P-R32: the final fix wave changed this behavior:
+  - With `passthrough` on, the proxy refuses a local target with `403`: `localhost`, a `.localhost` name, or a literal loopback, link-local, or unspecified address.
+  - `start` logs a `warning` event when passthrough is on and the proxy host is not loopback.
+  - `GET /health` answers `503` until every domain is ready. The image's health check reads `MOCK_CONTROL_PORT` and has a 600-second start period.
+  - The action maps a commit SHA pin to the image's SHA tag, and it rejects a line break in `workdir`, `config`, or `image`, and a port outside 1 to 65535.

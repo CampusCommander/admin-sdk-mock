@@ -17,15 +17,23 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: The tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
+      - name: CHANGELOG.md has notes for the tag
+        run: bash scripts/release-notes.sh "${GITHUB_REF_NAME#v}"
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run test:contract
       - run: npm run test:compat
+      - run: npm run test:examples
       - run: npm run test:package
-      - name: The tag matches package.json
-        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r examples/python/requirements.txt
+      - run: npm run test:python
   publish:
     runs-on: ubuntu-24.04
     needs: [verify]
@@ -33,22 +41,30 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Extract the release notes that verify checked
+        run: bash scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > release-notes.md
       - run: npm pack
+      - name: Build and smoke-test the image
+        run: |
+          set -euo pipefail
+          docker build -t admin-sdk-mock:release .
+          bash scripts/image-smoke.sh admin-sdk-mock:release
       - name: Log in to GHCR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Build and push the versioned image
+      - name: Push the versioned image
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          docker build -t admin-sdk-mock:release .
           for tag in "$version" "${version%.*}"; do
             docker tag admin-sdk-mock:release "ghcr.io/campuscommander/admin-sdk-mock:${tag}"
             docker push "ghcr.io/campuscommander/admin-sdk-mock:${tag}"
@@ -56,9 +72,4 @@ jobs:
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > release-notes.md
-          test -s release-notes.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
-          gh release create "$GITHUB_REF_NAME" campuscommander-admin-sdk-mock-*.tgz --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+        run: gh release create "$GITHUB_REF_NAME" campuscommander-admin-sdk-mock-*.tgz --title "$GITHUB_REF_NAME" --notes-file release-notes.md

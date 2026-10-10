@@ -22,6 +22,8 @@ RUN mkdir -p /data /ca-public /config && chown node:node /data /ca-public
 USER node
 VOLUME ["/data"]
 EXPOSE 443 3128 8080
-HEALTHCHECK --interval=5s --timeout=3s --retries=12 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+# /health answers 503 until every domain is ready. A large seed blocks the event loop, so the
+# start period covers the action's 600-second ready wait. The shell form reads the control port.
+HEALTHCHECK --interval=5s --timeout=3s --start-period=600s --retries=12 \
+  CMD node -e "fetch('http://127.0.0.1:${MOCK_CONTROL_PORT:-8080}/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 ENTRYPOINT ["node", "bin/admin-sdk-mock.ts", "start"]

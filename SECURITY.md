@@ -14,6 +14,28 @@ Run it only on a developer machine, a CI runner, or a test network.
 - The proxy refuses every target outside port 443 of the four Google hostnames unless `passthrough` is on. It never decrypts traffic, and with `passthrough` on it only tunnels. It binds to `127.0.0.1` outside the image.
 - The image binds every listener to `0.0.0.0` so that other containers reach it. Publish its ports on `127.0.0.1` only, as the examples do.
 
+## Passthrough
+
+With `passthrough` on, the proxy relays to any host and any port. Every client that reaches the proxy can use the relay.
+Through it, a client reaches the container's own control listener, which has no authentication, and link-local metadata endpoints such as `169.254.169.254`.
+
+The proxy refuses these passthrough targets with `403` and the `proxy-refused` log event, as it refuses other targets:
+
+- `localhost`, and every name that ends in `.localhost`.
+- A literal loopback address in `127.0.0.0/8`, or `::1`.
+- A literal link-local address in `169.254.0.0/16` or `fe80::/10`.
+- The unspecified addresses `0.0.0.0` and `::`.
+- The IPv4-mapped IPv6 form of each IPv4 address above, and IPv4 shorthand such as `127.1` or `2130706433`.
+
+The check reads the target as the client wrote it, and it never resolves a name.
+A host name that resolves to a local address still tunnels, for example `metadata.google.internal` on Google Cloud.
+The container's own network address, such as `172.17.0.2:8080`, also tunnels to the control listener.
+
+Every example therefore publishes each port on `127.0.0.1`. Then only processes on the host reach the proxy and the control API.
+A port published on every interface lets any machine on the network relay through the proxy and drive the control API.
+`start` logs a `warning` event when passthrough is on and the proxy listens on an address other than loopback, as in the image.
+Keep passthrough off on a shared network. Turn it on only when you trust every client that reaches the proxy.
+
 ## Safe use
 
 - Never point a production system at the mock, and never give the mock a real service-account key.

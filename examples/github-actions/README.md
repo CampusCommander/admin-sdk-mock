@@ -10,8 +10,8 @@ Inside this repository, use `uses: ./` instead of `uses: CampusCommander/admin-s
 
 ## Log in to the private image
 
-The image is private. Run `docker/login-action@v3` for `ghcr.io` before the action. Pass `GITHUB_TOKEN` as the password.
-Give the job `packages: read` permission.
+The image is private. Log in to `ghcr.io` before the action with `docker login --password-stdin`, as `workflow.yml` does.
+Pass `GITHUB_TOKEN` as the password, and give the job `packages: read` permission.
 
 `GITHUB_TOKEN` pulls the image only from repositories that the package grants access to, such as repositories in the same organization with access granted.
 Other repositories need a token with `read:packages`. Pass it as the login password.
@@ -19,14 +19,14 @@ To use the action from another repository, allow access from other repositories 
 
 ## Inputs
 
-| Input          | Default                             | Meaning                                                                                |
-| -------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `config`       | none                                | The path to an `admin-sdk-mock.json` in your repo.                                     |
-| `image`        | empty                               | The image to run. Empty picks `:X.Y.Z` for an action pinned to `vX.Y.Z`, else `:main`. |
-| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files.                                          |
-| `control-port` | `18080`                             | The host port for the control API.                                                     |
-| `proxy-port`   | `13128`                             | The host port for the proxy.                                                           |
-| `passthrough`  | `true`                              | Whether the proxy tunnels non-Google targets.                                          |
+| Input          | Default                             | Meaning                                                                                                                                  |
+| -------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`       | none                                | The path to an `admin-sdk-mock.json` in your repo.                                                                                       |
+| `image`        | empty                               | The image to run. Empty picks `:X.Y.Z` for an action pinned to `vX.Y.Z`, the SHA tag for an action pinned to a commit SHA, else `:main`. |
+| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files. It must not contain a line break.                                                          |
+| `control-port` | `18080`                             | The host port for the control API, an integer from 1 to 65535.                                                                           |
+| `proxy-port`   | `13128`                             | The host port for the proxy, an integer from 1 to 65535.                                                                                 |
+| `passthrough`  | `true`                              | Whether the proxy tunnels non-Google targets.                                                                                            |
 
 ## Passthrough
 

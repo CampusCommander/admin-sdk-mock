@@ -26,7 +26,7 @@ jobs:
       - id: mock
         uses: CampusCommander/admin-sdk-mock@v1.0.0
         with:
-          config: admin-sdk-mock.json
+          config: .github/admin-sdk-mock.json
       - run: npm ci
       - run: npm test
         env:
@@ -35,6 +35,7 @@ jobs:
 
 Until v1.0.0 is tagged, use `@main`.
 [examples/github-actions](../../examples/github-actions) holds this workflow and its configuration.
+Keep the action's configuration apart from the `init` starter. The starter's relative key paths resolve under `/config`, where the container cannot write.
 
 ### Access
 
@@ -44,14 +45,14 @@ A workflow in another repository uses the action only when the Actions settings 
 
 ### Inputs
 
-| Input          | Default                             | Meaning                                                                                                                               |
-| -------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `config`       | none                                | The path to an `admin-sdk-mock.json` in the repository. A missing file fails the step.                                                |
-| `image`        | empty                               | The image to run. Empty picks `ghcr.io/campuscommander/admin-sdk-mock:X.Y.Z` for an action pinned to `vX.Y.Z`, and `:main` otherwise. |
-| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files.                                                                                         |
-| `control-port` | `18080`                             | The host port for the control API.                                                                                                    |
-| `proxy-port`   | `13128`                             | The host port for the proxy.                                                                                                          |
-| `passthrough`  | `'true'`                            | Whether the proxy tunnels non-Google targets.                                                                                         |
+| Input          | Default                             | Meaning                                                                                                                                                                                 |
+| -------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`       | none                                | The path to an `admin-sdk-mock.json` in the repository. A missing file fails the step.                                                                                                  |
+| `image`        | empty                               | The image to run. Empty picks `ghcr.io/campuscommander/admin-sdk-mock:X.Y.Z` for an action pinned to `vX.Y.Z`, the commit SHA tag for an action pinned to a SHA, and `:main` otherwise. |
+| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files. A value with a line break fails the step.                                                                                                 |
+| `control-port` | `18080`                             | The host port for the control API. Any value other than an integer from 1 to 65535 fails the step.                                                                                      |
+| `proxy-port`   | `13128`                             | The host port for the proxy. Any value other than an integer from 1 to 65535 fails the step.                                                                                            |
+| `passthrough`  | `'true'`                            | Whether the proxy tunnels non-Google targets.                                                                                                                                           |
 
 ### Outputs
 
@@ -86,7 +87,9 @@ The action runs one container named `admin-sdk-mock` as the runner user, with th
 - The configuration file mounted read-only at `/config/admin-sdk-mock.json`.
 - `MOCK_GOOGLE_PORT=8443`, `MOCK_PROXY_PORT=3128`, `MOCK_PROXY_PASSTHROUGH`, `MOCK_CA_EXPORT=/out/ca.pem`, and `MOCK_READY_FILE=/out/ready.json`.
 
+The step logs the image it starts. A failed `docker run`, such as a pull without access, fails the step with an error that names the image.
 It waits up to 600 seconds for `ready.json`. When the container exits first, or the wait ends, the step fails and prints the container log.
+CI publishes a commit SHA tag only for a push to `main`. For an action pinned to any other commit, set `image`.
 `docker logs admin-sdk-mock` in a later step shows the mock's log after a failure.
 
 ## Other CI systems
@@ -103,7 +106,12 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
   -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128 -e MOCK_PROXY_PASSTHROUGH=true \
   -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
   ghcr.io/campuscommander/admin-sdk-mock:1.0.0
-for _ in $(seq 1 600); do [ -f "$workdir/out/ready.json" ] && break; sleep 1; done
+for _ in $(seq 1 600); do
+  [ -f "$workdir/out/ready.json" ] && break
+  [ "$(docker inspect -f '{{.State.Running}}' admin-sdk-mock)" = true ] \
+    || { echo "The mock exited before it became ready."; docker logs admin-sdk-mock; exit 1; }
+  sleep 1
+done
 test -f "$workdir/out/ready.json" || { echo "The mock did not become ready in 600 seconds."; docker logs admin-sdk-mock; exit 1; }
 export HTTPS_PROXY=http://127.0.0.1:13128 https_proxy=http://127.0.0.1:13128 NODE_USE_ENV_PROXY=1
 export NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1
@@ -115,8 +123,29 @@ export ADMIN_SDK_MOCK_CONTROL=http://127.0.0.1:18080
 
 Until v1.0.0 is tagged, use the image tag `main`.
 Log in to `ghcr.io` first, as [installation](installation.md#the-image) shows.
-When Docker runs on another host, such as a docker-in-docker service, replace `127.0.0.1` in the URLs with that host.
+The wait stops early, and prints the container log, when the container exits first.
 The ready file holds the `ready` event. Its `domains[].customerId` and `domains[].adminEmail` name each domain.
+
+### Docker on another host
+
+A job that reaches Docker on another host, such as a docker-in-docker service named `docker`, needs these changes:
+
+- Publish the ports on the service network only. The job cannot reach `127.0.0.1` on the Docker host.
+  Publish only the proxy port, on the Docker host's address on that network: `-p <service address>:13128:3128`. Never publish it on every interface.
+- Point clients at the proxy on that host, for example `HTTPS_PROXY=http://docker:13128`. The proxy has no `Host` guard, so the name works.
+- Run control commands inside the container, for example `docker exec admin-sdk-mock admin-sdk-mock domain list`.
+  The control API answers `403` to `Host: docker`. It accepts only `localhost`, `127.0.0.1`, `[::1]`, and `admin-sdk-mock`, each with any port.
+- Keep passthrough off unless that network is private to the job. With passthrough on, every client on the network can relay through the proxy to any host and port.
+  That relay also reaches the control listener at the container's network address. [SECURITY.md](../../SECURITY.md#passthrough) explains the risk.
+  With passthrough off, add the job's other hosts to `NO_PROXY`.
+
+A `-v` path names a directory on the Docker host, not in the job. Read the ready file and the CA through `docker exec`:
+
+```sh
+docker exec admin-sdk-mock test -f /out/ready.json
+docker exec admin-sdk-mock cat /out/ca.pem > mock-ca.pem
+docker exec admin-sdk-mock cat /out/ca-bundle.pem > mock-ca-bundle.pem
+```
 
 ### Without Docker
 
@@ -124,14 +153,20 @@ A runner with Node 24.11 or later runs the package directly. The repository's `a
 
 ```sh
 npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0
-npx admin-sdk-mock start --ready-file .admin-sdk-mock/ready.json > mock.log &
-for _ in $(seq 1 600); do [ -f .admin-sdk-mock/ready.json ] && break; sleep 1; done
+npx admin-sdk-mock start --ready-file .admin-sdk-mock/ready.json > mock.log 2>&1 &
+mock_pid=$!
+for _ in $(seq 1 600); do
+  [ -f .admin-sdk-mock/ready.json ] && break
+  kill -0 "$mock_pid" 2> /dev/null || { echo "The mock exited before it became ready."; cat mock.log; exit 1; }
+  sleep 1
+done
 test -f .admin-sdk-mock/ready.json || { echo "The mock did not become ready in 600 seconds."; cat mock.log; exit 1; }
 eval "$(npx admin-sdk-mock env)"
 npm test
 ```
 
 Until v1.0.0 is tagged, use `#main`.
+The wait stops early, and prints `mock.log`, when the mock exits first.
 `start` deletes an old ready file before it starts, so the wait never sees a stale one.
 A graceful stop deletes the ready file that `start` wrote.
 

@@ -6,19 +6,19 @@ inputs:
     required: false
     default: ''
   image:
-    description: The image to run. Empty picks the image tag that matches a pinned action version, else main. A private image needs docker login first.
+    description: The image to run. Empty picks the tag that matches an action pinned to vX.Y.Z or to a main commit SHA, else main. A private image needs docker login first.
     required: false
     default: ''
   workdir:
-    description: The host directory for data and output files.
+    description: The host directory for data and output files. It must not contain a line break.
     required: false
     default: ''
   control-port:
-    description: The host port for the control API.
+    description: The host port for the control API, an integer from 1 to 65535.
     required: false
     default: '18080'
   proxy-port:
-    description: The host port for the proxy.
+    description: The host port for the proxy, an integer from 1 to 65535.
     required: false
     default: '13128'
   passthrough:
@@ -56,14 +56,36 @@ runs:
         ACTION_REF: ${{ github.action_ref }}
       run: |
         set -euo pipefail
+        # The step echoes these values and writes paths built from them to GITHUB_ENV and
+        # GITHUB_OUTPUT, where a line break would start a new entry. Check them before any use.
+        for input in workdir:INPUT_WORKDIR config:INPUT_CONFIG image:INPUT_IMAGE; do
+          name="${input#*:}"
+          value="${!name}"
+          if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            echo "::error::The ${input%%:*} input must not contain a line break."
+            exit 1
+          fi
+        done
+        for input in control-port:CONTROL_PORT proxy-port:PROXY_PORT; do
+          name="${input#*:}"
+          value="${!name}"
+          if ! [[ "$value" =~ ^[1-9][0-9]{0,4}$ ]] || (( value > 65535 )); then
+            echo "::error::The ${input%%:*} input must be an integer from 1 to 65535."
+            exit 1
+          fi
+        done
         image="$INPUT_IMAGE"
         if [ -z "$image" ]; then
           if [[ "$ACTION_REF" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             image="ghcr.io/campuscommander/admin-sdk-mock:${BASH_REMATCH[1]}"
+          elif [[ "$ACTION_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            # CI tags the image with the full commit SHA of each push to main.
+            image="ghcr.io/campuscommander/admin-sdk-mock:${ACTION_REF}"
           else
             image="ghcr.io/campuscommander/admin-sdk-mock:main"
           fi
         fi
+        echo "Starting the Admin SDK mock from ${image}"
         if [ -n "$INPUT_CONFIG" ] && [ ! -f "$INPUT_CONFIG" ]; then
           echo "::error::config $INPUT_CONFIG does not exist."
           exit 1
@@ -81,7 +103,10 @@ runs:
         if [ -n "$INPUT_CONFIG" ]; then
           args+=(-v "$(realpath "$INPUT_CONFIG"):/config/admin-sdk-mock.json:ro")
         fi
-        docker run "${args[@]}" "$image" > /dev/null
+        if ! docker run "${args[@]}" "$image" > /dev/null; then
+          echo "::error::docker run failed for ${image}. The lines above name the cause."
+          exit 1
+        fi
         for _ in $(seq 1 600); do
           [ -f "$workdir/out/ready.json" ] && break
           if [ "$(docker inspect -f '{{.State.Running}}' admin-sdk-mock)" != "true" ]; then

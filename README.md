@@ -53,9 +53,16 @@ docker run --detach --name admin-sdk-mock --user "$(id -u):$(id -g)" \
   -e MOCK_GOOGLE_PORT=8443 -e MOCK_PROXY_PORT=3128 \
   -e MOCK_CA_EXPORT=/out/ca.pem -e MOCK_READY_FILE=/out/ready.json \
   ghcr.io/campuscommander/admin-sdk-mock:1.0.0
-(for _ in $(seq 1 600); do [ -f mock/out/ready.json ] && exit 0; sleep 1; done
-  echo "The mock did not become ready in 600 seconds."; docker logs admin-sdk-mock; exit 1)
+(for _ in $(seq 1 600); do
+  [ -f mock/out/ready.json ] && exit 0
+  [ "$(docker inspect -f '{{.State.Running}}' admin-sdk-mock)" = true ] \
+    || { echo "The mock exited before it became ready."; docker logs admin-sdk-mock; exit 1; }
+  sleep 1
+done
+echo "The mock did not become ready in 600 seconds."; docker logs admin-sdk-mock; exit 1)
 ```
+
+The wait stops early, and prints the container log, when the container exits first.
 
 Then point the client environment at the published proxy and the exported CA files:
 
@@ -74,6 +81,8 @@ The key file lands at `mock/out/credentials/demo.json`. Stop the mock with `dock
 
 The action starts the image on the runner and exports the client environment to every later step.
 The image is private, so log in to `ghcr.io` first. The job needs the `packages: read` permission.
+Give the action its own configuration file, such as `.github/admin-sdk-mock.json`, as [examples/github-actions](examples/github-actions) does.
+The `init` starter does not fit. Its relative key paths resolve under `/config`, where the container cannot write.
 
 ```yaml
 on: [push, pull_request]
@@ -94,7 +103,7 @@ jobs:
       - id: mock
         uses: CampusCommander/admin-sdk-mock@v1.0.0
         with:
-          config: admin-sdk-mock.json
+          config: .github/admin-sdk-mock.json
       - run: npm ci
       - run: npm test
         env:
