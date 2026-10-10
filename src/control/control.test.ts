@@ -6,6 +6,8 @@ import test from 'node:test';
 import { READ_WRITE_SCOPES, SCOPES } from '../auth/scopes.ts';
 import { fakeClock } from '../clock.ts';
 import { saveBeforeImage } from '../store/lag.ts';
+import { row } from '../store/sqlite.ts';
+import { addTestGroup, addTestMember } from '../testing/groups.ts';
 import {
   directoryClient,
   grantToken,
@@ -304,7 +306,7 @@ test('index flush makes pending writes visible, and GET /domains counts them', a
     `/domains/${created.customerId}/index/flush`,
   );
   assert.equal(flushed.status, 200, flushed.text);
-  assert.deepEqual(flushed.json(), { flushed: 1 });
+  assert.deepEqual(flushed.json(), { flushed: 1, delaysEnded: 0 });
   assert.equal(await pending(), 0);
   assert.equal(
     (await call('POST', '/domains/C0missing/index/flush')).status,
@@ -421,5 +423,92 @@ test('a reset discards every write, before-image, command, and deleted user', as
         .get() as Record<string, string>,
     )[0],
     'Before reset',
+  );
+});
+
+test('flush ends pending nesting and ready delays', async (t) => {
+  const { harness, call } = await setup(t);
+  const { customerId } = (await call('POST', '/domains', SPEC)).json();
+  const domain = harness.mock.domains.get(customerId)!;
+  const P = domain.spec.primaryDomain;
+  const now = harness.mock.clock.now();
+  const fresh = addTestGroup(domain.db, {
+    email: `fresh@${P}`,
+    createdAt: now,
+  });
+  const parent = addTestGroup(domain.db, { email: `parent@${P}` });
+  addTestMember(domain.db, {
+    groupId: parent.id,
+    memberId: fresh.id,
+    email: fresh.email,
+    type: 'GROUP',
+    addedAt: now,
+  });
+  const flushed = await call('POST', `/domains/${customerId}/index/flush`);
+  assert.equal(flushed.status, 200);
+  assert.equal(flushed.json().delaysEnded, 2);
+  assert.equal(
+    row<{ created_at: number }>(
+      domain.db
+        .prepare('SELECT created_at FROM groups WHERE id = ?')
+        .get(fresh.id),
+    )!.created_at,
+    0,
+  );
+  assert.equal(
+    row<{ added_at: number }>(
+      domain.db
+        .prepare(
+          'SELECT added_at FROM group_members WHERE group_id = ? AND member_id = ?',
+        )
+        .get(parent.id, fresh.id),
+    )!.added_at,
+    0,
+  );
+  const again = await call('POST', `/domains/${customerId}/index/flush`);
+  assert.equal(again.json().delaysEnded, 0);
+});
+
+test('domain counts include groups and memberships', async (t) => {
+  const { harness, call } = await setup(t);
+  const { customerId } = (await call('POST', '/domains', SPEC)).json();
+  const domain = harness.mock.domains.get(customerId)!;
+  const listed = (await call('GET', '/domains'))
+    .json()
+    .find((entry: { customerId: string }) => entry.customerId === customerId);
+  const count = (table: string) =>
+    Number(
+      row<{ n: number }>(
+        domain.db.prepare(`SELECT count(*) AS n FROM ${table}`).get(),
+      )!.n,
+    );
+  assert.equal(listed.counts.groups, count('groups'));
+  assert.equal(listed.counts.memberships, count('group_members'));
+  assert.ok(listed.counts.groups > 0);
+});
+
+test('a domain reset discards group writes', async (t) => {
+  const { harness, call } = await setup(t);
+  const { customerId } = (await call('POST', '/domains', SPEC)).json();
+  const before = harness.mock.domains.get(customerId)!;
+  const P = before.spec.primaryDomain;
+  addTestGroup(before.db, { email: `written@${P}` });
+  assert.equal(
+    (await call('POST', `/domains/${customerId}/reset`)).status,
+    200,
+  );
+  const after = harness.mock.domains.get(customerId)!;
+  assert.equal(
+    after.db
+      .prepare('SELECT 1 FROM groups WHERE email = ?')
+      .get(`written@${P}`),
+    undefined,
+  );
+  assert.ok(
+    Number(
+      row<{ n: number }>(
+        after.db.prepare('SELECT count(*) AS n FROM groups').get(),
+      )!.n,
+    ) > 0,
   );
 });

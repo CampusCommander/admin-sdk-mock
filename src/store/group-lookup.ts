@@ -76,3 +76,35 @@ export function newGroupId(
     if (!taken(id)) return id;
   }
 }
+
+/**
+ * The next `group_members` ID: one past every live row and every waiting
+ * before-image, so a new membership never shares a key with a waiting image.
+ */
+export function nextMemberId(db: DatabaseSync): number {
+  return Number(
+    row<{ n: number }>(
+      db
+        .prepare(
+          'SELECT MAX(COALESCE((SELECT MAX(id) FROM group_members), 0), COALESCE((SELECT MAX(id) FROM group_members_prior), 0)) + 1 AS n',
+        )
+        .get(),
+    )!.n,
+  );
+}
+
+/** End every pending ready delay and nesting delay. Returns the rows changed. */
+export function endGroupDelays(
+  db: DatabaseSync,
+  cutoffs: { readyAfter: number; nestingAfter: number },
+): number {
+  const groups = db
+    .prepare('UPDATE groups SET created_at = 0 WHERE created_at > ?')
+    .run(cutoffs.readyAfter).changes;
+  const links = db
+    .prepare(
+      "UPDATE group_members SET added_at = 0 WHERE type = 'GROUP' AND added_at > ?",
+    )
+    .run(cutoffs.nestingAfter).changes;
+  return Number(groups) + Number(links);
+}

@@ -5,6 +5,7 @@ import { DomainError } from '../domains.ts';
 import { FaultError } from '../faults/faults.ts';
 import type { Mock } from '../mock.ts';
 import { settleDueCommands } from '../directory/command-effects.ts';
+import { endGroupDelays } from '../store/group-lookup.ts';
 import { flushLag, pendingLag } from '../store/lag.ts';
 import { row } from '../store/sqlite.ts';
 
@@ -116,6 +117,8 @@ export function createControlHandler(mock: Mock) {
       orgUnits: count('orgunits'),
       users: count('users'),
       devices: count('devices'),
+      groups: count('groups'),
+      memberships: count('group_members'),
       pendingWrites: domain
         ? pendingLag(
             domain.db,
@@ -264,8 +267,16 @@ export function createControlHandler(mock: Mock) {
       method === 'POST'
     ) {
       const domain = domainOrThrow(id);
-      settleDueCommands(domain.db, mock.clock.now(), 0);
-      return send(response, 200, { flushed: flushLag(domain.db) });
+      const now = mock.clock.now();
+      const writes = domain.record.settings.writes;
+      const scale = mock.timing.scale;
+      settleDueCommands(domain.db, now, 0);
+      const flushed = flushLag(domain.db);
+      const delaysEnded = endGroupDelays(domain.db, {
+        readyAfter: now - (writes.groupReadySeconds * 1000) / scale,
+        nestingAfter: now - (writes.nestingDelaySeconds * 1000) / scale,
+      });
+      return send(response, 200, { flushed, delaysEnded });
     }
     if (parts.length === 4 && parts[2] === 'delegation' && method === 'PUT') {
       domainOrThrow(id);
