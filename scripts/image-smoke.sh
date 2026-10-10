@@ -51,6 +51,8 @@ if [ "$status" != "200" ]; then
 fi
 grep -q '"primaryEmail"' "$work/users.json" \
   || { echo "users.list response has no primaryEmail"; cat "$work/users.json"; exit 1; }
-refused="$(curl --silent --output /dev/null --write-out '%{http_code}' --proxy http://127.0.0.1:13129 https://example.com/ || true)"
+# %{http_connect} holds the proxy's answer to CONNECT. %{http_code} stays 000 when the tunnel fails.
+refused="$(curl --silent --output /dev/null --write-out '%{http_connect}' --proxy http://127.0.0.1:13129 https://example.com/ || true)"
+[ "$refused" = "403" ] || { echo "The proxy answered ${refused} to a non-Google CONNECT, not 403."; exit 1; }
 [ -f "$work/out/credentials/smoke.json" ] || { echo "The key file is missing."; exit 1; }
-echo "image smoke passed (users.list 200, key file written, non-Google CONNECT gave ${refused})"
+echo "image smoke passed (users.list 200, key file written, non-Google CONNECT refused with 403)"

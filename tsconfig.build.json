@@ -9,5 +9,5 @@
     "sourceMap": false
   },
   "include": ["src", "bin"],
-  "exclude": ["src/**/*.test.ts", "src/testing"]
+  "exclude": ["src/**/*.test.ts", "src/testing", "src/docs"]
 }
