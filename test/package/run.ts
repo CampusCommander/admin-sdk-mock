@@ -194,23 +194,39 @@ function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
-/** Stop the mock, wait up to 10 s for it to exit, then kill the group. */
-async function stopMock(signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
-  const child = mock;
-  if (!child) return;
-  mock = undefined;
-  const exited = new Promise<void>((resolve) => {
-    if (child.exitCode !== null || child.signalCode !== null) resolve();
-    else child.once('exit', () => resolve());
-  });
-  signalGroup(child, signal);
-  const timer = new Promise<'timeout'>((resolve) =>
-    setTimeout(() => resolve('timeout'), 10_000).unref(),
-  );
-  if ((await Promise.race([exited, timer])) === 'timeout') {
-    signalGroup(child, 'SIGKILL');
-    await exited;
+function groupAlive(child: ChildProcess): boolean {
+  if (child.pid === undefined) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch {
+    return false;
   }
+}
+
+let stopping: Promise<void> | undefined;
+/** The exit code a received signal asks for, set once. */
+let signalExit: number | undefined;
+
+/**
+ * Stop the mock and wait until its whole process group is gone. The first call
+ * signals the group and escalates to SIGKILL after 10 s. Later calls share its promise.
+ */
+function stopMock(signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+  return (stopping ??= (async () => {
+    const child = mock;
+    if (!child) return;
+    signalGroup(child, signal);
+    const deadline = Date.now() + 10_000;
+    let killed = false;
+    while (groupAlive(child)) {
+      if (!killed && Date.now() >= deadline) {
+        signalGroup(child, 'SIGKILL');
+        killed = true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  })());
 }
 
 for (const [signal, code] of [
@@ -218,9 +234,10 @@ for (const [signal, code] of [
   ['SIGTERM', 143],
 ] as const)
   process.once(signal, () => {
-    void stopMock('SIGKILL').finally(() => {
+    signalExit ??= code;
+    void stopMock().finally(() => {
       rmSync(tmp, { recursive: true, force: true });
-      process.exit(code);
+      process.exit(signalExit);
     });
   });
 
@@ -364,7 +381,7 @@ try {
     SUBJECT: domain.adminEmail,
   });
   step(`the CLI client listed users through the mock (${output.trim()})`);
-  await stopMock('SIGTERM');
+  await stopMock();
 
   // 7. Run the API in process.
   writeFileSync(join(consumer, 'api-client.mjs'), apiClient);
@@ -397,8 +414,8 @@ try {
   failed = true;
   console.error(error instanceof Error ? error.message : error);
 } finally {
-  await stopMock('SIGKILL');
+  await stopMock();
   // 9. Remove the temporary directory.
   rmSync(tmp, { recursive: true, force: true });
 }
-process.exit(failed ? 1 : 0);
+process.exit(signalExit ?? (failed ? 1 : 0));
