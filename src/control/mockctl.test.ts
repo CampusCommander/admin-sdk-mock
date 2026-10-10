@@ -78,3 +78,39 @@ test('mockctl creates a domain, issues a credential file, and sets the clock', a
   await assert.rejects(ctl('domain', 'show', 'C0missing'), /404/);
   await assert.rejects(ctl('nonsense'), /Usage: mockctl/);
 });
+
+test('mockctl flushes the search index of a domain', async (t) => {
+  const harness = await startHarness();
+  const server = http.createServer(createControlHandler(harness.mock));
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => {
+    server.close();
+    await harness.close();
+  });
+  const env = {
+    ...process.env,
+    MOCK_CONTROL_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+  };
+  const ctl = (...args: string[]) =>
+    run(process.execPath, ['bin/mockctl.ts', ...args], { env });
+  const created = JSON.parse(
+    (
+      await ctl(
+        'domain',
+        'create',
+        '--tier',
+        'small',
+        '--seed',
+        'flush',
+        '--counts',
+        '{"schools":1,"students":30,"staff":5,"devices":20}',
+      )
+    ).stdout,
+  );
+  assert.deepEqual(
+    JSON.parse((await ctl('index', 'flush', created.customerId)).stdout),
+    { flushed: 0 },
+  );
+  await assert.rejects(ctl('index', 'flush'), /A customer ID is required/);
+});
