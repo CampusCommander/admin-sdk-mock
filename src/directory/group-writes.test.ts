@@ -173,6 +173,19 @@ test('an email change keeps the old address as an alias and updates parent membe
     )!.email,
     `new@${P}`,
   );
+  // During the delay the lagged link still holds the old address, and both addresses find the parent.
+  for (const key of [`old@${P}`, `new@${P}`, child.id])
+    for (const query of [
+      { userKey: key },
+      { customer: 'my_customer', query: `memberKey=${key}` },
+    ])
+      assert.deepEqual(
+        (await api('GET', '/groups', { query }))
+          .json()
+          .groups?.map((group: { email: string }) => group.email),
+        [`parent@${P}`],
+        JSON.stringify(query),
+      );
   // Lists lag the rename: the parent link shows the new address after the delay.
   await clock.advance(D);
   const parents = (

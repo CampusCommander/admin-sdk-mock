@@ -20,7 +20,11 @@ import {
   withEtag,
 } from './common.ts';
 import { QueryError } from './device-query.ts';
-import { resolveMemberTarget, visibleGroup } from './group-common.ts';
+import {
+  resolveMemberTarget,
+  visibleGroup,
+  type MemberTarget,
+} from './group-common.ts';
 import { parseGroupQuery } from './group-query.ts';
 
 const SORT_ORDER = { ascending: 'ASC', descending: 'DESC' } as const;
@@ -92,6 +96,28 @@ export function getGroup(call: Call): ApiResponse {
   };
 }
 
+/**
+ * Every current address of a member target: a user or group's primary address
+ * and its aliases. Ruling: userKey and memberKey match the member ID and any of
+ * these addresses. A rename keeps the old address as an alias, so a lagged
+ * membership row that still holds it matches during the search delay.
+ */
+function targetAddresses(db: DatabaseSync, target: MemberTarget): string[] {
+  const aliases =
+    target.type === 'USER'
+      ? 'SELECT alias FROM user_aliases WHERE user_id = ?'
+      : target.type === 'GROUP'
+        ? 'SELECT alias FROM group_aliases WHERE group_id = ?'
+        : null;
+  if (!aliases) return [target.email];
+  return [
+    target.email,
+    ...rows<{ alias: string }>(db.prepare(aliases).all(target.id)).map(
+      (entry) => entry.alias,
+    ),
+  ];
+}
+
 /** `groups.list`. Lists lag writes by the search delay. */
 export function listGroups(call: Call): ApiResponse {
   const domain = domainOf(call);
@@ -118,11 +144,12 @@ export function listGroups(call: Call): ApiResponse {
     filter.where.push('substr(email, ?) = ?');
     filter.params.push(-(domainName.length + 1), `@${domainName}`);
   }
-  const directMember = (target: { email: string; id: string }) => {
+  const directMember = (target: MemberTarget) => {
+    const addresses = targetAddresses(domain.db, target);
     filter.where.push(
-      `id IN (SELECT group_id FROM ${members} WHERE email = ? AND member_id = ?)`,
+      `id IN (SELECT group_id FROM ${members} WHERE email IN (${addresses.map(() => '?').join(', ')}) AND member_id = ?)`,
     );
-    filter.params.push(target.email, target.id);
+    filter.params.push(...addresses, target.id);
   };
   if (userKey) {
     // Ruling: a userKey that names no user or group of the customer returns 400.

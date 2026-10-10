@@ -136,6 +136,14 @@ test('a primaryEmail change updates the member email in every membership', async
     )!.n,
     5,
   );
+  // During the delay the lagged memberships still hold the old address.
+  const during = (await api('GET', '/groups', { query: { userKey: renamed } }))
+    .json()
+    .groups?.map((group: { email: string }) => group.email);
+  assert.deepEqual(
+    during,
+    groups.map((group) => group.email),
+  );
   await clock.advance(D);
   const byUser = (await api('GET', '/groups', { query: { userKey: renamed } }))
     .json()
