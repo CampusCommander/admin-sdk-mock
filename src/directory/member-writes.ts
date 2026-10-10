@@ -3,6 +3,7 @@ import type { ApiResponse, Call } from '../http/types.ts';
 import {
   DELIVERIES,
   ROLES,
+  nextMemberId,
   type MemberRow,
   type MemberType,
 } from '../store/group-lookup.ts';
@@ -94,15 +95,7 @@ export function insertMember(call: Call): ApiResponse {
   if (type === 'GROUP' && reaches(db, target.id, group.id))
     throw invalidArgument(call, 'Cyclic memberships not allowed.');
   // A new ID past every live row and every waiting before-image never reuses a key.
-  const id = Number(
-    row<{ n: number }>(
-      db
-        .prepare(
-          'SELECT MAX(COALESCE((SELECT MAX(id) FROM group_members), 0), COALESCE((SELECT MAX(id) FROM group_members_prior), 0)) + 1 AS n',
-        )
-        .get(),
-    )!.n,
-  );
+  const id = nextMemberId(db);
   transaction(db, () => {
     saveBeforeImage(db, 'group_members', id, call.now, searchDelayMs(call));
     db.prepare(

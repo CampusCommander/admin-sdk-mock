@@ -6,6 +6,12 @@ import {
   saveBeforeImage,
   saveBeforeImagesWhere,
 } from '../store/lag.ts';
+import { addressInUse } from '../store/addresses.ts';
+import {
+  nextMemberId,
+  type Delivery,
+  type MemberRole,
+} from '../store/group-lookup.ts';
 import { row, rows, transaction } from '../store/sqlite.ts';
 import { findUser, type UserRow } from '../store/user-lookup.ts';
 import {
@@ -42,19 +48,13 @@ export function primaryEmail(call: Call, value: unknown): string {
   return email;
 }
 
-/** True when another user holds the address as a primary email or an alias. */
+/** True when another user, a user alias, a group, or a group alias holds the address. */
 export function emailInUse(
   db: DatabaseSync,
   email: string,
   exceptUserId = '',
 ): boolean {
-  return (
-    db
-      .prepare(
-        'SELECT 1 FROM users WHERE primary_email = ? AND id != ? UNION ALL SELECT 1 FROM user_aliases WHERE alias = ? AND user_id != ? LIMIT 1',
-      )
-      .get(email, exceptUserId, email, exceptUserId) !== undefined
-  );
+  return addressInUse(db, email, { userId: exceptUserId });
 }
 
 function namePart(
@@ -287,6 +287,18 @@ export function updateUser(call: Call): ApiResponse {
         domain.db
           .prepare('UPDATE users SET primary_email = ? WHERE id = ?')
           .run(rename, user.id);
+        const asMember = "email = ? AND member_id = ? AND type = 'USER'";
+        saveBeforeImagesWhere(
+          domain.db,
+          'group_members',
+          asMember,
+          [user.primary_email, user.id],
+          call.now,
+          delay,
+        );
+        domain.db
+          .prepare(`UPDATE group_members SET email = ? WHERE ${asMember}`)
+          .run(rename, user.primary_email, user.id);
         domain.db
           .prepare('INSERT INTO user_aliases (alias, user_id) VALUES (?, ?)')
           .run(user.primary_email, user.id);
@@ -299,6 +311,14 @@ export function updateUser(call: Call): ApiResponse {
 interface DeletedUserRow extends UserRow {
   deleted_at: number;
   aliases: string;
+  memberships: string;
+}
+
+/** One membership that a deleted user held, kept for undelete. */
+interface SavedMembership {
+  group_id: string;
+  role: MemberRole;
+  delivery: Delivery;
 }
 
 /** `users.delete`. The user leaves get at once and lists after the delay. */
@@ -313,15 +333,28 @@ export function deleteUser(call: Call): ApiResponse {
       )
       .all(user.id),
   ).map((entry) => entry.alias);
+  const asMember = "email = ? AND member_id = ? AND type = 'USER'";
+  const memberships = rows<SavedMembership>(
+    domain.db
+      .prepare(
+        `SELECT group_id, role, delivery FROM group_members WHERE ${asMember} ORDER BY id`,
+      )
+      .all(user.primary_email, user.id),
+  );
   const delay = searchDelayMs(call);
   transaction(domain.db, () => {
     saveBeforeImage(domain.db, 'users', user.id, call.now, delay);
     saveBeforeImage(domain.db, 'deleted_users', user.id, call.now, delay);
     domain.db
       .prepare(
-        `INSERT INTO deleted_users (${columns}, deleted_at, aliases) SELECT ${columns}, ?, ? FROM users WHERE id = ?`,
+        `INSERT INTO deleted_users (${columns}, deleted_at, aliases, memberships) SELECT ${columns}, ?, ?, ? FROM users WHERE id = ?`,
       )
-      .run(call.now, JSON.stringify(aliases), user.id);
+      .run(
+        call.now,
+        JSON.stringify(aliases),
+        JSON.stringify(memberships),
+        user.id,
+      );
     saveBeforeImagesWhere(
       domain.db,
       'user_aliases',
@@ -333,9 +366,20 @@ export function deleteUser(call: Call): ApiResponse {
     domain.db
       .prepare('DELETE FROM user_aliases WHERE user_id = ?')
       .run(user.id);
+    saveBeforeImagesWhere(
+      domain.db,
+      'group_members',
+      asMember,
+      [user.primary_email, user.id],
+      call.now,
+      delay,
+    );
+    domain.db
+      .prepare(`DELETE FROM group_members WHERE ${asMember}`)
+      .run(user.primary_email, user.id);
     domain.db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   });
-  return { status: 204 };
+  return { status: 204, scanned: memberships.length };
 }
 
 /**
@@ -384,6 +428,33 @@ export function undeleteUser(call: Call): ApiResponse {
     for (const alias of aliases) {
       saveBeforeImage(domain.db, 'user_aliases', alias, call.now, delay);
       insert.run(alias, deleted.id);
+    }
+    // Ruling: undelete restores the memberships the delete removed, except in groups deleted since.
+    const groupExists = domain.db.prepare('SELECT 1 FROM groups WHERE id = ?');
+    const already = domain.db.prepare(
+      'SELECT 1 FROM group_members WHERE group_id = ? AND email = ? AND member_id = ?',
+    );
+    const insertMember = domain.db.prepare(
+      "INSERT INTO group_members (id, group_id, member_id, email, type, role, delivery, added_at) VALUES (?, ?, ?, ?, 'USER', ?, ?, ?)",
+    );
+    for (const saved of JSON.parse(deleted.memberships) as SavedMembership[]) {
+      if (groupExists.get(saved.group_id) === undefined) continue;
+      if (
+        already.get(saved.group_id, deleted.primary_email, deleted.id) !==
+        undefined
+      )
+        continue;
+      const id = nextMemberId(domain.db);
+      saveBeforeImage(domain.db, 'group_members', id, call.now, delay);
+      insertMember.run(
+        id,
+        saved.group_id,
+        deleted.id,
+        deleted.primary_email,
+        saved.role,
+        saved.delivery,
+        call.now,
+      );
     }
     domain.db.prepare('DELETE FROM deleted_users WHERE id = ?').run(deleted.id);
   });
