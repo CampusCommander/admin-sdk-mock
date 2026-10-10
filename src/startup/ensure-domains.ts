@@ -1,10 +1,4 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
   AccountError,
@@ -20,6 +14,7 @@ import { resolveSpec } from '../seed/spec.ts';
 import { DEFAULT_SETTINGS, mergeSettings } from '../settings.ts';
 import type { StoredServiceAccount } from '../store/registry.ts';
 import { row } from '../store/sqlite.ts';
+import { writeSecret } from '../write-file.ts';
 
 export interface EnsuredServiceAccount {
   out: string;
@@ -149,10 +144,7 @@ export function ensureDomain(
       );
     mock.registry.setGrant(customerId, file.client_id, scopes);
     mkdirSync(dirname(account.out), { recursive: true });
-    writeFileSync(account.out, `${JSON.stringify(file, null, 2)}\n`, {
-      mode: 0o600,
-    });
-    chmodSync(account.out, 0o600);
+    writeSecret(account.out, `${JSON.stringify(file, null, 2)}\n`);
     return {
       out: account.out,
       clientEmail: file.client_email,

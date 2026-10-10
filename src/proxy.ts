@@ -9,23 +9,46 @@ export const GOOGLE_HOSTS: readonly string[] = [
   'chromemanagement.googleapis.com',
 ];
 
+/** How many targets each list of a ProxyHandle keeps. Older targets drop off. */
+export const KEPT_TARGETS = 1_000;
+
+/** The CONNECT requests that the proxy has handled since it started. */
+export interface ProxyCounts {
+  accepted: number;
+  refused: number;
+  tunneled: number;
+}
+
 export interface ProxyHandle {
   readonly port: number;
   readonly host: string;
   readonly url: string;
-  readonly accepted: string[];
-  readonly refused: string[];
-  readonly tunneled: string[];
+  /** The last KEPT_TARGETS targets tunneled to the mock, oldest first. */
+  readonly accepted: readonly string[];
+  /** The last KEPT_TARGETS targets refused with 403, oldest first. */
+  readonly refused: readonly string[];
+  /** The last KEPT_TARGETS targets tunneled as-is with passthrough, oldest first. */
+  readonly tunneled: readonly string[];
+  /** The running totals, which count every target the lists dropped. */
+  counts(): ProxyCounts;
   close(): Promise<void>;
 }
 
-/** Split `host:port`, including a bracketed IPv6 host. Returns null for a malformed target. */
+/**
+ * Split `host:port`, including a bracketed IPv6 host, and drop one trailing dot from the
+ * host, so `admin.googleapis.com.` matches as a Google hostname. Returns null for a
+ * malformed target.
+ */
 function parseTarget(target: string): { host: string; port: number } | null {
   const match = /^(\[[^\]]+\]|[^:]+):(\d{1,5})$/.exec(target);
   if (!match) return null;
   const port = Number(match[2]);
   if (port < 1 || port > 65_535) return null;
-  return { host: match[1].replace(/^\[|\]$/g, '').toLowerCase(), port };
+  const host = match[1]
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .toLowerCase();
+  return { host, port };
 }
 
 /**
@@ -43,6 +66,13 @@ export async function startProxy(options: {
   const accepted: string[] = [];
   const refused: string[] = [];
   const tunneled: string[] = [];
+  const counts: ProxyCounts = { accepted: 0, refused: 0, tunneled: 0 };
+  const record = (kind: keyof ProxyCounts, target: string) => {
+    counts[kind]++;
+    const list = { accepted, refused, tunneled }[kind];
+    list.push(target);
+    if (list.length > KEPT_TARGETS) list.shift();
+  };
   const sockets = new Set<net.Socket>();
   const track = (socket: net.Socket) => {
     sockets.add(socket);
@@ -63,12 +93,12 @@ export async function startProxy(options: {
         target.port === 443 &&
         GOOGLE_HOSTS.includes(target.host);
       if (!target || (!google && !options.passthrough)) {
-        refused.push(raw);
+        record('refused', raw);
         options.log?.({ event: 'proxy-refused', target: raw });
         client.end('HTTP/1.1 403 Forbidden\r\n\r\n');
         return;
       }
-      (google ? accepted : tunneled).push(raw);
+      record(google ? 'accepted' : 'tunneled', raw);
       const destination = google ? options.target : target;
       const upstream = net.connect(destination.port, destination.host, () => {
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
@@ -88,6 +118,7 @@ export async function startProxy(options: {
   server.listen(options.port, options.host);
   await once(server, 'listening');
   const port = (server.address() as AddressInfo).port;
+  let closing: Promise<void> | undefined;
   return {
     port,
     host: options.host,
@@ -95,10 +126,12 @@ export async function startProxy(options: {
     accepted,
     refused,
     tunneled,
-    async close() {
-      for (const socket of sockets) socket.destroy();
-      server.close();
-      await once(server, 'close').catch(() => undefined);
-    },
+    counts: () => ({ ...counts }),
+    close: () =>
+      (closing ??= (async () => {
+        for (const socket of sockets) socket.destroy();
+        server.close();
+        await once(server, 'close').catch(() => undefined);
+      })()),
   };
 }

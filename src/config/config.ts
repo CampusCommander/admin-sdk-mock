@@ -1,8 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { READ_SCOPES, READ_WRITE_SCOPES } from '../auth/scopes.ts';
+import { AccountError, checkProjectId } from '../auth/accounts.ts';
+import {
+  READ_SCOPES,
+  READ_WRITE_SCOPES,
+  SCOPE_PREFIX,
+} from '../auth/scopes.ts';
 import { parseTiming, TimingError } from '../clock.ts';
+import { FaultError, validateFault } from '../faults/faults.ts';
+import type { Mock } from '../mock.ts';
+import { buildRoutes, faultTargets } from '../routes.ts';
 import { resolveSpec, SpecError } from '../seed/spec.ts';
 import {
   DEFAULT_SETTINGS,
@@ -121,10 +129,16 @@ export class ConfigError extends Error {
   }
 }
 
-/** Read and parse a configuration file. */
+/** Read and parse a configuration file. A missing, unreadable, or malformed file is a ConfigError. */
 export function loadConfigFile(path: string): unknown {
   if (!existsSync(path)) throw new ConfigError([`${path} does not exist.`]);
-  const text = readFileSync(path, 'utf8');
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    const { code, message } = error as NodeJS.ErrnoException;
+    throw new ConfigError([`${path} cannot be read: ${code ?? message}.`]);
+  }
   try {
     return JSON.parse(text);
   } catch (error) {
@@ -254,7 +268,29 @@ function checkFlags(flags: ConfigFlags, errors: string[]): ConfigFlags {
   });
 }
 
-/** The checks that need a schema-valid shape: specs, settings, duplicate domains, and fixtures files. */
+/** The route IDs that a fault can target. buildRoutes reads the mock only inside handlers. */
+let targets: readonly string[] | undefined;
+const faultMethods = () =>
+  (targets ??= faultTargets(buildRoutes(undefined as unknown as Mock)));
+
+/** Check that a service account's scope list is not empty and holds Google scope URLs. */
+function checkScopes(
+  scopes: ServiceAccountEntry['scopes'],
+  path: string,
+  errors: string[],
+): void {
+  if (!Array.isArray(scopes)) return;
+  if (scopes.length === 0) errors.push(`${path} must list at least one scope.`);
+  scopes.forEach((scope, n) => {
+    if (!scope.startsWith(SCOPE_PREFIX))
+      errors.push(`${path}[${n}] must be a Google scope URL.`);
+  });
+}
+
+/**
+ * The checks that need a schema-valid shape: specs, settings, fault rules, service accounts,
+ * domains that share a customer ID or a domain name, and fixtures files.
+ */
 function checkDomains(config: MockConfig, errors: string[]): void {
   const defaults = attempt(
     errors,
@@ -263,24 +299,47 @@ function checkDomains(config: MockConfig, errors: string[]): void {
     (): DomainSettings =>
       mergeSettings(DEFAULT_SETTINGS, config.defaults.settings),
   );
-  const seen = new Map<string, number>();
+  const customers = new Map<string, number>();
+  const names = new Map<string, number>();
   config.domains.forEach((entry, index) => {
     const path = `domains[${index}]`;
-    const customerId = attempt(
-      errors,
-      SpecError,
-      `${path}.spec`,
-      () => resolveSpec(entry.spec).customerId,
+    const spec = attempt(errors, SpecError, `${path}.spec`, () =>
+      resolveSpec(entry.spec),
     );
     if (defaults)
       attempt(errors, SettingsError, `${path}.settings`, () =>
         mergeSettings(defaults, entry.settings),
       );
-    if (customerId !== undefined) {
-      const first = seen.get(customerId);
-      if (first === undefined) seen.set(customerId, index);
-      else
+    entry.faults.forEach((rule, n) =>
+      attempt(errors, FaultError, `${path}.faults[${n}]`, () =>
+        validateFault(rule, faultMethods()),
+      ),
+    );
+    entry.serviceAccounts.forEach((account, n) => {
+      const at = `${path}.serviceAccounts[${n}]`;
+      checkScopes(account.scopes, `${at}.scopes`, errors);
+      const { projectId } = account;
+      if (projectId !== undefined)
+        attempt(errors, AccountError, `${at}.projectId`, () =>
+          checkProjectId(projectId),
+        );
+    });
+    if (spec) {
+      const first = customers.get(spec.customerId);
+      const own = [
+        ...new Set([spec.primaryDomain, spec.studentDomain, spec.aliasDomain]),
+      ];
+      const shared = own.find((name) => names.has(name));
+      if (first !== undefined)
         errors.push(`${path}.spec names the same domain as domains[${first}].`);
+      else if (shared !== undefined)
+        errors.push(
+          `${path}.spec uses the domain name ${shared} of domains[${names.get(shared)}]. Set another spec.name.`,
+        );
+      else {
+        customers.set(spec.customerId, index);
+        for (const name of own) names.set(name, index);
+      }
     }
     if (entry.fixtures !== null && !existsSync(entry.fixtures))
       errors.push(`${path}.fixtures: ${entry.fixtures} does not exist.`);

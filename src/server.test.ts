@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import {
+  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -16,6 +18,7 @@ import tls from 'node:tls';
 import { READ_SCOPES } from './auth/scopes.ts';
 import { resolveConfig } from './config/config.ts';
 import { FixtureError } from './seed/fixtures.ts';
+import { childEnv } from './testing/child-env.ts';
 import { clientEnvironment, startServer, type ServerInfo } from './server.ts';
 import { VERSION } from './version.ts';
 
@@ -62,6 +65,18 @@ const free = (port: number) =>
     server.once('error', () => resolve(false));
     server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
   });
+
+/**
+ * How many TCP listeners this process holds, once pending close callbacks have run. A closed
+ * port is no proof either way: another test process may bind a freed ephemeral port at once.
+ */
+async function listeners(): Promise<number> {
+  for (let tick = 0; tick < 2; tick++)
+    await new Promise((resolve) => setImmediate(resolve));
+  return process
+    .getActiveResourcesInfo()
+    .filter((name) => name === 'TCPServerWrap').length;
+}
 
 /** CONNECT through the proxy, speak TLS to admin.googleapis.com, and return the status line. */
 async function tunnelGet(
@@ -223,15 +238,32 @@ test('POST /domains/{id}/tokens issues a token that the Directory API accepts', 
 
 test('close() closes all three listeners, and a second close() resolves', async (t) => {
   const dir = tempDir(t);
+  const before = await listeners();
   const handle = await startServer(configIn(dir));
   const { google, control, proxy } = handle.info().listeners;
-  const ports = [google.port, control.port, proxy!.port];
-  for (const port of ports)
+  for (const port of [google.port, control.port, proxy!.port])
     assert.equal(await free(port), false, `port ${port}`);
+  assert.equal(await listeners(), before + 3);
   await handle.close();
-  for (const port of ports)
-    assert.equal(await free(port), true, `port ${port}`);
+  assert.equal(await listeners(), before);
   await handle.close();
+});
+
+test('close() removes the ready file it wrote, and keeps a file that another writer replaced', async (t) => {
+  const dir = tempDir(t);
+  const readyFile = join(dir, 'ready.json');
+  const own = await startServer(configIn(dir, { readyFile }));
+  assert.equal(JSON.parse(readFileSync(readyFile, 'utf8')).event, 'ready');
+  await own.close();
+  assert.equal(existsSync(readyFile), false);
+
+  const other = await startServer(configIn(dir, { readyFile }));
+  writeFileSync(readyFile, '{"event":"ready","from":"another mock"}\n');
+  await other.close();
+  assert.equal(
+    readFileSync(readyFile, 'utf8'),
+    '{"event":"ready","from":"another mock"}\n',
+  );
 });
 
 test('clientEnvironment maps wildcard hosts to loopback and names a lone key file', () => {
@@ -266,6 +298,7 @@ test('clientEnvironment maps wildcard hosts to loopback and names a lone key fil
   assert.deepEqual(clientEnvironment(info, control), {
     HTTPS_PROXY: 'http://127.0.0.1:3128',
     https_proxy: 'http://127.0.0.1:3128',
+    NODE_USE_ENV_PROXY: '1',
     NO_PROXY: 'localhost,127.0.0.1,::1',
     no_proxy: 'localhost,127.0.0.1,::1',
     NODE_EXTRA_CA_CERTS: '/out/ca.pem',
@@ -286,12 +319,14 @@ test('clientEnvironment maps wildcard hosts to loopback and names a lone key fil
   );
   assert.equal(bare.HTTPS_PROXY, undefined);
   assert.equal(bare.https_proxy, undefined);
+  assert.equal(bare.NODE_USE_ENV_PROXY, undefined);
   assert.equal(bare.GOOGLE_APPLICATION_CREDENTIALS, undefined);
   assert.equal(bare.NODE_EXTRA_CA_CERTS, '/out/ca.pem');
 });
 
-test('a failing fixtures file rejects startServer and frees every port', async (t) => {
+test('a failing fixtures file rejects startServer and closes every listener', async (t) => {
   const dir = tempDir(t);
+  const before = await listeners();
   writeFileSync(
     join(dir, 'fixtures.json'),
     JSON.stringify({ users: [{ primaryEmail: `ada@${PRIMARY}` }] }),
@@ -306,10 +341,47 @@ test('a failing fixtures file rejects startServer and frees every port', async (
   );
   const [started] = events;
   assert.equal(started.event, 'started');
-  for (const port of [
-    started.googlePort,
-    started.controlPort,
-    started.proxyPort,
-  ] as number[])
-    assert.equal(await free(port), true, `port ${port}`);
+  assert.equal(await listeners(), before);
+});
+
+test('a plain fetch in a child started with clientEnvironment() goes through the mock proxy', async (t) => {
+  const { handle } = await start(t, { domains: [{ spec: EMPTY }] });
+  const { customerId } = handle.info().domains[0];
+  const minted = await post(
+    `${handle.controlUrl}/domains/${customerId}/tokens`,
+    { scopes: 'read' },
+  );
+  const { access_token: token } = (await minted.json()) as {
+    access_token: string;
+  };
+  const before = handle.proxy!.counts().accepted;
+  const script = `
+    const response = await fetch(
+      'https://admin.googleapis.com/admin/directory/v1/users?customer=my_customer&maxResults=1',
+      { headers: { authorization: 'Bearer ' + process.env.TOKEN } },
+    );
+    console.log(response.status);
+  `;
+  const child = spawn(
+    process.execPath,
+    ['--input-type=module', '--eval', script],
+    {
+      env: {
+        ...childEnv(),
+        ...clientEnvironment(handle.info(), handle.controlUrl),
+        TOKEN: token,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+  t.after(() => child.kill('SIGKILL'));
+  let output = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => (output += chunk));
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => (output += chunk));
+  const [code] = (await once(child, 'exit')) as [number];
+  assert.equal(code, 0, output);
+  assert.equal(output.trim(), '200');
+  assert.ok(handle.proxy!.counts().accepted > before);
 });

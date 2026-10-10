@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,11 +16,19 @@ import net, { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import test, { type TestContext } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
+import test, { after, type TestContext } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { READ_SCOPES, READ_WRITE_SCOPES } from '../auth/scopes.ts';
 import { createControlHandler } from '../control/control.ts';
 import { resolveSpec } from '../seed/spec.ts';
-import { clientEnvironment, type ServerInfo } from '../server.ts';
+import {
+  clientEnvironment,
+  loadStartupConfig,
+  startServer,
+  type ServerInfo,
+} from '../server.ts';
+import { isolatedChild } from '../testing/child-env.ts';
 import { startHarness } from '../testing/harness.ts';
 import { formatEnvironment } from './env.ts';
 import { HELP } from './help.ts';
@@ -43,11 +52,13 @@ const STARTER = {
   ],
 };
 
-/** The parent environment without MOCK_* variables, so a developer's shell cannot steer a child. */
-const cleanEnv = () =>
-  Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !name.startsWith('MOCK_')),
-  );
+const BIN = fileURLToPath(
+  new URL('../../bin/admin-sdk-mock.ts', import.meta.url),
+);
+
+/** The working directory of cli() without a cwd option: empty, so no ./admin-sdk-mock.json applies. */
+const defaultCwd = isolatedChild('cli-cwd-');
+after(() => defaultCwd.remove());
 
 function tempDir(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), 'cli-'));
@@ -70,7 +81,7 @@ async function cli(
     stdout: (text) => (stdout += text),
     stderr: (text) => (stderr += text),
     env: options.env ?? {},
-    cwd: options.cwd ?? process.cwd(),
+    cwd: options.cwd ?? defaultCwd.cwd,
     program: options.program,
   });
   return { code, stdout, stderr };
@@ -110,14 +121,21 @@ async function fakeMock(t: TestContext): Promise<string> {
   return `http://127.0.0.1:${await listen(t, server)}`;
 }
 
-/** Spawn `admin-sdk-mock start` with the arguments and collect its standard error. */
+/**
+ * Spawn `admin-sdk-mock start` with the arguments and collect its standard error. The child
+ * runs in an empty directory without the parent's MOCK_* and ADMIN_SDK_MOCK_* variables.
+ */
 function spawnStart(t: TestContext, args: string[]) {
-  const child = spawn(
-    process.execPath,
-    ['bin/admin-sdk-mock.ts', 'start', ...args],
-    { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] },
-  );
-  t.after(() => child.kill('SIGKILL'));
+  const isolated = isolatedChild('cli-start-');
+  const child = spawn(process.execPath, [BIN, 'start', ...args], {
+    cwd: isolated.cwd,
+    env: isolated.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => {
+    child.kill('SIGKILL');
+    isolated.remove();
+  });
   const output = { stderr: '' };
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk: string) => (output.stderr += chunk));
@@ -255,6 +273,22 @@ test('config validate prints every error of a configuration file', async (t) => 
   assert.equal(
     (await cli(['config', 'validate', 'missing.json'], { cwd: dir })).stderr,
     `${join(dir, 'missing.json')} does not exist.\n`,
+  );
+  writeFileSync(
+    join(dir, 'faults.json'),
+    JSON.stringify({
+      domains: [
+        { spec: { tier: 'empty', seed: 'f' }, faults: [{ kind: 'explode' }] },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    await cli(['config', 'validate', 'faults.json'], { cwd: dir }),
+    {
+      code: 2,
+      stdout: '',
+      stderr: 'domains[0].faults[0]: Unknown fault kind.\n',
+    },
   );
   const usage = await cli(['config', 'validate'], { cwd: dir });
   assert.equal(usage.code, 2);
@@ -437,6 +471,66 @@ test('start exits 2 with each configuration error on standard error', async (t) 
   });
 });
 
+test('start exits 2 on an invalid fault before it opens a listener or touches a domain', async (t) => {
+  const dir = tempDir(t);
+  const config = join(dir, 'mock.json');
+  const write = (faults: unknown[]) =>
+    writeFileSync(
+      config,
+      JSON.stringify({
+        dataDir: './data',
+        listen: { google: { port: 0 }, control: { port: 0 } },
+        timing: { delays: false },
+        domains: [
+          { spec: { tier: 'empty', seed: 'early' }, onStart: 'reset', faults },
+        ],
+      }),
+    );
+  const invalid = {
+    code: 2,
+    stdout: '',
+    stderr: 'domains[0].faults[0]: Unknown fault kind.\n',
+  };
+
+  // A listener on the held port fails with EADDRINUSE and code 1, so code 2 shows that none started.
+  const held = String(await listen(t, net.createServer()));
+  write([{ kind: 'explode' }]);
+  assert.deepEqual(
+    await cli(['start', '--config', config, '--control-port', held], {
+      cwd: dir,
+    }),
+    invalid,
+  );
+  assert.equal(existsSync(join(dir, 'data')), false);
+
+  write([]);
+  const server = await startServer(
+    loadStartupConfig({ configFlag: config, env: {}, cwd: dir }),
+  );
+  const { customerId } = server.info().domains[0];
+  server.mock.domains
+    .get(customerId)!
+    .db.prepare("INSERT INTO meta (key, value) VALUES ('marker', 'kept')")
+    .run();
+  await server.close();
+  write([{ kind: 'explode' }]);
+  assert.deepEqual(
+    await cli(['start', '--config', config], { cwd: dir }),
+    invalid,
+  );
+  const db = new DatabaseSync(
+    join(dir, 'data', 'domains', `${customerId}.sqlite`),
+  );
+  t.after(() => db.close());
+  assert.deepEqual(
+    {
+      ...(db.prepare("SELECT value FROM meta WHERE key = 'marker'").get() ??
+        {}),
+    },
+    { value: 'kept' },
+  );
+});
+
 test('start exits 1 when a listener port is taken', async (t) => {
   const dir = tempDir(t);
   const port = await listen(t, net.createServer());
@@ -515,6 +609,29 @@ test('doctor checks Node, the configuration, the data directory, and the ports',
       chmodSync(locked, 0o700);
     }
   }
+});
+
+test('a configuration path that names a directory exits 2, and doctor fails it', async (t) => {
+  const dir = tempDir(t);
+  const folder = join(dir, 'folder.json');
+  mkdirSync(folder);
+  const message = `${folder} cannot be read: EISDIR.`;
+  for (const args of [
+    ['start', '--config', folder],
+    ['config', 'validate', folder],
+    ['env', '--config', folder],
+  ])
+    assert.deepEqual(
+      await cli(args, { cwd: dir }),
+      { code: 2, stdout: '', stderr: `${message}\n` },
+      args[0],
+    );
+  const doctor = await cli(['doctor', '--config', folder], { cwd: dir });
+  assert.equal(doctor.code, 1);
+  assert.ok(
+    doctor.stdout.includes(`FAIL Configuration ${folder}: ${message}\n`),
+    doctor.stdout,
+  );
 });
 
 test('env reports a missing mock, a missing GITHUB_ENV, and a proxy that is off', async (t) => {

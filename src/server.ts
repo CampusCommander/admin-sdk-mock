@@ -2,14 +2,14 @@ import { once } from 'node:events';
 import {
   existsSync,
   mkdirSync,
-  renameSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import http from 'node:http';
 import type https from 'node:https';
 import type { AddressInfo } from 'node:net';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import tls from 'node:tls';
 import {
   findConfigFile,
@@ -23,6 +23,7 @@ import { createMock, type Mock } from './mock.ts';
 import { startProxy, type ProxyHandle } from './proxy.ts';
 import { ensureDomain, type EnsuredDomain } from './startup/ensure-domains.ts';
 import { VERSION } from './version.ts';
+import { writeAtomically } from './write-file.ts';
 
 export interface ServerInfo {
   version: string;
@@ -49,7 +50,8 @@ export interface ServerHandle {
   close(): Promise<void>;
 }
 
-const NO_PROXY = 'localhost,127.0.0.1,::1';
+/** The NO_PROXY value that keeps loopback traffic, such as the control API, off the proxy. */
+export const NO_PROXY = 'localhost,127.0.0.1,::1';
 
 /** The address a client dials for a listener host. A wildcard address becomes loopback. */
 const dialable = (host: string) =>
@@ -65,15 +67,13 @@ export const urlHost = (host: string) => {
 const bundlePath = (caFile: string) =>
   `${caFile.endsWith('.pem') ? caFile.slice(0, -'.pem'.length) : caFile}-bundle.pem`;
 
-/** Write a file in one step: write a temporary file beside it, then rename it into place. */
-function writeAtomically(path: string, text: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = join(
-    dirname(path),
-    `.${basename(path)}.${process.pid}.tmp`,
-  );
-  writeFileSync(temporary, text);
-  renameSync(temporary, path);
+/** Remove a file only when it still holds `text`, so a file that another writer replaced stays. */
+function removeIfUnchanged(path: string, text: string): void {
+  try {
+    if (readFileSync(path, 'utf8') === text) rmSync(path, { force: true });
+  } catch {
+    // The file is gone or unreadable, so it is not ours to remove.
+  }
 }
 
 async function closeServer(server: http.Server | https.Server): Promise<void> {
@@ -86,7 +86,8 @@ async function closeServer(server: http.Server | https.Server): Promise<void> {
 /**
  * Build the whole running mock from a resolved configuration: the CA files, the Google,
  * control, and proxy listeners, the ensured domains, and the ready file. When a step
- * fails, everything opened so far is closed before the error is rethrown.
+ * fails, everything opened so far is closed before the error is rethrown. close() removes
+ * the ready file when it still holds what this server wrote.
  */
 export async function startServer(
   config: MockConfig,
@@ -106,6 +107,7 @@ export async function startServer(
   let googlePort = 0;
   let controlPort = 0;
   let ready = false;
+  let readyText: string | undefined;
   let closing: Promise<void> | undefined;
 
   const close = () =>
@@ -114,6 +116,8 @@ export async function startServer(
       if (control) await closeServer(control);
       if (google) await closeServer(google);
       mock.close();
+      if (config.readyFile && readyText !== undefined)
+        removeIfUnchanged(config.readyFile, readyText);
     })());
 
   const info = (): ServerInfo => ({
@@ -200,8 +204,12 @@ export async function startServer(
 
     ready = true;
     const event = { event: 'ready', ...info() };
-    if (config.readyFile)
-      writeAtomically(config.readyFile, `${JSON.stringify(event, null, 2)}\n`);
+    if (config.readyFile) {
+      const text = `${JSON.stringify(event, null, 2)}\n`;
+      mkdirSync(dirname(config.readyFile), { recursive: true });
+      writeAtomically(config.readyFile, text);
+      readyText = text;
+    }
     log(event);
   } catch (error) {
     await close();
@@ -279,6 +287,8 @@ export function clientEnvironment(
     const url = `http://${urlHost(proxy.host)}:${proxy.port}`;
     environment.HTTPS_PROXY = url;
     environment.https_proxy = url;
+    // Node's built-in fetch and https modules read HTTPS_PROXY only with this switch.
+    environment.NODE_USE_ENV_PROXY = '1';
   }
   Object.assign(environment, {
     NO_PROXY,

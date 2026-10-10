@@ -43,7 +43,7 @@ With `passthrough: 'false'`, the proxy refuses every non-Google target. Later st
 | `proxy-url`      | The proxy URL.                            |
 | `control-url`    | The control API URL.                      |
 
-The action also writes these variables to `$GITHUB_ENV` for later steps: `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL`.
+The action also writes these variables to `$GITHUB_ENV` for later steps: `HTTPS_PROXY`, `https_proxy`, `NODE_USE_ENV_PROXY`, `NO_PROXY`, `no_proxy`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL`.
 
 ## Write key files under /out
 

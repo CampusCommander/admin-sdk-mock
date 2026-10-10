@@ -607,3 +607,36 @@ test('POST /domains/{id}/tokens stores a token for a domain user', async (t) => 
     404,
   );
 });
+
+test('a minted token stores the primary email of its user, so demote-subject matches a token minted by ID', async (t) => {
+  const { harness, call } = await setup(t);
+  const { customerId, adminEmail } = (
+    await call('POST', '/domains', { tier: 'empty', seed: 'subjects' })
+  ).json();
+  const db = harness.mock.domains.get(customerId)!.db;
+  const { id } = row<{ id: string }>(
+    db.prepare('SELECT id FROM users WHERE primary_email = ?').get(adminEmail),
+  )!;
+  const alias = `boss@${adminEmail.split('@')[1]}`;
+  db.prepare('INSERT INTO user_aliases (alias, user_id) VALUES (?, ?)').run(
+    alias,
+    id,
+  );
+  const tokens: string[] = [];
+  for (const subject of [adminEmail.toUpperCase(), alias, id]) {
+    const minted = await call('POST', `/domains/${customerId}/tokens`, {
+      subject,
+    });
+    const token = minted.json().access_token as string;
+    assert.equal(harness.mock.registry.token(token)?.subject, adminEmail);
+    tokens.push(token);
+  }
+  harness.mock.faults.add(customerId, {
+    kind: 'demote-subject',
+    subject: adminEmail,
+  });
+  const byId = await directoryClient(harness, tokens[2])('GET', '/users', {
+    query: { customer: 'my_customer' },
+  });
+  assert.equal(byId.status, 403);
+});

@@ -26,6 +26,7 @@ Three tools produce the client environment:
 | Variable                         | Value                           | Read by                                                                                           |
 | -------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `HTTPS_PROXY`, `https_proxy`     | `http://127.0.0.1:<proxy port>` | Google's Node clients, Python, curl, Go, and most other stacks.                                   |
+| `NODE_USE_ENV_PROXY`             | `1`                             | Node's built-in `fetch` and `https` modules, which read `HTTPS_PROXY` only with it.               |
 | `NO_PROXY`, `no_proxy`           | `localhost,127.0.0.1,::1`       | The same stacks.                                                                                  |
 | `NODE_EXTRA_CA_CERTS`            | The CA file, `ca.pem`           | Node.                                                                                             |
 | `SSL_CERT_FILE`                  | The bundle, `ca-bundle.pem`     | OpenSSL clients, and Go on Linux.                                                                 |
@@ -76,9 +77,12 @@ node my-client.mjs
 ```
 
 Node's built-in `fetch` and `https` modules ignore `HTTPS_PROXY` unless the environment sets `NODE_USE_ENV_PROXY=1`.
+`env` and the GitHub Action set it with the proxy variables. Node reads it once, at startup.
 Without it, such a call goes to real Google, which rejects the mock's tokens.
 
-A test that starts the mock in its own process calls `useInProcess()` instead. It sets `HTTPS_PROXY` and adds the mock CA through `tls.setDefaultCACertificates`.
+A test that starts the mock in its own process calls `useInProcess()` instead. It sets `HTTPS_PROXY` and `NO_PROXY`, and adds the mock CA through `tls.setDefaultCACertificates`.
+Google's clients in that process reach the mock. Built-in `fetch` and `https` calls still skip the proxy, because the process started without `NODE_USE_ENV_PROXY`.
+Run such a client in a child process with the `env()` variables.
 See the [testing guide](testing.md).
 
 ## Python

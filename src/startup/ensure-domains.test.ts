@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -247,7 +249,12 @@ test('reset recreates the domain with the current fixtures and keeps a key of th
       client_email: 'unknown@nowhere.iam.gserviceaccount.com',
     }),
   );
+  chmodSync(account.out, 0o644);
+  const before = statSync(account.out).ino;
   const fourth = ensureDomain(mock, entry(domain), 0, {}, NOW + 180_000);
+  // A rename puts the new key in place, so no reader sees a torn or wider-mode file.
+  assert.notEqual(statSync(account.out).ino, before);
+  assert.deepEqual(readdirSync(dirname(account.out)), ['app.json']);
   const replaced = JSON.parse(readFileSync(account.out, 'utf8'));
   assert.equal(replaced.client_email, fourth.serviceAccounts[0].clientEmail);
   assert.notEqual(
@@ -263,16 +270,35 @@ test('a second run replaces the faults, and an invalid rule names its path', (t)
   const first = ensureDomain(mock, entry(domain), 0, {}, NOW);
   ensureDomain(mock, entry(domain), 0, {}, NOW);
   assert.equal(mock.faults.list(first.customerId).length, 1);
+  // resolveConfig rejects this rule first. Skip it to reach the backstop in ensureDomain.
+  const bogus = { ...entry({ spec: EMPTY }), faults: [{ kind: 'bogus' }] };
   assert.deepEqual(
-    configErrors(() =>
-      ensureDomain(
-        mock,
-        entry({ spec: EMPTY, faults: [{ kind: 'bogus' }] }),
-        0,
-        {},
-        NOW,
-      ),
-    ),
+    configErrors(() => ensureDomain(mock, bogus, 0, {}, NOW)),
     ['domains[0].faults[0]: Unknown fault kind.'],
+  );
+});
+
+test('a name taken at run time or a bad project ID still fails as a configuration error', (t) => {
+  const { mock, entry } = setup(t);
+  // A domain from the control API holds the name, so resolveConfig cannot see the clash.
+  mock.domains.create({ ...EMPTY, seed: 'earlier' }, NOW);
+  assert.deepEqual(
+    configErrors(() => ensureDomain(mock, entry({ spec: EMPTY }), 0, {}, NOW)),
+    [
+      `domains[0]: The domain name ${PRIMARY} is in use. Pass a different name.`,
+    ],
+  );
+  const other = { tier: 'empty', seed: 'project', name: 'Project District' };
+  const bad = {
+    ...entry({ spec: other }),
+    serviceAccounts: [
+      { out: 'keys/bad.json', scopes: 'read' as const, projectId: 'Bad' },
+    ],
+  };
+  assert.deepEqual(
+    configErrors(() => ensureDomain(mock, bad, 0, {}, NOW)),
+    [
+      'domains[0].serviceAccounts[0]: projectId must be 6 to 30 lower-case letters, digits, or hyphens, and start with a letter.',
+    ],
   );
 });

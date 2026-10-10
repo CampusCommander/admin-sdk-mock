@@ -253,3 +253,9 @@ export function buildRoutes(mock: Mock): Route[] {
     },
   ];
 }
+
+/** The IDs of the Directory and Chrome routes, the routes that a fault can target. */
+export const faultTargets = (routes: readonly Route[]): string[] =>
+  routes
+    .filter((route) => route.api === 'directory' || route.api === 'chrome')
+    .map((route) => route.id);

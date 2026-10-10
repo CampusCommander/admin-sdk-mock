@@ -26,6 +26,14 @@ export class AccountError extends Error {
 
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 
+/** Throw an AccountError unless the project ID has the form that Google allows. */
+export function checkProjectId(projectId: string): void {
+  if (!PROJECT_PATTERN.test(projectId))
+    throw new AccountError(
+      'projectId must be 6 to 30 lower-case letters, digits, or hyphens, and start with a letter.',
+    );
+}
+
 /** Create a key pair, store its public key, and return the key file. */
 export function issueServiceAccount(
   registry: Registry,
@@ -34,10 +42,7 @@ export function issueServiceAccount(
 ): ServiceAccountFile {
   const project =
     projectId ?? `admin-sdk-mock-${randomInt(100_000, 1_000_000)}`;
-  if (!PROJECT_PATTERN.test(project))
-    throw new AccountError(
-      'projectId must be 6 to 30 lower-case letters, digits, or hyphens, and start with a letter.',
-    );
+  checkProjectId(project);
   const { privateKey, publicKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },

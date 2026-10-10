@@ -146,3 +146,66 @@ test('an unreachable target closes the client socket with 502', async (t) => {
     'HTTP/1.1 502 Bad Gateway',
   );
 });
+
+test('the proxy keeps running totals and only the last 1,000 targets of each list', async (t) => {
+  const google = await echoServer('google');
+  const proxy = await startProxy({
+    host: '127.0.0.1',
+    port: 0,
+    target: { host: '127.0.0.1', port: google.port },
+    passthrough: false,
+  });
+  t.after(async () => {
+    await proxy.close();
+    google.close();
+  });
+  const targets = Array.from({ length: 1_005 }, (_, n) => `h${n}.test:443`);
+  // The five oldest targets go first, one at a time, so they are the ones the list drops.
+  for (const target of targets.slice(0, 5)) await connect(proxy.port, target);
+  for (let start = 5; start < targets.length; start += 50)
+    await Promise.all(
+      targets
+        .slice(start, start + 50)
+        .map((target) => connect(proxy.port, target)),
+    );
+  await connect(proxy.port, 'admin.googleapis.com:443');
+  assert.deepEqual(proxy.counts(), {
+    accepted: 1,
+    refused: 1_005,
+    tunneled: 0,
+  });
+  assert.equal(proxy.refused.length, 1_000);
+  assert.deepEqual(new Set(proxy.refused), new Set(targets.slice(5)));
+  assert.deepEqual(proxy.accepted, ['admin.googleapis.com:443']);
+});
+
+test('a Google hostname with a trailing dot tunnels to the mock, even with passthrough', async (t) => {
+  const google = await echoServer('google');
+  const proxy = await startProxy({
+    host: '127.0.0.1',
+    port: 0,
+    target: { host: '127.0.0.1', port: google.port },
+    passthrough: true,
+  });
+  t.after(async () => {
+    await proxy.close();
+    google.close();
+  });
+  const result = await connect(proxy.port, 'admin.googleapis.com.:443');
+  assert.equal(result.status, 'HTTP/1.1 200 Connection Established');
+  assert.equal(result.body, 'google\n');
+  assert.deepEqual(proxy.counts(), { accepted: 1, refused: 0, tunneled: 0 });
+});
+
+test('close() returns the same promise each time', async () => {
+  const proxy = await startProxy({
+    host: '127.0.0.1',
+    port: 0,
+    target: { host: '127.0.0.1', port: 1 },
+    passthrough: false,
+  });
+  const first = proxy.close();
+  assert.equal(proxy.close(), first);
+  await first;
+  await proxy.close();
+});

@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -200,4 +206,70 @@ test('a fixtures error leaves no domain behind', () => {
   assert.equal(domains.get(customerId), undefined);
   assert.ok(!existsSync(join(dataDir, 'domains', `${customerId}.sqlite`)));
   assert.equal(domains.create(FIXED, 2_000).domain.customerId, customerId);
+});
+
+/** How many open descriptors of this process point at the file, or null without /proc. */
+function openHandles(file: string): number | null {
+  if (!existsSync('/proc/self/fd')) return null;
+  const target = realpathSync(file);
+  return readdirSync('/proc/self/fd').filter((fd) => {
+    try {
+      return readlinkSync(`/proc/self/fd/${fd}`) === target;
+    } catch {
+      return false;
+    }
+  }).length;
+}
+
+test('a failed reset closes its database and says that the seed remains without fixtures', () => {
+  const { dataDir, domains } = setup();
+  const good = parseFixtures(
+    {
+      users: [
+        {
+          primaryEmail: `pat@${FIXED_DOMAIN}`,
+          givenName: 'P',
+          familyName: 'L',
+        },
+      ],
+    },
+    'good.json',
+  );
+  const { domain } = domains.create(FIXED, 1_000, {
+    fixtures: { file: 'good.json', data: good },
+  });
+  const file = join(dataDir, 'domains', `${domain.customerId}.sqlite`);
+  // A stored fixtures value that no longer applies, as after an upgrade with stricter checks.
+  const stale = parseFixtures(
+    {
+      users: [
+        { primaryEmail: 'pat@elsewhere.test', givenName: 'P', familyName: 'L' },
+      ],
+    },
+    'good.json',
+  );
+  domain.db
+    .prepare("UPDATE meta SET value = ? WHERE key = 'fixtures'")
+    .run(JSON.stringify(stale));
+  assert.throws(
+    () => domains.reset(domain.customerId, 5_000),
+    (error: unknown) =>
+      error instanceof DomainError &&
+      error.status === 500 &&
+      error.message.startsWith(`The reset of ${domain.customerId} failed: `) &&
+      error.message.endsWith(
+        'The domain now holds the seed without its fixtures.',
+      ),
+  );
+  const handles = openHandles(file);
+  if (handles !== null) assert.equal(handles, 0);
+  const reopened = domains.get(domain.customerId)!;
+  assert.deepEqual(
+    rows<{ primary_email: string }>(
+      reopened.db.prepare('SELECT primary_email FROM users').all(),
+    ).map((user) => user.primary_email),
+    [`admin@${FIXED_DOMAIN}`],
+  );
+  if (handles !== null) assert.equal(openHandles(file), 1);
+  domains.closeAll();
 });

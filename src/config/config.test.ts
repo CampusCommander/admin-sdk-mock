@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -207,6 +213,45 @@ test('semantic checks run after the schema passes', () => {
   );
 });
 
+test('fault rules, project IDs, scope lists, and shared domain names are errors', () => {
+  const readonly =
+    'https://www.googleapis.com/auth/admin.directory.user.readonly';
+  assert.deepEqual(
+    errorsOf(() =>
+      resolveConfig({
+        cwd: '/w',
+        file: {
+          domains: [
+            {
+              spec: { tier: 'empty', name: 'Same District', seed: 'a' },
+              faults: [
+                { kind: 'explode' },
+                { kind: 'error-rate', rate: 2 },
+                { kind: 'reset', method: 'directory.users.list', count: 1 },
+              ],
+              serviceAccounts: [
+                { out: 'a.json', scopes: [], projectId: 'Bad' },
+                { out: 'b.json', scopes: [readonly, 'admin.directory.user'] },
+                { out: 'c.json', scopes: 'read', projectId: 'good-project' },
+              ],
+            },
+            { spec: { tier: 'empty', name: 'Same District', seed: 'b' } },
+            { spec: { tier: 'empty', name: 'Other District', seed: 'c' } },
+          ],
+        },
+      }),
+    ),
+    [
+      'domains[0].faults[0]: Unknown fault kind.',
+      'domains[0].faults[1]: rate must be from 0 to 1.',
+      'domains[0].serviceAccounts[0].scopes must list at least one scope.',
+      'domains[0].serviceAccounts[0].projectId: projectId must be 6 to 30 lower-case letters, digits, or hyphens, and start with a letter.',
+      'domains[0].serviceAccounts[1].scopes[1] must be a Google scope URL.',
+      'domains[1].spec uses the domain name same-district.test of domains[0]. Set another spec.name.',
+    ],
+  );
+});
+
 test('invalid environment values, flag values, and default settings are errors', () => {
   assert.deepEqual(
     errorsOf(() =>
@@ -277,5 +322,22 @@ test('loadConfigFile reports malformed JSON with the file name', (t) => {
   assert.deepEqual(
     errorsOf(() => loadConfigFile(join(dir, 'missing.json'))),
     [`${join(dir, 'missing.json')} does not exist.`],
+  );
+});
+
+test('loadConfigFile reports a directory or an unreadable file with its path', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'config-load-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.deepEqual(
+    errorsOf(() => loadConfigFile(dir)),
+    [`${dir} cannot be read: EISDIR.`],
+  );
+  if (process.getuid?.() === 0) return;
+  const locked = join(dir, 'locked.json');
+  writeFileSync(locked, '{}', { mode: 0o000 });
+  chmodSync(locked, 0o000);
+  assert.deepEqual(
+    errorsOf(() => loadConfigFile(locked)),
+    [`${locked} cannot be read: EACCES.`],
   );
 });

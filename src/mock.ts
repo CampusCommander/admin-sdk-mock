@@ -31,7 +31,7 @@ import { createDelays } from './latency/delays.ts';
 import { type Pipeline } from './pipeline.ts';
 import { createLimits, type Limits } from './quota/limits.ts';
 import { createRandom, type Random } from './random.ts';
-import { buildRoutes } from './routes.ts';
+import { buildRoutes, faultTargets } from './routes.ts';
 import {
   applyFields,
   FieldsError,
@@ -128,10 +128,7 @@ export function createMock(options: MockOptions): Mock {
     clock,
     timing,
     random,
-    methods: () =>
-      mock.routes
-        .filter((route) => route.api === 'directory' || route.api === 'chrome')
-        .map((route) => route.id),
+    methods: () => faultTargets(mock.routes),
   });
 
   const mock: Mock = {

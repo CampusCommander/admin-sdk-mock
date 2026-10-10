@@ -86,7 +86,7 @@
     },
     "readyFile": {
       "type": "string",
-      "description": "A file that receives the ready event once every domain is ready."
+      "description": "A file that receives the ready event once every domain is ready. A graceful stop deletes it."
     },
     "defaults": {
       "type": "object",
@@ -193,7 +193,7 @@
                   { "enum": ["read", "read-write"] },
                   { "type": "array", "items": { "type": "string" } }
                 ],
-                "description": "The scope set read or read-write, or a list of scope URLs."
+                "description": "The scope set read or read-write, or a non-empty list of full scope URLs."
               },
               "projectId": {
                 "type": "string",

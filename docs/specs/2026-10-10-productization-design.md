@@ -87,7 +87,7 @@ A composite action at the repository root, `action.yml`, starts the image on the
 An empty `image` resolves to `ghcr.io/campuscommander/admin-sdk-mock:<X.Y.Z>` when `github.action_ref` is `vX.Y.Z`, and to `:main` otherwise (P-R7).
 `passthrough` defaults to true, so later steps that share `HTTPS_PROXY` keep their network (P-R7).
 
-It waits for the ready file, then writes `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
+It waits for the ready file, then writes `HTTPS_PROXY`, `NODE_USE_ENV_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
 It sets five outputs: `workdir`, `ca-file`, `ca-bundle-file`, `proxy-url`, and `control-url`. It sets no credential-path output.
 A key file that the configuration writes under `/out` lands in `<workdir>/out` (P-R30).
 The action requires Docker on the runner. GitHub-hosted Ubuntu runners have it.
@@ -195,20 +195,21 @@ The package root exports `startMock(options?)` for in-process tests. It returns 
 | `proxy`   | Default `{ passthrough: true }`. `false` starts no proxy.               |
 | `timing`  | Default `{ scale: 1, delays: false }`, so tests run fast.               |
 
-| Handle member                         | Meaning                                                                                                                                                                                                             |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `googleUrl`, `controlUrl`, `proxyUrl` | The listener URLs.                                                                                                                                                                                                  |
-| `caCert`, `caFile`                    | The CA certificate PEM and its file path.                                                                                                                                                                           |
-| `domains`                             | The configured domains: customer ID, primary domain, administrator email, and key files.                                                                                                                            |
-| `createDomain(spec, options?)`        | Seed one more domain. Options take `settings` and `fixtures`.                                                                                                                                                       |
-| `credential(customerId, scopes)`      | Issue a service account with the scopes and return its key object.                                                                                                                                                  |
-| `env()`                               | The client environment for child processes.                                                                                                                                                                         |
-| `useInProcess()`                      | Trust the mock CA in this process through `tls.setDefaultCACertificates`, and set `HTTPS_PROXY` and `https_proxy` for the whole process. `NO_PROXY` stays as it was. Returns a function that restores both (P-R30). |
-| `flush(customerId)`                   | The control flush.                                                                                                                                                                                                  |
-| `control(method, path, body?)`        | Any control API call.                                                                                                                                                                                               |
-| `close()`                             | Stop the listeners, restore in-process changes, and remove a temporary data directory.                                                                                                                              |
+| Handle member                         | Meaning                                                                                                                                                                                                                                                  |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `googleUrl`, `controlUrl`, `proxyUrl` | The listener URLs.                                                                                                                                                                                                                                       |
+| `caCert`, `caFile`                    | The CA certificate PEM and its file path.                                                                                                                                                                                                                |
+| `domains`                             | The configured domains: customer ID, primary domain, administrator email, and key files.                                                                                                                                                                 |
+| `createDomain(spec, options?)`        | Seed one more domain. Options take `settings` and `fixtures`.                                                                                                                                                                                            |
+| `credential(customerId, scopes)`      | Issue a service account with the scopes and return its key object.                                                                                                                                                                                       |
+| `env()`                               | The client environment for child processes.                                                                                                                                                                                                              |
+| `useInProcess()`                      | Trust the mock CA in this process through `tls.setDefaultCACertificates`, and set `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, and `no_proxy` for the whole process. `NO_PROXY` holds the loopback list. Returns a function that restores all four (P-R30). |
+| `flush(customerId)`                   | The control flush.                                                                                                                                                                                                                                       |
+| `control(method, path, body?)`        | Any control API call.                                                                                                                                                                                                                                    |
+| `close()`                             | Stop the listeners, restore in-process changes, and remove a temporary data directory.                                                                                                                                                                   |
 
 `useInProcess()` lets the unmodified `googleapis` and `google-auth-library` clients reach the mock from the same process. gaxios reads `HTTPS_PROXY` on every request.
+Node's built-in `fetch` in that process still skips the proxy, because Node reads `NODE_USE_ENV_PROXY` only at startup.
 The in-process proxy tunnels other targets by default, so the test's other HTTPS calls keep working.
 
 ## Fixtures
@@ -334,5 +335,5 @@ The execution ledger recorded these rulings while the plan ran. The text above a
   - The action has `control-port` (default 18080) and `proxy-port` (default 13128) inputs.
   - The action waits for the ready file, not for health.
   - The action sets five outputs, `workdir`, `ca-file`, `ca-bundle-file`, `proxy-url`, and `control-url`, and no credential-path output.
-  - `useInProcess()` sets `HTTPS_PROXY` and `https_proxy` for the whole process, not for the Google hostnames alone. `NO_PROXY` stays as it was.
+  - `useInProcess()` sets `HTTPS_PROXY` and `https_proxy` for the whole process, not for the Google hostnames alone. It sets `NO_PROXY` and `no_proxy` to the loopback list.
   - The `empty` tier adds the student domain only when it differs from the primary domain.

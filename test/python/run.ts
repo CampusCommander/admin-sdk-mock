@@ -85,8 +85,10 @@ try {
   const emails = run.stdout
     .split('\n')
     .filter((line) => /^[^@\s]+@[^@\s]+$/.test(line.trim()));
-  const accepted = server.proxy?.accepted.length ?? 0;
-  const refused = server.proxy?.refused.length ?? 0;
+  const { accepted, refused } = server.proxy?.counts() ?? {
+    accepted: 0,
+    refused: 0,
+  };
   if (run.status !== 0)
     failure = `The script exited with ${run.status}.\n${run.stderr}`;
   else if (emails.length !== 5)

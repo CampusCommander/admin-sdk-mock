@@ -80,7 +80,15 @@ const wholeNumber = (value: unknown, min: number, max: number) =>
   value >= min &&
   value <= max;
 
-function validate(input: unknown, methods: readonly string[]): FaultRule {
+/**
+ * Check a fault rule against the fault format and the route IDs that faults can target.
+ * Throws a FaultError that names the first problem. resolveConfig checks configured rules
+ * with it before startup, and Faults.add checks every rule that it stores.
+ */
+export function validateFault(
+  input: unknown,
+  methods: readonly string[],
+): FaultRule {
   check(
     input !== null && typeof input === 'object' && !Array.isArray(input),
     'A fault must be an object.',
@@ -184,7 +192,7 @@ export function createFaults(deps: {
       );
   return {
     add(customerId, input) {
-      const rule = validate(input, deps.methods());
+      const rule = validateFault(input, deps.methods());
       const id = randomUUID();
       const remaining = 'count' in rule ? rule.count : null;
       store.set(customerId, [...rulesOf(customerId), { id, rule, remaining }]);

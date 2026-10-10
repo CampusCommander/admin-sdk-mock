@@ -49,22 +49,21 @@ export interface Domains {
   closeAll(): void;
 }
 
-/** Seed a domain, then apply and store its fixtures in one transaction. */
-function seedWithFixtures(
+/** Apply and store the fixtures of a seeded domain in one transaction. */
+function addFixtures(
   db: DatabaseSync,
   spec: ResolvedSpec,
   now: number,
-  fixtures: DomainFixtures | undefined,
+  fixtures: DomainFixtures,
+  seeded: SeedResult,
 ): SeedResult {
-  const result = seedDomain(db, spec, now);
-  if (!fixtures) return result;
   transaction(db, () => {
     applyFixtures(db, spec, fixtures.data, now, fixtures.file);
     db.prepare(
       "INSERT INTO meta (key, value) VALUES ('fixtures', ?), ('fixturesFile', ?)",
     ).run(JSON.stringify(fixtures.data), fixtures.file);
   });
-  return { ...result, counts: domainCounts(db) };
+  return { ...seeded, counts: domainCounts(db) };
 }
 
 /** The fixtures that a domain database stores, if any. */
@@ -142,7 +141,9 @@ export function createDomains(dataDir: string, registry: Registry): Domains {
       const db = openDomainDb(fileFor(spec.customerId));
       let result: SeedResult;
       try {
-        result = seedWithFixtures(db, spec, now, options?.fixtures);
+        result = seedDomain(db, spec, now);
+        if (options?.fixtures)
+          result = addFixtures(db, spec, now, options.fixtures, result);
       } catch (error) {
         db.close();
         removeFiles(spec.customerId);
@@ -175,7 +176,20 @@ export function createDomains(dataDir: string, registry: Registry): Domains {
       removeFiles(customerId);
       const spec = resolveSpec(record.spec);
       const db = openDomainDb(fileFor(customerId));
-      const result = seedWithFixtures(db, spec, now, fixtures);
+      let remains = 'the schema only';
+      let result: SeedResult;
+      try {
+        result = seedDomain(db, spec, now);
+        remains = 'the seed without its fixtures';
+        if (fixtures) result = addFixtures(db, spec, now, fixtures, result);
+      } catch (error) {
+        // Close this handle, so the next get() opens the only one.
+        db.close();
+        throw new DomainError(
+          500,
+          `The reset of ${customerId} failed: ${(error as Error).message} The domain now holds ${remains}.`,
+        );
+      }
       registry.setSeededAt(customerId, now);
       open.set(customerId, {
         customerId,

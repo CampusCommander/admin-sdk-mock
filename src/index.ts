@@ -8,13 +8,15 @@ import { issueServiceAccount } from './auth/accounts.ts';
 import { resolveConfig, scopesFor } from './config/config.ts';
 import type { MockConfig } from './config/config.ts';
 import { loadFixtures, parseFixtures } from './seed/fixtures.ts';
-import { clientEnvironment, startServer } from './server.ts';
+import { clientEnvironment, NO_PROXY, startServer } from './server.ts';
 import type { ServerInfo } from './server.ts';
 import { ensureDomain } from './startup/ensure-domains.ts';
 import type { EnsuredDomain } from './startup/ensure-domains.ts';
 
 export { VERSION } from './version.ts';
 export { READ_SCOPES, READ_WRITE_SCOPES } from './auth/scopes.ts';
+export { ConfigError } from './config/config.ts';
+export { FixtureError } from './seed/fixtures.ts';
 export type { MockConfig, EnsuredDomain, ServerInfo };
 export type { Fixtures } from './seed/fixtures.ts';
 
@@ -46,7 +48,7 @@ export interface MockHandle {
   credential(customerId: string, scopes?: ScopeSet): Record<string, string>;
   token(
     customerId: string,
-    options?: { subject?: string; scopes?: ScopeSet },
+    options?: { subject?: string; scopes?: ScopeSet; ttlSeconds?: number },
   ): Promise<string>;
   env(): Record<string, string>;
   useInProcess(): () => void;
@@ -60,11 +62,13 @@ interface Installed {
   proxyUrl: string;
 }
 
+/** The proxy variables that useInProcess sets, and restores when the last handle undoes. */
+const PROXY_VARIABLES = ['HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy'];
+
 /** The process state to restore, captured when the first handle installs. */
 let baseline: {
   ca: string[];
-  httpsProxy: string | undefined;
-  httpsProxyLower: string | undefined;
+  env: Record<string, string | undefined>;
 } | null = null;
 const active: Installed[] = [];
 
@@ -81,16 +85,25 @@ function applyActive(): void {
     ...active.map((handle) => handle.caCert),
   ]);
   const last = active.at(-1);
-  setOrDelete('HTTPS_PROXY', last ? last.proxyUrl : baseline.httpsProxy);
-  setOrDelete('https_proxy', last ? last.proxyUrl : baseline.httpsProxyLower);
+  // The loopback NO_PROXY replaces an ambient one, which could name googleapis.com
+  // and send gaxios around the mock.
+  const installed: Record<string, string> | undefined = last && {
+    HTTPS_PROXY: last.proxyUrl,
+    https_proxy: last.proxyUrl,
+    NO_PROXY,
+    no_proxy: NO_PROXY,
+  };
+  for (const name of PROXY_VARIABLES)
+    setOrDelete(name, installed ? installed[name] : baseline.env[name]);
   if (!last) baseline = null;
 }
 
 function install(handle: Installed): () => void {
   baseline ??= {
     ca: tls.getCACertificates('default'),
-    httpsProxy: process.env.HTTPS_PROXY,
-    httpsProxyLower: process.env.https_proxy,
+    env: Object.fromEntries(
+      PROXY_VARIABLES.map((name) => [name, process.env[name]]),
+    ),
   };
   active.push(handle);
   applyActive();
@@ -147,9 +160,10 @@ export async function startMock(
     if (ownsDataDir) rmSync(dataDir, { recursive: true, force: true });
   };
 
+  let config: MockConfig;
   let server;
   try {
-    const config = resolveConfig({
+    config = resolveConfig({
       file,
       fileDir: process.cwd(),
       env: {},
@@ -225,7 +239,7 @@ export async function startMock(
             faults: [],
           },
           server.info().domains.length,
-          {},
+          config.defaults.settings,
           server.mock.clock.now(),
         );
         server.addDomain(ensured);

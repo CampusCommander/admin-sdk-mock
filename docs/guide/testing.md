@@ -16,21 +16,24 @@ This guide shows how a test suite drives the mock: in process with `startMock()`
 
 The handle has these members:
 
-| Member                                | Meaning                                                                                         |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `googleUrl`, `controlUrl`, `proxyUrl` | The listener URLs. `proxyUrl` is `null` without a proxy.                                        |
-| `caCert`, `caFile`, `caBundleFile`    | The CA certificate PEM, its file, and the bundle file with the public roots.                    |
-| `domains`                             | The domains: `customerId`, `primaryDomain`, `adminEmail`, `action`, and `serviceAccounts`.      |
-| `createDomain(spec, options?)`        | Seed one more domain. `options` takes `settings` and `fixtures`.                                |
-| `credential(customerId, scopes?)`     | Issue a service account and return its key object. `scopes` defaults to `'read-write'`.         |
-| `token(customerId, options?)`         | Mint an access token. `options` takes `subject` and `scopes`.                                   |
-| `env()`                               | The client environment for a child process.                                                     |
-| `useInProcess()`                      | Trust the mock CA and set `HTTPS_PROXY` in this process. Returns a function that restores both. |
-| `flush(customerId)`                   | End the search lag and the group delays of a domain.                                            |
-| `control(method, path, body?)`        | Any control API call. It returns the parsed JSON body, and it throws on a non-2xx status.       |
-| `close()`                             | Stop the listeners, undo every `useInProcess()`, and remove a temporary data directory.         |
+| Member                                | Meaning                                                                                                        |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `googleUrl`, `controlUrl`, `proxyUrl` | The listener URLs. `proxyUrl` is `null` without a proxy.                                                       |
+| `caCert`, `caFile`, `caBundleFile`    | The CA certificate PEM, its file, and the bundle file with the public roots.                                   |
+| `domains`                             | The domains: `customerId`, `primaryDomain`, `adminEmail`, `action`, and `serviceAccounts`.                     |
+| `createDomain(spec, options?)`        | Seed one more domain. `options` takes `settings`, which merge after `defaults.settings`, and `fixtures`.       |
+| `credential(customerId, scopes?)`     | Issue a service account and return its key object. `scopes` defaults to `'read-write'`.                        |
+| `token(customerId, options?)`         | Mint an access token. `options` takes `subject`, `scopes`, and `ttlSeconds`.                                   |
+| `env()`                               | The client environment for a child process.                                                                    |
+| `useInProcess()`                      | Trust the mock CA and set `HTTPS_PROXY` and `NO_PROXY` in this process. Returns a function that restores them. |
+| `flush(customerId)`                   | End the search lag and the group delays of a domain.                                                           |
+| `control(method, path, body?)`        | Any control API call. It returns the parsed JSON body, and it throws on a non-2xx status.                      |
+| `close()`                             | Stop the listeners, undo every `useInProcess()`, and remove a temporary data directory.                        |
 
 `useInProcess()` throws when the proxy is off or the mock is closed.
+It routes Google's clients, which read `HTTPS_PROXY` on every request. Built-in `fetch` in the test process still skips the proxy.
+Node reads `NODE_USE_ENV_PROXY` only at startup, so run a `fetch` client in a child process with `env()`.
+`createDomain()` on a domain that exists keeps its data, but resets its settings and removes its faults.
 
 ### A complete test
 
