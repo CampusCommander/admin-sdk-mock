@@ -179,3 +179,11 @@ export function listedTable(call: Call, table: LaggedTable): string {
     searchDelayMs(call),
   );
 }
+
+/** Ruling: a deleted user stays recoverable for 20 days. */
+export const UNDELETE_DAYS = 20;
+
+/** The undelete window in scaled milliseconds. */
+export function undeleteWindowMs(call: Call): number {
+  return (UNDELETE_DAYS * 86_400_000) / call.scale;
+}

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { ApiError, directoryError, notAuthorized } from '../http/errors.ts';
+import { ApiError, notAuthorized } from '../http/errors.ts';
 import type { ApiResponse, Call } from '../http/types.ts';
 import {
   decodePageToken,
@@ -10,13 +10,16 @@ import { emptyFilter, whereClause } from '../store/sql.ts';
 import { row, rows } from '../store/sqlite.ts';
 import { findUser, type UserRow } from '../store/user-lookup.ts';
 import {
+  boolParam,
   domainOf,
   enumParam,
   intParam,
   invalidArgument,
   iso,
   listedTable,
+  notFound,
   resolveCustomer,
+  undeleteWindowMs,
   withEtag,
 } from './common.ts';
 import { QueryError } from './device-query.ts';
@@ -59,6 +62,7 @@ export function userResource(
   view: View,
   aliases: readonly string[],
   customerId: string,
+  deletedAt?: number,
 ): Record<string, unknown> {
   const name = {
     givenName: user.given_name,
@@ -86,19 +90,22 @@ export function userResource(
     isDelegatedAdmin: false,
     lastLoginTime: iso(user.last_login_time) ?? NEVER,
     creationTime: iso(user.creation_time),
+    ...(deletedAt !== undefined ? { deletionTime: iso(deletedAt) } : {}),
     agreedToTerms: true,
     suspended: user.suspended === 1,
     ...(user.suspended === 1
       ? { suspensionReason: user.suspension_reason ?? 'ADMIN' }
       : {}),
     archived: false,
-    changePasswordAtNextLogin: false,
+    changePasswordAtNextLogin: user.change_password_at_next_login === 1,
     ipWhitelisted: false,
     emails,
     ...(aliases.length > 0 ? { aliases: [...aliases] } : {}),
-    ...(user.external_id
-      ? { externalIds: [{ value: user.external_id, type: 'organization' }] }
-      : {}),
+    ...(user.external_ids
+      ? { externalIds: JSON.parse(user.external_ids) as unknown[] }
+      : user.external_id
+        ? { externalIds: [{ value: user.external_id, type: 'organization' }] }
+        : {}),
     customerId,
     orgUnitPath: user.org_unit_path,
     isMailboxSetup: true,
@@ -141,7 +148,12 @@ export function listUsers(call: Call): ApiResponse {
   if (!customer && !domainName)
     throw invalidArgument(call, 'Bad Request', 'badRequest');
   const filter = emptyFilter();
-  const table = listedTable(call, 'users');
+  const deleted = boolParam(call, 'showDeleted');
+  const table = listedTable(call, deleted ? 'deleted_users' : 'users');
+  if (deleted) {
+    filter.where.push('deleted_at > ?');
+    filter.params.push(call.now - undeleteWindowMs(call));
+  }
   const aliasTable = listedTable(call, 'user_aliases');
   if (customer) resolveCustomer(call, customer);
   else {
@@ -198,7 +210,9 @@ export function listUsers(call: Call): ApiResponse {
     filter.params.push(cursor[0], cursor[1]);
   }
   const direction = descending ? 'DESC' : 'ASC';
-  const found = rows<UserRow & { sort_key: string }>(
+  const found = rows<
+    UserRow & { sort_key: string; deleted_at?: number; aliases?: string }
+  >(
     domain.db
       .prepare(
         `SELECT *, ${sort} AS sort_key FROM ${table} ${whereClause(filter)} ORDER BY ${sort} ${direction}, id ${direction} LIMIT ?`,
@@ -206,18 +220,31 @@ export function listUsers(call: Call): ApiResponse {
       .all(...filter.params, maxResults + 1),
   );
   const page = found.slice(0, maxResults);
-  const aliases = aliasesFor(
-    domain.db,
-    page.map((user) => user.id),
-    aliasTable,
-  );
+  const aliases = deleted
+    ? new Map(
+        page.map((user) => [
+          user.id,
+          JSON.parse(user.aliases ?? '[]') as string[],
+        ]),
+      )
+    : aliasesFor(
+        domain.db,
+        page.map((user) => user.id),
+        aliasTable,
+      );
   const last = page.at(-1);
   const nextPageToken =
     found.length > maxResults && last
       ? encodePageToken(fp, [last.sort_key, last.id])
       : undefined;
   const users = page.map((user) =>
-    userResource(user, view, aliases.get(user.id) ?? [], domain.customerId),
+    userResource(
+      user,
+      view,
+      aliases.get(user.id) ?? [],
+      domain.customerId,
+      deleted ? user.deleted_at : undefined,
+    ),
   );
   return {
     status: 200,
@@ -231,15 +258,20 @@ export function listUsers(call: Call): ApiResponse {
   };
 }
 
+/** Find a user that requests may see by email, alias, or ID. Unknown and hidden users answer 404. */
+export function visibleUser(call: Call, key: string): UserRow {
+  const domain = domainOf(call);
+  const user = findUser(domain.db, key);
+  const hidden = call.overrides.hidden(domain.customerId);
+  if (!user || hidden.has(user.id) || hidden.has(user.primary_email))
+    throw notFound('userKey');
+  return user;
+}
+
 export function getUser(call: Call): ApiResponse {
   const domain = domainOf(call);
   const view = viewOf(call);
-  const user = findUser(domain.db, call.params.userKey);
-  const hidden = call.overrides.hidden(domain.customerId);
-  if (!user || hidden.has(user.id) || hidden.has(user.primary_email))
-    throw new ApiError(
-      directoryError(404, 'notFound', 'Resource Not Found: userKey'),
-    );
+  const user = visibleUser(call, call.params.userKey);
   return {
     status: 200,
     items: 1,
