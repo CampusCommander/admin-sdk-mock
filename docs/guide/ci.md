@@ -161,12 +161,14 @@ for _ in $(seq 1 600); do
   sleep 1
 done
 test -f .admin-sdk-mock/ready.json || { echo "The mock did not become ready in 600 seconds."; cat mock.log; exit 1; }
-eval "$(npx admin-sdk-mock env)"
+client_env="$(npx admin-sdk-mock env)" || { echo "admin-sdk-mock env failed."; exit 1; }
+eval "$client_env"
 npm test
 ```
 
 Until v1.0.0 is tagged, use `#main`.
 The wait stops early, and prints `mock.log`, when the mock exits first.
+The block reads the environment into a variable first, because `eval "$(...)"` would ignore a failed `env`, and the tests would then run without the proxy.
 `start` deletes an old ready file before it starts, so the wait never sees a stale one.
 A graceful stop deletes the ready file that `start` wrote.
 
