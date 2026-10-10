@@ -1,3 +1,5 @@
+import { statSync } from 'node:fs';
+import { join } from 'node:path';
 import { READ_SCOPES, READ_WRITE_SCOPES } from '../../src/auth/scopes.ts';
 import { flushLag, pendingLag } from '../../src/store/lag.ts';
 import { row, rows } from '../../src/store/sqlite.ts';
@@ -108,6 +110,123 @@ try {
         `${name}: mean server time per page ${value.meanPageMs} ms.`,
       );
   }
+  // Groups: page every group, a 1,000-group member sample, all-students derived, and a deep hasMember.
+  const groupBound = (name: string, value: { meanPageMs: number }) => {
+    if (value.meanPageMs - 2000 / scale > 250)
+      failures.push(
+        `${name}: mean server time per page ${value.meanPageMs} ms.`,
+      );
+  };
+  const dbMb = Math.round(
+    statSync(join(harness.dataDir, 'domains', `${domain.customerId}.sqlite`))
+      .size / 1_048_576,
+  );
+  const groupList = await enumerate(
+    'admin.googleapis.com',
+    '/admin/directory/v1/groups',
+    'groups',
+    {
+      customer: 'my_customer',
+      maxResults: 200,
+    },
+  );
+  const groupTotal = count('SELECT count(*) AS n FROM groups');
+  if (groupList.items !== groupTotal)
+    failures.push(`groups: ${groupList.items} of ${groupTotal}.`);
+  groupBound('groups', groupList);
+  const sampleGroups = rows<{ email: string; n: number }>(
+    domain.db
+      .prepare(
+        'SELECT g.email, (SELECT count(*) FROM group_members m WHERE m.group_id = g.id) AS n FROM groups g ORDER BY g.id LIMIT 1000',
+      )
+      .all(),
+  );
+  const memberSample = {
+    groups: sampleGroups.length,
+    items: 0,
+    pages: 0,
+    ms: 0,
+    meanPageMs: 0,
+  };
+  for (const group of sampleGroups) {
+    const result = await enumerate(
+      'admin.googleapis.com',
+      `/admin/directory/v1/groups/${encodeURIComponent(group.email)}/members`,
+      'members',
+      { maxResults: 200 },
+    );
+    if (result.items !== Number(group.n))
+      failures.push(
+        `members of ${group.email}: ${result.items} of ${group.n}.`,
+      );
+    memberSample.items += result.items;
+    memberSample.pages += result.pages;
+    memberSample.ms += result.ms;
+  }
+  memberSample.meanPageMs = Math.round(
+    memberSample.ms / Math.max(1, memberSample.pages),
+  );
+  groupBound('member sample', memberSample);
+  const allStudents = `all-students@${domain.spec.primaryDomain}`;
+  const derivedExpected = count(
+    `WITH RECURSIVE reach(id) AS (
+       SELECT id FROM groups WHERE email = '${allStudents}'
+       UNION SELECT m.member_id FROM group_members m JOIN reach r ON m.group_id = r.id WHERE m.type = 'GROUP')
+     SELECT count(DISTINCT m.member_id) AS n FROM group_members m WHERE m.group_id IN (SELECT id FROM reach)`,
+  );
+  const derived = await enumerate(
+    'admin.googleapis.com',
+    `/admin/directory/v1/groups/${encodeURIComponent(allStudents)}/members`,
+    'members',
+    { maxResults: 200, includeDerivedMembership: 'true' },
+  );
+  if (derived.items !== derivedExpected)
+    failures.push(
+      `derived all-students: ${derived.items} of ${derivedExpected}.`,
+    );
+  groupBound('derived all-students', derived);
+  const chainTop = `committee-1-level-1@${domain.spec.primaryDomain}`;
+  const chainUser = row<{ email: string }>(
+    domain.db
+      .prepare(
+        `WITH RECURSIVE walk(id, depth) AS (
+           SELECT id, 1 FROM groups WHERE email = ?
+           UNION ALL SELECT m.member_id, w.depth + 1 FROM walk w JOIN group_members m ON m.group_id = w.id AND m.type = 'GROUP')
+         SELECT m.email FROM group_members m WHERE m.type = 'USER' AND m.group_id = (SELECT id FROM walk ORDER BY depth DESC LIMIT 1) LIMIT 1`,
+      )
+      .get(chainTop),
+  )?.email;
+  let deepCheck: { ms: number; isMember: boolean | null } = {
+    ms: 0,
+    isMember: null,
+  };
+  if (chainUser) {
+    const started = performance.now();
+    const response = await harness.request({
+      host: 'admin.googleapis.com',
+      path: `/admin/directory/v1/groups/${encodeURIComponent(chainTop)}/hasMember/${encodeURIComponent(chainUser)}`,
+      token,
+    });
+    deepCheck = {
+      ms: Math.round(performance.now() - started),
+      isMember: response.status === 200 ? response.json().isMember : null,
+    };
+    if (deepCheck.isMember !== true)
+      failures.push(
+        `deep hasMember answered ${response.status}: ${response.text.slice(0, 200)}`,
+      );
+  } else failures.push('No deep group chain was seeded.');
+  const groups = {
+    seeded: {
+      groups: result.counts.groups,
+      memberships: result.counts.memberships,
+    },
+    dbMb,
+    list: groupList,
+    memberSample,
+    derived,
+    deepCheck,
+  };
   // Writes: move devices in batches, then page while their before-images wait.
   const delaySeconds = 3_600_000;
   harness.mock.domains.updateSettings(domain.customerId, {
@@ -259,6 +378,7 @@ try {
         scale,
         seed: { ...result, durationMs: seedMs },
         measured,
+        groups,
         writes,
         rssMb: Math.round(process.memoryUsage().rss / 1_048_576),
         failures,
