@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { READ_SCOPES } from '../../src/auth/scopes.ts';
-import { row } from '../../src/store/sqlite.ts';
+import { READ_SCOPES, READ_WRITE_SCOPES } from '../../src/auth/scopes.ts';
+import { row, rows } from '../../src/store/sqlite.ts';
 import {
+  directoryClient,
   grantToken,
   seedTestDomain,
   startHarness,
+  type HarnessResponse,
 } from '../../src/testing/harness.ts';
 import { methodSchema, validate, type Discovery } from './validate.ts';
 
@@ -174,4 +176,163 @@ test('every milestone 1 response matches its discovery schema', async (t) => {
       testCase.name,
     );
   }
+});
+
+test('every milestone 2 response matches its discovery schema', async (t) => {
+  const harness = await startHarness();
+  t.after(() => harness.close());
+  const domain = seedTestDomain(harness, {
+    tier: 'small',
+    seed: 'contract-writes',
+    counts: { schools: 3, students: 200, staff: 30, devices: 300 },
+  });
+  harness.mock.domains.updateSettings(domain.customerId, {
+    writes: { searchDelaySeconds: 0, orgUnitWritesPerSecond: 1000 },
+  });
+  const api = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_WRITE_SCOPES),
+  );
+  const check = (name: string, method: string[], response: HarnessResponse) => {
+    assert.equal(
+      response.status,
+      200,
+      `${name}: ${response.text.slice(0, 300)}`,
+    );
+    assert.deepEqual(
+      validate(directory, methodSchema(directory, method), response.json()),
+      [],
+      name,
+    );
+  };
+  const empty = (name: string, response: HarnessResponse) => {
+    assert.equal(response.status, 204, `${name}: ${response.text}`);
+    assert.equal(response.text, '', name);
+  };
+  const devices = '/customer/my_customer/devices/chromeos';
+  const ids = rows<{ device_id: string }>(
+    domain.db
+      .prepare(
+        "SELECT device_id FROM devices WHERE status = 'ACTIVE' ORDER BY ord LIMIT 3",
+      )
+      .all(),
+  ).map((device) => device.device_id);
+  const home = row<{ org_unit_path: string }>(
+    domain.db
+      .prepare('SELECT org_unit_path FROM devices WHERE device_id = ?')
+      .get(ids[0]),
+  )!.org_unit_path;
+
+  check(
+    'chromeosdevices.patch',
+    ['chromeosdevices', 'patch'],
+    await api('PATCH', `${devices}/${ids[0]}`, { body: { notes: 'Contract' } }),
+  );
+  check(
+    'chromeosdevices.update',
+    ['chromeosdevices', 'update'],
+    await api('PUT', `${devices}/${ids[0]}`, {
+      body: { annotatedLocation: 'Lab' },
+    }),
+  );
+  empty(
+    'chromeosdevices.moveDevicesToOu',
+    await api('POST', `${devices}/moveDevicesToOu`, {
+      query: { orgUnitPath: home },
+      body: { deviceIds: ids },
+    }),
+  );
+  check(
+    'chromeos.batchChangeStatus',
+    ['customer', 'devices', 'chromeos', 'batchChangeStatus'],
+    await api('POST', `${devices}:batchChangeStatus`, {
+      body: {
+        deviceIds: [ids[2], 'missing-device'],
+        changeChromeOsDeviceStatusAction:
+          'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE',
+      },
+    }),
+  );
+  const issued = await api('POST', `${devices}/${ids[0]}:issueCommand`, {
+    body: { commandType: 'SET_VOLUME', payload: '{"volume":40}' },
+  });
+  check(
+    'chromeos.issueCommand',
+    ['customer', 'devices', 'chromeos', 'issueCommand'],
+    issued,
+  );
+  check(
+    'chromeos.commands.get',
+    ['customer', 'devices', 'chromeos', 'commands', 'get'],
+    await api(
+      'GET',
+      `${devices}/${ids[0]}/commands/${issued.json().commandId}`,
+    ),
+  );
+
+  const email = `contract.user@${domain.spec.primaryDomain}`;
+  const inserted = await api('POST', '/users', {
+    body: {
+      primaryEmail: email,
+      name: { givenName: 'Contract', familyName: 'User' },
+      password: 'correct horse battery',
+      externalIds: [{ value: 'C-1', type: 'organization' }],
+    },
+  });
+  check('users.insert', ['users', 'insert'], inserted);
+  const userId = inserted.json().id;
+  check(
+    'users.patch',
+    ['users', 'patch'],
+    await api('PATCH', `/users/${userId}`, { body: { suspended: true } }),
+  );
+  check(
+    'users.update',
+    ['users', 'update'],
+    await api('PUT', `/users/${userId}`, {
+      body: { primaryEmail: `contract.renamed@${domain.spec.primaryDomain}` },
+    }),
+  );
+  empty(
+    'users.makeAdmin',
+    await api('POST', `/users/${userId}/makeAdmin`, { body: { status: true } }),
+  );
+  empty('users.delete', await api('DELETE', `/users/${userId}`));
+  check(
+    'users.list showDeleted',
+    ['users', 'list'],
+    await api('GET', '/users', {
+      query: { customer: 'my_customer', showDeleted: 'true' },
+    }),
+  );
+  empty(
+    'users.undelete',
+    await api('POST', `/users/${userId}/undelete`, {
+      body: { orgUnitPath: '/' },
+    }),
+  );
+
+  const ous = '/customer/my_customer/orgunits';
+  check(
+    'orgunits.insert',
+    ['orgunits', 'insert'],
+    await api('POST', ous, {
+      body: { name: 'Contract Unit', parentOrgUnitPath: '/', description: 'x' },
+    }),
+  );
+  check(
+    'orgunits.patch',
+    ['orgunits', 'patch'],
+    await api('PATCH', `${ous}/Contract%20Unit`, {
+      body: { description: 'y' },
+    }),
+  );
+  check(
+    'orgunits.update',
+    ['orgunits', 'update'],
+    await api('PUT', `${ous}/Contract%20Unit`, {
+      body: { name: 'Contract Renamed' },
+    }),
+  );
+  empty('orgunits.delete', await api('DELETE', `${ous}/Contract%20Renamed`));
 });
