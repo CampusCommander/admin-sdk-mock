@@ -20,6 +20,9 @@ async function setup(t: import('node:test').TestContext, scale = 1) {
   });
   t.after(() => harness.close());
   const domain = seedTestDomain(harness);
+  harness.mock.domains.updateSettings(domain.customerId, {
+    writes: { userCreatesPerSecond: 1000 },
+  });
   const api = directoryClient(
     harness,
     grantToken(harness, domain, READ_WRITE_SCOPES),
