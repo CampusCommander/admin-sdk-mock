@@ -244,3 +244,31 @@ test('faults apply to write methods', async (t) => {
     404,
   );
 });
+
+test('method faults apply to group and member routes', async (t) => {
+  const { harness, domain, add } = await setup(t);
+  add({
+    kind: 'status',
+    method: 'directory.members.list',
+    status: 503,
+    reason: 'backendError',
+    count: 1,
+  });
+  const token = grantToken(harness, domain, READ_SCOPES);
+  const group = rows<{ email: string }>(
+    domain.db.prepare('SELECT email FROM groups LIMIT 1').all(),
+  )[0];
+  const path = `/admin/directory/v1/groups/${group.email}/members`;
+  const first = await harness.request({
+    host: 'admin.googleapis.com',
+    path,
+    token,
+  });
+  assert.equal(first.status, 503);
+  const second = await harness.request({
+    host: 'admin.googleapis.com',
+    path,
+    token,
+  });
+  assert.equal(second.status, 200);
+});

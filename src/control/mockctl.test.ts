@@ -110,7 +110,7 @@ test('mockctl flushes the search index of a domain', async (t) => {
   );
   assert.deepEqual(
     JSON.parse((await ctl('index', 'flush', created.customerId)).stdout),
-    { flushed: 0 },
+    { flushed: 0, delaysEnded: 0 },
   );
   await assert.rejects(ctl('index', 'flush'), /A customer ID is required/);
 });

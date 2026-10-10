@@ -92,3 +92,19 @@ export function nextMemberId(db: DatabaseSync): number {
     )!.n,
   );
 }
+
+/** End every pending ready delay and nesting delay. Returns the rows changed. */
+export function endGroupDelays(
+  db: DatabaseSync,
+  cutoffs: { readyAfter: number; nestingAfter: number },
+): number {
+  const groups = db
+    .prepare('UPDATE groups SET created_at = 0 WHERE created_at > ?')
+    .run(cutoffs.readyAfter).changes;
+  const links = db
+    .prepare(
+      "UPDATE group_members SET added_at = 0 WHERE type = 'GROUP' AND added_at > ?",
+    )
+    .run(cutoffs.nestingAfter).changes;
+  return Number(groups) + Number(links);
+}
