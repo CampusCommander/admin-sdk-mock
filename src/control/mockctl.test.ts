@@ -77,6 +77,7 @@ test('mockctl creates a domain, issues a credential file, and sets the clock', a
   );
   await assert.rejects(ctl('domain', 'show', 'C0missing'), /404/);
   await assert.rejects(ctl('nonsense'), /Usage: mockctl/);
+  assert.match((await ctl('--help')).stdout, /^Usage: mockctl <command>/);
 });
 
 test('mockctl flushes the search index of a domain', async (t) => {
