@@ -64,12 +64,19 @@ try {
         ADMIN_SUBJECT: domain.adminEmail,
       },
     });
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      fail(new Error('The script did not finish in 120 s.'));
+    }, 120_000);
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => (stdout += chunk));
     child.stderr.on('data', (chunk) => (stderr += chunk));
     child.on('error', fail);
-    child.on('close', (status) => done({ status, stdout, stderr }));
+    child.on('close', (status) => {
+      clearTimeout(timer);
+      done({ status, stdout, stderr });
+    });
   });
   const emails = run.stdout
     .split('\n')

@@ -5,30 +5,30 @@ This example starts the mock with the CLI. A separate Node script then lists fiv
 ## Prerequisites
 
 - Node 24.11 or later.
-- The `@googleapis/admin` and `google-auth-library` packages.
-- The built mock package. In this repository, run `npm run build`.
+- The `@campuscommander/admin-sdk-mock`, `@googleapis/admin`, and `google-auth-library` packages, installed in your project.
 
 ## Run it
 
-Run these commands from `examples/node-cli`. Use two terminals.
+Copy this folder into your project. Run every command from this folder (`examples/node-cli`).
 
-Terminal 1 starts the mock. It writes the key file under `.admin-sdk-mock/`.
+Terminal 1 starts the mock. It reads `admin-sdk-mock.json` and writes the key file under `.admin-sdk-mock/`.
 
 ```bash
-node ../../dist/bin/admin-sdk-mock.js start
+npx admin-sdk-mock start
 ```
 
 Terminal 2 loads the client environment and lists the users.
 
 ```bash
-eval "$(node ../../dist/bin/admin-sdk-mock.js env)"
+eval "$(npx admin-sdk-mock env)"
 export GOOGLE_APPLICATION_CREDENTIALS="$PWD/.admin-sdk-mock/credentials/example.json"
 export ADMIN_SUBJECT=admin@salem-community-schools.test
 node list-users.mjs
 ```
 
-The `start` command reads `admin-sdk-mock.json` in the working directory. The file enables the proxy on port 3128.
-Stop the mock with `Ctrl+C` in terminal 1. Delete `.admin-sdk-mock/` to remove the data and the key.
+The file enables the proxy on port 3128. Stop the mock with `Ctrl+C` in terminal 1. Delete `.admin-sdk-mock/` to remove the data and the key.
+
+Inside this repository, run `npm run build` first. Then use `node ../../dist/bin/admin-sdk-mock.js` in place of `npx admin-sdk-mock`.
 
 ## Expected output
 

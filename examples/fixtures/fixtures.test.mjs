@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { admin } from '@googleapis/admin';
 import { JWT } from 'google-auth-library';
 import { READ_SCOPES, startMock } from '@campuscommander/admin-sdk-mock';
@@ -16,7 +17,7 @@ before(async () => {
       domains: [
         {
           spec: { tier: 'empty', seed: 'fixtures-example' },
-          fixtures: 'examples/fixtures/fixtures.json',
+          fixtures: fileURLToPath(new URL('./fixtures.json', import.meta.url)),
         },
       ],
     },

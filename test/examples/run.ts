@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { ServerInfo } from '../../src/server.ts';
 
@@ -11,7 +11,11 @@ type Ready = ServerInfo & { event: 'ready' };
 
 const root = resolve(import.meta.dirname, '..', '..');
 const cli = join(root, 'dist', 'bin', 'admin-sdk-mock.js');
-const exampleState = join(root, 'examples', 'node-cli', '.admin-sdk-mock');
+const limits = {
+  timeout: 120_000,
+  killSignal: 'SIGKILL',
+  encoding: 'utf8',
+} as const;
 const results: { name: string; ok: boolean; note: string }[] = [];
 
 function record(name: string, ok: boolean, note = ''): void {
@@ -28,6 +32,7 @@ function emails(output: string): string[] {
 /** Start the mock CLI and resolve with its ready event. */
 async function startCli(
   tmp: string,
+  config: string,
 ): Promise<{ child: ChildProcess; ready: Ready }> {
   const child = spawn(
     process.execPath,
@@ -35,7 +40,7 @@ async function startCli(
       cli,
       'start',
       '--config',
-      join(root, 'examples', 'node-cli', 'admin-sdk-mock.json'),
+      config,
       '--data-dir',
       join(tmp, 'data'),
       '--google-port',
@@ -67,7 +72,12 @@ async function startCli(
       60000,
     ).unref(),
   );
-  return { child, ready: await Promise.race([ready, exited, timeout]) };
+  try {
+    return { child, ready: await Promise.race([ready, exited, timeout]) };
+  } catch (error) {
+    child.kill('SIGKILL');
+    throw error;
+  }
 }
 
 async function stop(child: ChildProcess | undefined): Promise<void> {
@@ -79,26 +89,34 @@ async function stop(child: ChildProcess | undefined): Promise<void> {
   clearTimeout(timer);
 }
 
-function runNodeTests(): void {
+function timedOut(run: { error?: Error }): boolean {
+  return (run.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+}
+
+function runNodeTest(name: string, file: string): void {
   const run = spawnSync(
     process.execPath,
-    [
-      '--test',
-      'examples/node-in-process/directory.test.mjs',
-      'examples/fixtures/fixtures.test.mjs',
-    ],
-    { cwd: root, encoding: 'utf8' },
+    ['--test', '--test-timeout=60000', file],
+    { cwd: root, ...limits },
   );
   const ok = run.status === 0;
   if (!ok) process.stderr.write(run.stdout + run.stderr);
-  record('node-in-process', ok, ok ? '' : 'node --test failed');
-  record('fixtures', ok, ok ? '' : 'node --test failed');
+  record(
+    name,
+    ok,
+    ok ? '' : timedOut(run) ? 'timed out after 120 s' : 'node --test failed',
+  );
 }
 
 async function runCliExamples(tmp: string): Promise<void> {
   let child: ChildProcess | undefined;
   try {
-    const started = await startCli(tmp);
+    const config = join(tmp, 'admin-sdk-mock.json');
+    copyFileSync(
+      join(root, 'examples', 'node-cli', 'admin-sdk-mock.json'),
+      config,
+    );
+    const started = await startCli(tmp, config);
     child = started.child;
     const ready = started.ready;
     const domain = ready.domains[0];
@@ -106,19 +124,19 @@ async function runCliExamples(tmp: string): Promise<void> {
     const envRun = spawnSync(
       process.execPath,
       [cli, 'env', '--control', controlUrl, '--format', 'json'],
-      { cwd: root, encoding: 'utf8' },
+      { cwd: root, ...limits },
     );
-    if (envRun.status !== 0) throw new Error(`env failed: ${envRun.stderr}`);
+    if (envRun.status !== 0)
+      throw new Error(
+        timedOut(envRun)
+          ? 'env timed out after 120 s'
+          : `env failed: ${envRun.stderr}`,
+      );
     const clientEnv = JSON.parse(envRun.stdout) as Record<string, string>;
     const env = {
       ...process.env,
       ...clientEnv,
-      GOOGLE_APPLICATION_CREDENTIALS: resolve(
-        root,
-        'examples',
-        'node-cli',
-        domain.serviceAccounts[0].out,
-      ),
+      GOOGLE_APPLICATION_CREDENTIALS: domain.serviceAccounts[0].out,
       ADMIN_SUBJECT: domain.adminEmail,
     };
 
@@ -128,7 +146,7 @@ async function runCliExamples(tmp: string): Promise<void> {
       {
         cwd: root,
         env,
-        encoding: 'utf8',
+        ...limits,
       },
     );
     const found = emails(list.stdout);
@@ -137,33 +155,38 @@ async function runCliExamples(tmp: string): Promise<void> {
     record(
       'node-cli',
       cliOk,
-      cliOk ? '' : `${found.length} emails, exit ${list.status}`,
+      cliOk
+        ? ''
+        : timedOut(list)
+          ? 'timed out after 120 s'
+          : `${found.length} emails, exit ${list.status}`,
     );
 
-    const curl = spawnSync('curl', ['--version'], { encoding: 'utf8' });
+    const curl = spawnSync('curl', ['--version'], limits);
     if (curl.error || curl.status !== 0) {
       console.log('curl is not on the path. Skipping the curl example.');
       return;
     }
-    const wrapperDir = mkdtempSync(join(tmp, 'wrapper-'));
-    const wrapper = join(wrapperDir, 'admin-sdk-mock');
-    writeFileSync(
-      wrapper,
-      `#!/usr/bin/env bash\nexport MOCK_CONTROL_URL=${JSON.stringify(controlUrl)}\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"\n`,
-    );
-    chmodSync(wrapper, 0o755);
     const run = spawnSync(
       'bash',
       ['examples/curl/list-users.sh', domain.customerId],
       {
         cwd: root,
-        env: { ...env, PATH: `${wrapperDir}${delimiter}${process.env.PATH}` },
-        encoding: 'utf8',
+        env: { ...env, ADMIN_SDK_MOCK: `${process.execPath} ${cli}` },
+        ...limits,
       },
     );
     const curlOk = run.status === 0 && run.stdout.includes('"primaryEmail"');
     if (!curlOk) process.stderr.write(run.stdout + run.stderr);
-    record('curl', curlOk, curlOk ? '' : `exit ${run.status}`);
+    record(
+      'curl',
+      curlOk,
+      curlOk
+        ? ''
+        : timedOut(run)
+          ? 'timed out after 120 s'
+          : `exit ${run.status}`,
+    );
   } catch (error) {
     for (const name of ['node-cli', 'curl'])
       if (!results.some((result) => result.name === name))
@@ -175,11 +198,11 @@ async function runCliExamples(tmp: string): Promise<void> {
 
 const tmp = mkdtempSync(join(tmpdir(), 'examples-'));
 try {
-  runNodeTests();
+  runNodeTest('node-in-process', 'examples/node-in-process/directory.test.mjs');
+  runNodeTest('fixtures', 'examples/fixtures/fixtures.test.mjs');
   await runCliExamples(tmp);
 } finally {
   rmSync(tmp, { recursive: true, force: true });
-  rmSync(exampleState, { recursive: true, force: true });
 }
 
 for (const result of results)

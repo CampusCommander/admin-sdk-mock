@@ -6,9 +6,13 @@ This example starts the mock inside a `node:test` file. It lists users, Chrome d
 
 - Node 24.11 or later.
 - The `@googleapis/admin` and `google-auth-library` packages.
-- The built mock package. In this repository, run `npm run build`.
+- The `@campuscommander/admin-sdk-mock` package, installed in your project.
+
+Inside this repository, run `npm run build` first. The test then imports the package by name.
 
 ## Run it
+
+Run the command from your project root.
 
 ```bash
 node --test examples/node-in-process/directory.test.mjs
@@ -22,6 +26,8 @@ node --test examples/node-in-process/directory.test.mjs
 4. `after()` calls `close()`, which restores the process state and removes the temporary data directory.
 
 ## Expected output
+
+The output is abridged.
 
 ```text
 ✔ lists users, Chrome devices, and groups

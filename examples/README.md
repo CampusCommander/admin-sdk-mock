@@ -1,6 +1,6 @@
 # Examples
 
-Each example is a small program that a consumer copies. All of them run against the unmodified Google clients.
+Each example is a small program that a consumer copies. The Node and Python examples use the unmodified Google clients. The curl example uses plain HTTP.
 The runners `npm run test:examples` and `npm run test:python` prove that the examples work.
 
 | Example                            | Shows                                                       |
@@ -17,6 +17,7 @@ The runners `npm run test:examples` and `npm run test:python` prove that the exa
 1. Install the dependencies with `npm ci`.
 2. Build the package with `npm run build`.
 3. Run `npm run test:examples` for the Node, curl, and fixtures examples.
-4. Run `npm run test:python` for the Python example. It needs the packages in `python/requirements.txt`.
+4. Install `examples/python/requirements.txt` into a virtual environment. From the repository root, run `python3 -m venv examples/python/.venv` and `examples/python/.venv/bin/pip install -r examples/python/requirements.txt`.
+5. Run `PYTHON=examples/python/.venv/bin/python npm run test:python` for the Python example.
 
 The Node examples import `@campuscommander/admin-sdk-mock` by name, as a consumer does.
