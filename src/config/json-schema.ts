@@ -30,10 +30,25 @@ const ARTICLE: Readonly<Record<string, string>> = {
   integer: 'an integer',
 };
 
+/** The JSON type of a value: null, boolean, number, string, array, or object. */
+const jsonType = (value: unknown): string =>
+  value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+
+/** Whether a schema form accepts the JSON type of the input. A form without type or enum accepts any. */
+function takesTypeOf(schema: Schema, input: unknown): boolean {
+  const type = jsonType(input);
+  if (Array.isArray(schema.enum))
+    return (schema.enum as unknown[]).some((value) => jsonType(value) === type);
+  if (typeof schema.type !== 'string') return true;
+  return (schema.type === 'integer' ? 'number' : schema.type) === type;
+}
+
 /**
  * Validate a value against the JSON Schema subset that schema/config.schema.json uses:
  * type, properties, required, additionalProperties false, enum, minimum, maximum,
  * items, anyOf, and $ref to #/$defs. Errors come in document order, each naming its path.
+ * A failed anyOf reports the errors of the one form that takes the input's JSON type, and
+ * one generic error otherwise.
  */
 export function validateSchema(root: Schema, value: unknown): string[] {
   const errors: string[] = [];
@@ -59,12 +74,16 @@ export function validateSchema(root: Schema, value: unknown): string[] {
     const schema = resolve(raw);
     const label = path === '' ? 'The configuration' : path;
     if (Array.isArray(schema.anyOf)) {
-      const matches = (schema.anyOf as Schema[]).some((option) => {
+      const trials = (schema.anyOf as Schema[]).map((option) => {
         const trial: string[] = [];
         check(option, input, path, trial);
-        return trial.length === 0;
+        return { option: resolve(option), trial };
       });
-      if (!matches) out.push(`${label} must match one of the allowed forms.`);
+      if (trials.some(({ trial }) => trial.length === 0)) return;
+      // When one form alone takes the input's JSON type, its errors say more than the generic message.
+      const typed = trials.filter(({ option }) => takesTypeOf(option, input));
+      if (typed.length === 1) out.push(...typed[0].trial);
+      else out.push(`${label} must match one of the allowed forms.`);
       return;
     }
     if (Array.isArray(schema.enum)) {

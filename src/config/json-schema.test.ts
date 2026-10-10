@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CONFIG_SCHEMA } from './config.ts';
 import { validateSchema } from './json-schema.ts';
 
 const schema = {
@@ -60,4 +61,41 @@ test('every error names its JSON path', () => {
   assert.deepEqual(validateSchema(schema, 'text'), [
     'The configuration must be an object.',
   ]);
+});
+
+test('an anyOf names the errors of the one form that matches the JSON type', () => {
+  assert.deepEqual(
+    validateSchema(CONFIG_SCHEMA, {
+      listen: { proxy: { port: 'x', pasthrough: true } },
+    }),
+    [
+      'listen.proxy.port must be an integer.',
+      'listen.proxy.pasthrough is not an allowed key.',
+    ],
+  );
+  const account = (scopes: unknown) => ({
+    domains: [
+      {
+        spec: { tier: 'empty', seed: 's' },
+        serviceAccounts: [{ out: 'k', scopes }],
+      },
+    ],
+  });
+  assert.deepEqual(validateSchema(CONFIG_SCHEMA, account('write')), [
+    'domains[0].serviceAccounts[0].scopes must be one of: read, read-write.',
+  ]);
+  assert.deepEqual(validateSchema(CONFIG_SCHEMA, account([5])), [
+    'domains[0].serviceAccounts[0].scopes[0] must be a string.',
+  ]);
+  // No form takes a number, so the generic message stays.
+  assert.deepEqual(validateSchema(CONFIG_SCHEMA, account(5)), [
+    'domains[0].serviceAccounts[0].scopes must match one of the allowed forms.',
+  ]);
+  assert.deepEqual(
+    validateSchema(
+      { anyOf: [{ type: 'integer' }, { type: 'number', minimum: 10 }] },
+      3.5,
+    ),
+    ['The configuration must match one of the allowed forms.'],
+  );
 });
