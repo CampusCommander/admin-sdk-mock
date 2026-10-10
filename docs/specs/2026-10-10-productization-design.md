@@ -65,11 +65,12 @@ Install: `npm install --save-dev github:CampusCommander/admin-sdk-mock#v1.0.0`. 
 
 ### Docker image
 
-The image keeps its current base, user, volume, and health check. It gains:
+The image keeps its current base, user, and volume. It gains:
 
 - `MOCK_CONFIG_DEFAULT=/config/admin-sdk-mock.json`, a fallback configuration file that the mock reads when that file exists. `--config`, `MOCK_CONFIG`, and `./admin-sdk-mock.json` come before it (P-R30).
 - Port 3128 for the proxy, exposed and off unless the configuration enables it.
 - The `admin-sdk-mock` CLI on the path.
+- A health check on `GET /health` at `MOCK_CONTROL_PORT`, with a 600-second start period for large seeds. It replaces the fixed check on port 8080 (P-R32).
 
 ### GitHub Action
 
@@ -164,6 +165,7 @@ The check covers IPv4-mapped IPv6 forms and IPv4 shorthand such as `127.1`. It n
 
 `GET /info` answers the version, the listener addresses, the CA file path, and the configured domains with their key file paths.
 It follows the existing host and content-type guards.
+`GET /health` answers `503` with `{ "status": "starting" }` until every domain is ready, then `200` as before (P-R32).
 
 ## Command-line interface
 
@@ -345,3 +347,4 @@ The execution ledger recorded these rulings while the plan ran. The text above a
 - P-R32: the final fix wave changed this behavior:
   - With `passthrough` on, the proxy refuses a local target with `403`: `localhost`, a `.localhost` name, or a literal loopback, link-local, or unspecified address.
   - `start` logs a `warning` event when passthrough is on and the proxy host is not loopback.
+  - `GET /health` answers `503` until every domain is ready. The image's health check reads `MOCK_CONTROL_PORT` and has a 600-second start period.

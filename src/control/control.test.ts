@@ -541,6 +541,30 @@ test('GET /info answers the info provider, and 404 without one', async (t) => {
   );
 });
 
+test('GET /health answers 503 starting until the info provider is ready, then 200', async (t) => {
+  const info = {
+    version: '1.0.0',
+    ready: false,
+    listeners: {
+      google: { host: '127.0.0.1', port: 8443 },
+      control: { host: '127.0.0.1', port: 8080 },
+      proxy: null,
+    },
+    caFile: '/data/ca/ca.pem',
+    caBundleFile: '/data/ca/ca-bundle.pem',
+    dataDir: '/data',
+    domains: [],
+  };
+  const { call } = await setup(t, {}, { info: () => info });
+  const starting = await call('GET', '/health');
+  assert.equal(starting.status, 503);
+  assert.deepEqual(starting.json(), { status: 'starting' });
+  info.ready = true;
+  const ready = await call('GET', '/health');
+  assert.equal(ready.status, 200);
+  assert.deepEqual(ready.json(), { status: 'ok', domains: 0 });
+});
+
 test('POST /domains/{id}/tokens stores a token for a domain user', async (t) => {
   const clock = fakeClock();
   const { harness, call } = await setup(t, { clock });

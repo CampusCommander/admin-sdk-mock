@@ -216,11 +216,15 @@ export function createControlHandler(
     )
       throw new ControlError(415, 'The body must be application/json.');
 
-    if (method === 'GET' && path === '/health')
+    if (method === 'GET' && path === '/health') {
+      // A server answers 503 until every domain is ready. A handler without info is ready.
+      if (options.info && !options.info().ready)
+        return send(response, 503, { status: 'starting' });
       return send(response, 200, {
         status: 'ok',
         domains: mock.domains.list().length,
       });
+    }
     if (method === 'GET' && path === '/info') {
       if (!options.info) throw new ControlError(404, 'Not found.');
       return send(response, 200, options.info());

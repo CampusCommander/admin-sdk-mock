@@ -88,17 +88,17 @@ docker pull ghcr.io/campuscommander/admin-sdk-mock:1.0.0
 
 The image runs `admin-sdk-mock start` as the `node` user, with these settings:
 
-| Setting               | Value                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| `MOCK_DATA_DIR`       | `/data`, a volume.                                                                       |
-| `MOCK_GOOGLE_HOST`    | `0.0.0.0`                                                                                |
-| `MOCK_GOOGLE_PORT`    | `443`                                                                                    |
-| `MOCK_CONTROL_HOST`   | `0.0.0.0`                                                                                |
-| `MOCK_CONTROL_PORT`   | `8080`                                                                                   |
-| `MOCK_PROXY_HOST`     | `0.0.0.0`. The proxy stays off until `MOCK_PROXY_PORT` or the configuration turns it on. |
-| `MOCK_CONFIG_DEFAULT` | `/config/admin-sdk-mock.json`. The mock reads it when that file exists.                  |
-| Exposed ports         | 443, 3128, and 8080.                                                                     |
-| Health check          | `GET /health` on port 8080.                                                              |
+| Setting               | Value                                                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `MOCK_DATA_DIR`       | `/data`, a volume.                                                                                                           |
+| `MOCK_GOOGLE_HOST`    | `0.0.0.0`                                                                                                                    |
+| `MOCK_GOOGLE_PORT`    | `443`                                                                                                                        |
+| `MOCK_CONTROL_HOST`   | `0.0.0.0`                                                                                                                    |
+| `MOCK_CONTROL_PORT`   | `8080`                                                                                                                       |
+| `MOCK_PROXY_HOST`     | `0.0.0.0`. The proxy stays off until `MOCK_PROXY_PORT` or the configuration turns it on.                                     |
+| `MOCK_CONFIG_DEFAULT` | `/config/admin-sdk-mock.json`. The mock reads it when that file exists.                                                      |
+| Exposed ports         | 443, 3128, and 8080.                                                                                                         |
+| Health check          | `GET /health` on `MOCK_CONTROL_PORT`, every 5 seconds, with a 600-second start period. It fails until every domain is ready. |
 
 The `admin-sdk-mock` and `mockctl` commands sit on the path, so `docker exec <container> admin-sdk-mock domain list` works.
 
