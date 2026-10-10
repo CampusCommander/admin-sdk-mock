@@ -86,6 +86,8 @@ A composite action at the repository root, `action.yml`, starts the image on the
 | `proxy-port`   | `13128`                             | The host port for the proxy (P-R30).       |
 
 An empty `image` resolves to `ghcr.io/campuscommander/admin-sdk-mock:<X.Y.Z>` when `github.action_ref` is `vX.Y.Z`, and to `:main` otherwise (P-R7).
+A 40-character commit SHA in `github.action_ref` resolves to the SHA tag that CI publishes for each push to `main` (P-R32).
+A `workdir`, `config`, or `image` value with a line break fails the step, and so does a port outside 1 to 65535 (P-R32).
 `passthrough` defaults to true, so later steps that share `HTTPS_PROXY` keep their network (P-R7).
 
 It waits for the ready file, then writes `HTTPS_PROXY`, `NODE_USE_ENV_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`, `CURL_CA_BUNDLE`, and `ADMIN_SDK_MOCK_CONTROL` to `$GITHUB_ENV`.
@@ -350,3 +352,4 @@ The execution ledger recorded these rulings while the plan ran. The text above a
   - With `passthrough` on, the proxy refuses a local target with `403`: `localhost`, a `.localhost` name, or a literal loopback, link-local, or unspecified address.
   - `start` logs a `warning` event when passthrough is on and the proxy host is not loopback.
   - `GET /health` answers `503` until every domain is ready. The image's health check reads `MOCK_CONTROL_PORT` and has a 600-second start period.
+  - The action maps a commit SHA pin to the image's SHA tag, and it rejects a line break in `workdir`, `config`, or `image`, and a port outside 1 to 65535.

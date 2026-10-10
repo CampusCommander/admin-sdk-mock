@@ -19,14 +19,14 @@ To use the action from another repository, allow access from other repositories 
 
 ## Inputs
 
-| Input          | Default                             | Meaning                                                                                |
-| -------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `config`       | none                                | The path to an `admin-sdk-mock.json` in your repo.                                     |
-| `image`        | empty                               | The image to run. Empty picks `:X.Y.Z` for an action pinned to `vX.Y.Z`, else `:main`. |
-| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files.                                          |
-| `control-port` | `18080`                             | The host port for the control API.                                                     |
-| `proxy-port`   | `13128`                             | The host port for the proxy.                                                           |
-| `passthrough`  | `true`                              | Whether the proxy tunnels non-Google targets.                                          |
+| Input          | Default                             | Meaning                                                                                                                                  |
+| -------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`       | none                                | The path to an `admin-sdk-mock.json` in your repo.                                                                                       |
+| `image`        | empty                               | The image to run. Empty picks `:X.Y.Z` for an action pinned to `vX.Y.Z`, the SHA tag for an action pinned to a commit SHA, else `:main`. |
+| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files. It must not contain a line break.                                                          |
+| `control-port` | `18080`                             | The host port for the control API, an integer from 1 to 65535.                                                                           |
+| `proxy-port`   | `13128`                             | The host port for the proxy, an integer from 1 to 65535.                                                                                 |
+| `passthrough`  | `true`                              | Whether the proxy tunnels non-Google targets.                                                                                            |
 
 ## Passthrough
 

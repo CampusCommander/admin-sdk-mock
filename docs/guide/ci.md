@@ -44,14 +44,14 @@ A workflow in another repository uses the action only when the Actions settings 
 
 ### Inputs
 
-| Input          | Default                             | Meaning                                                                                                                               |
-| -------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `config`       | none                                | The path to an `admin-sdk-mock.json` in the repository. A missing file fails the step.                                                |
-| `image`        | empty                               | The image to run. Empty picks `ghcr.io/campuscommander/admin-sdk-mock:X.Y.Z` for an action pinned to `vX.Y.Z`, and `:main` otherwise. |
-| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files.                                                                                         |
-| `control-port` | `18080`                             | The host port for the control API.                                                                                                    |
-| `proxy-port`   | `13128`                             | The host port for the proxy.                                                                                                          |
-| `passthrough`  | `'true'`                            | Whether the proxy tunnels non-Google targets.                                                                                         |
+| Input          | Default                             | Meaning                                                                                                                                                                                 |
+| -------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`       | none                                | The path to an `admin-sdk-mock.json` in the repository. A missing file fails the step.                                                                                                  |
+| `image`        | empty                               | The image to run. Empty picks `ghcr.io/campuscommander/admin-sdk-mock:X.Y.Z` for an action pinned to `vX.Y.Z`, the commit SHA tag for an action pinned to a SHA, and `:main` otherwise. |
+| `workdir`      | `${{ runner.temp }}/admin-sdk-mock` | The host directory for data and output files. A value with a line break fails the step.                                                                                                 |
+| `control-port` | `18080`                             | The host port for the control API. Any value other than an integer from 1 to 65535 fails the step.                                                                                      |
+| `proxy-port`   | `13128`                             | The host port for the proxy. Any value other than an integer from 1 to 65535 fails the step.                                                                                            |
+| `passthrough`  | `'true'`                            | Whether the proxy tunnels non-Google targets.                                                                                                                                           |
 
 ### Outputs
 
@@ -86,7 +86,9 @@ The action runs one container named `admin-sdk-mock` as the runner user, with th
 - The configuration file mounted read-only at `/config/admin-sdk-mock.json`.
 - `MOCK_GOOGLE_PORT=8443`, `MOCK_PROXY_PORT=3128`, `MOCK_PROXY_PASSTHROUGH`, `MOCK_CA_EXPORT=/out/ca.pem`, and `MOCK_READY_FILE=/out/ready.json`.
 
+The step logs the image it starts. A failed `docker run`, such as a pull without access, fails the step with an error that names the image.
 It waits up to 600 seconds for `ready.json`. When the container exits first, or the wait ends, the step fails and prints the container log.
+CI publishes a commit SHA tag only for a push to `main`. For an action pinned to any other commit, set `image`.
 `docker logs admin-sdk-mock` in a later step shows the mock's log after a failure.
 
 ## Other CI systems
