@@ -281,27 +281,29 @@ Documentation prose follows the repository writing rules.
 
 ### Test layers
 
-| Layer                | Command                 | Proves                                                                                                  |
-| -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| Unit                 | `npm test`              | Every module's behavior, including configuration, fixtures, proxy, CLI, and API.                        |
-| Coverage             | `npm run test:coverage` | The unit layer exercises at least the gated share of lines, branches, and functions.                    |
-| Contract             | `npm run test:contract` | Every response matches Google's discovery schemas.                                                      |
-| Node compatibility   | `npm run test:compat`   | Google's Node clients work unmodified through the proxy.                                                |
-| Python compatibility | `npm run test:python`   | Google's Python clients work unmodified through the proxy.                                              |
-| Package              | `npm run test:package`  | `npm pack` installs into an empty project, the CLI starts, and the API imports with its types.          |
-| Examples             | `npm run test:examples` | Every documented Node, curl, and fixtures example runs as written.                                      |
-| Docs                 | part of `npm test`      | Generated references match the schema, the CLI, and the route table.                                    |
-| Image                | CI `image` job          | The image starts from a mounted configuration, serves the proxy, and passes the Campus Commander smoke. |
-| Action               | CI `action` job         | The action starts the mock and exports a working client environment.                                    |
-| Scale                | `npm run test:scale`    | Chicago-size domains page within the latency bound.                                                     |
+| Layer                | Command                 | Proves                                                                                                                                        |
+| -------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit                 | `npm test`              | Every module's behavior, including configuration, fixtures, proxy, CLI, and API.                                                              |
+| Coverage             | `npm run test:coverage` | The unit layer exercises at least the gated share of lines, branches, and functions.                                                          |
+| Contract             | `npm run test:contract` | Every response matches Google's discovery schemas.                                                                                            |
+| Node compatibility   | `npm run test:compat`   | Google's Node clients work unmodified through the proxy.                                                                                      |
+| Python compatibility | `npm run test:python`   | Google's Python clients work unmodified through the proxy.                                                                                    |
+| Package              | `npm run test:package`  | `npm pack` installs into an empty project, the CLI starts, and the API imports with its types.                                                |
+| Examples             | `npm run test:examples` | Every documented Node, curl, and fixtures example runs against the built package. The CLI examples get port 0 and a temporary data directory. |
+| Docs                 | part of `npm test`      | Generated references match the schema, the CLI, and the route table.                                                                          |
+| Image                | CI `image` job          | The image starts from a mounted configuration, serves the proxy, and passes the Campus Commander smoke.                                       |
+| Action               | CI `action` job         | The action starts the mock and exports a working client environment.                                                                          |
+| Scale                | `npm run test:scale`    | Chicago-size domains page within the latency bound.                                                                                           |
 
 `docs/trust.md` maps each spec requirement to the tests that prove it.
 
 ### CI
 
-CI runs every layer on pull requests and on `main`. The Python and package layers run in their own jobs.
-`workflow_dispatch` runs CI on any branch.
-A tag `v*` runs the release workflow: every check, then the package tarball and the versioned image tags, attached to a GitHub release.
+CI runs every layer on pull requests and on `main`, except the scale layer, which skips pull requests. The Python and package layers run in their own jobs.
+`workflow_dispatch` runs CI, the scale layer included, on any branch.
+A plain `vX.Y.Z` tag runs the release workflow. Its `verify` job checks the tag against `package.json` and the `CHANGELOG.md` notes for the version.
+It then runs the format, lint, type, coverage, contract, Node compatibility, examples, package, and Python checks.
+Its `publish` job smoke-tests the image before it pushes the versioned tags, then attaches the package tarball to a GitHub release.
 
 ## Security
 

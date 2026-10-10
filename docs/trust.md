@@ -11,9 +11,9 @@ Every file named here exists in the repository. Run any layer yourself with the 
 | Coverage             | `npm run test:coverage` | CI `check`, release `verify`                      | The unit layer exercises at least the gated share of lines, branches, and functions.                                                                     |
 | Contract             | `npm run test:contract` | CI `check`, release `verify`                      | Every response matches Google's discovery schemas.                                                                                                       |
 | Node compatibility   | `npm run test:compat`   | CI `check`, release `verify`                      | Google's Node clients work unmodified through the proxy.                                                                                                 |
-| Python compatibility | `npm run test:python`   | CI `python`                                       | Google's Python clients work unmodified through the proxy.                                                                                               |
+| Python compatibility | `npm run test:python`   | CI `python`, release `verify`                     | Google's Python clients work unmodified through the proxy.                                                                                               |
 | Package              | `npm run test:package`  | CI `package`, release `verify`                    | `npm pack` installs into an empty project, the CLI starts, and the API imports with its types. A Git install of `HEAD` builds `dist/` through `prepare`. |
-| Examples             | `npm run test:examples` | CI `check`                                        | Every documented Node, curl, and fixtures example runs as written.                                                                                       |
+| Examples             | `npm run test:examples` | CI `check`, release `verify`                      | Every documented Node, curl, and fixtures example runs against the built package. The CLI examples get port 0 and a temporary data directory.            |
 | Docs                 | part of `npm test`      | CI `check`, release `verify`                      | Generated references match the schema, the CLI, and the route table.                                                                                     |
 | Image                | CI `image` job          | CI `image`                                        | The image starts from a mounted configuration, serves the proxy, and passes the Campus Commander smoke.                                                  |
 | Action               | CI `action` job         | CI `action`                                       | The action starts the mock and exports a working client environment.                                                                                     |
@@ -22,7 +22,10 @@ Every file named here exists in the repository. Run any layer yourself with the 
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) defines the CI jobs. It runs on pull requests, on pushes to `main`, and on `workflow_dispatch`.
 The `scale` job skips pull requests. It runs on pushes and on `workflow_dispatch`.
-[.github/workflows/release.yml](../.github/workflows/release.yml) runs on a `vX.Y.Z` tag. Its `verify` job runs format, lint, type, coverage, contract, compatibility, and package checks before it publishes.
+[.github/workflows/release.yml](../.github/workflows/release.yml) runs on a plain `vX.Y.Z` tag. Its `verify` job runs before anything publishes.
+It checks that the tag matches `package.json` and that `CHANGELOG.md` has notes for the version.
+Then it runs the format, lint, type, coverage, contract, Node compatibility, examples, package, and Python checks.
+Its `publish` job builds the image and runs `scripts/image-smoke.sh` on it before it pushes any tag.
 The `test:coverage` script in [package.json](../package.json) holds the coverage thresholds. It also runs the parity comparison tests, outside the measurement.
 
 The layer sources:
