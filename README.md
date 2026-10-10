@@ -4,6 +4,7 @@ This service imitates the Google Admin SDK for Campus Commander scale testing.
 It answers on the real Google hostnames and serves seeded K-12 domains.
 
 The design is in [docs/specs/2026-10-09-admin-sdk-mock-design.md](docs/specs/2026-10-09-admin-sdk-mock-design.md).
+The milestone 2 writes design is in [docs/specs/2026-10-09-milestone-2-writes-design.md](docs/specs/2026-10-09-milestone-2-writes-design.md).
 
 ## Develop
 
@@ -26,12 +27,23 @@ node bin/mockctl.ts credential <customerId> --out ./demo-credential.json
 ```
 
 The credential grants the read-only milestone 1 scopes. Pass `--scopes` to grant a different list.
+Pass the read-write scopes, such as `admin.directory.device.chromeos`, to use the milestone 2 writes.
 Delegate to the `adminEmail` that `domain create` prints.
 
 `mockctl clock --scale 60` compresses every quota window, flag, and delay by 60.
 `mockctl clock --delays off` removes all delays.
 `mockctl quota <customerId>` shows the quota buckets and the flag state.
 `mockctl fault add <customerId> --json '{"kind":"status","status":503,"reason":"backendError","count":3}'` injects faults.
+
+## Writes
+
+The mock accepts the milestone 2 writes for Chrome devices, device commands, users, and OUs.
+Every list lags a write by the search delay. A `get` returns the written data at once.
+Set `writes.searchDelaySeconds` to 0 to remove the lag.
+`mockctl index flush <customerId>` makes every pending write visible at once.
+`GET /domains` reports `pendingWrites` for each domain.
+A device command follows a computed timeline. Online devices execute it within 60 seconds. Offline devices let it expire.
+The time scale divides the search delay, the command timeline, the command expiry, and the undelete window.
 
 ## Faults
 
@@ -79,13 +91,14 @@ Examples, one per kind:
 - `concurrency`: `perMethod` 40, `perCustomer` 120.
 - `latency`: `roundTripMedianMs` 80, `roundTripP99Ms` 400, `bytesPerSecond` 8000000, `baseMs` 150, `perItemMs` 3, `scanPer10kRowsMs` 20, `loadThreshold` 20, `loadPercentPerRequest` 2, `batchParallelism` 10, `batchPartMs` 40, `capMs` 2000.
 - `telemetry`: `recentReports` 1.
+- `writes`: `searchDelaySeconds` 300, `commandExpirySeconds` 432000, `userCreatesPerSecond` 10, `orgUnitWritesPerSecond` 1. `latency` also holds `writeBaseMs` 250 and `perDeviceWriteMs` 10.
 
 ## Control API safety
 
 The control API accepts a `Host` header of `localhost`, `127.0.0.1`, `[::1]`, or `admin-sdk-mock`, each with any port. It answers 403 to any other.
 A POST, PUT, or DELETE that carries a body must send `content-type: application/json`, or the API answers 415.
 Together these block a web page from driving the mock with a cross-origin `text/plain` post or a rebound DNS name.
-`GET /domains` lists each domain with its `counts` of `orgUnits`, `users`, and `devices`.
+`GET /domains` lists each domain with its `counts` of `orgUnits`, `users`, `devices`, and `pendingWrites`.
 
 ## Run in Docker
 
@@ -125,7 +138,7 @@ See [docs/campus-commander.md](docs/campus-commander.md) for the full procedure.
 
 ## Status
 
-Milestone 1 is built. The acceptance run against Campus Commander awaits the owner.
+Milestones 1 and 2 are built. The acceptance run against Campus Commander awaits the owner.
 
 - Calibration record: [docs/calibration.md](docs/calibration.md)
 - Campus Commander procedure and record: [docs/campus-commander.md](docs/campus-commander.md)
@@ -136,6 +149,9 @@ Acceptance items:
 | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Live parity against the Easton fixture | 19 of 19 match in status. Six have shape notes. Device, user, and telemetry parity awaits scopes. |
 | Client library compatibility           | 10 of 10 tests pass through a CONNECT proxy.                                                      |
+| Write contract                         | Every milestone 2 response passes discovery schema validation.                                    |
+| Write compatibility                    | 15 of 15 client tests pass through a CONNECT proxy, writes included.                              |
+| Write scale                            | 60000 devices move in 2037 ms. Lagging pages take 16 ms. The OU rename takes 868 ms.              |
 | Scale                                  | The xlarge tier seeds in 14.9 s and serves 400,000 devices in 1,334 pages.                        |
 | Campus Commander shows 60,000 devices  | Pending owner run: Docker Desktop WSL integration is off.                                         |
 | Campus Commander repository unchanged  | Verified. `git status --short` is empty.                                                          |

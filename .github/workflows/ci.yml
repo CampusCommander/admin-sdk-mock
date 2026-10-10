@@ -17,8 +17,8 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -38,7 +38,7 @@ jobs:
     env:
       ADMIN_SDK_MOCK_IMAGE: admin-sdk-mock:ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build -t admin-sdk-mock:ci .
       - name: Smoke-test the Campus Commander overlay
         run: |
@@ -73,8 +73,8 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm

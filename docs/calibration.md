@@ -63,6 +63,15 @@ Task 22 measured the following.
 - Resident memory peaked at 546 MB.
 - The `large` tier holds 60,000 devices. It seeded in 1.4 s and uses 62 MB on disk.
 
+### Milestone 2 writes
+
+Task 15 measured the following on the `xlarge` tier.
+
+- 60,000 devices moved through 1,200 `moveDevicesToOu` parts in 2,037 ms.
+- With those before-images pending, device pages took 16 ms of server time on average.
+- Before the compound list query of Task 3b, lagging pages took 194 ms.
+- A rename of `/Zone 1` cascaded to 82,096 devices in 868 ms.
+
 ## Compatibility
 
 Task 20 ran `@googleapis/admin` 37.0.2, `@googleapis/chromemanagement` 31.1.1, and `google-auth-library` 11.2.0 through a CONNECT proxy.
@@ -81,3 +90,32 @@ All 10 tests passed. The proxy accepted 20 connections and refused none.
 
 - The spec estimates about 13,000 org units for the `xlarge` tier. The seed produces about 8,561. The layout is unchanged.
 - The owner decides whether to add a layer, such as homerooms, to close the gap.
+
+## Milestone 2 rulings
+
+Live Google evidence for writes does not exist. The Easton authorization does not permit mutations.
+Each value below follows the milestone 2 spec or a plan ruling. A live write check would replace it with evidence.
+
+| Value                                     | Mock behavior                                                      | Status                 |
+| ----------------------------------------- | ------------------------------------------------------------------ | ---------------------- |
+| Search delay                              | 300 seconds. Every list lags, and `get` is current.                | unverified             |
+| OU parameters of a lagging list           | Resolve against the lagged OUs                                     | unverified             |
+| Aliases in lagging user lists             | Lag with the user, in list bodies and email queries                | unverified             |
+| Bodiless responses                        | `204` with an empty body                                           | unverified             |
+| Malformed JSON body                       | `400 invalid`, "Invalid JSON payload received."                    | unverified             |
+| Read-only fields in a write body          | Ignored                                                            | unverified             |
+| Unknown OU named by a write               | `400 invalid`                                                      | unverified             |
+| `moveDevicesToOu` with one unknown device | The whole request fails with `400`, and nothing moves.             | unverified             |
+| Device updates by status                  | Every status accepts an update                                     | unverified             |
+| Online window for commands                | Last sync within 24 hours. The window does not scale.              | unverified             |
+| Command timeline                          | Sent at 2 s, acknowledged at 5 s, executed at 10 to 60 s           | unverified             |
+| Command success rate                      | 95%                                                                | unverified             |
+| Command expiry                            | 5 days                                                             | unverified             |
+| Duplicate OU name under one parent        | `400 invalid`, names compare without case                          | unverified             |
+| Write limit response                      | `403 rateLimitExceeded`                                            | unverified             |
+| Write latency                             | 250 ms per write, 10 ms per device, 20 ms per 10,000 cascaded rows | unverified             |
+| Undelete without `orgUnitPath`            | Restores into `/`                                                  | unverified             |
+| Undelete of an active user                | `400 invalid`                                                      | unverified             |
+| Aliases taken since a delete              | Dropped on undelete                                                | unverified             |
+| Role of a user created through the API    | Staff                                                              | unverified             |
+| OU subtree matching                       | By path range, so names outside the Basic Multilingual Plane match | verified by unit tests |
