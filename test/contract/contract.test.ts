@@ -336,3 +336,155 @@ test('every milestone 2 response matches its discovery schema', async (t) => {
   );
   empty('orgunits.delete', await api('DELETE', `${ous}/Contract%20Renamed`));
 });
+
+test('every milestone 3 response matches its discovery schema', async (t) => {
+  const harness = await startHarness();
+  t.after(() => harness.close());
+  const domain = seedTestDomain(harness, {
+    tier: 'small',
+    seed: 'contract-groups',
+    counts: { schools: 2, students: 150, staff: 20, devices: 20 },
+  });
+  harness.mock.domains.updateSettings(domain.customerId, {
+    writes: {
+      searchDelaySeconds: 0,
+      groupReadySeconds: 0,
+      nestingDelaySeconds: 0,
+    },
+  });
+  const api = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_WRITE_SCOPES),
+  );
+  const check = (name: string, method: string[], response: HarnessResponse) => {
+    assert.equal(
+      response.status,
+      200,
+      `${name}: ${response.text.slice(0, 300)}`,
+    );
+    assert.deepEqual(
+      validate(directory, methodSchema(directory, method), response.json()),
+      [],
+      name,
+    );
+  };
+  const empty = (name: string, response: HarnessResponse) => {
+    assert.equal(response.status, 204, `${name}: ${response.text}`);
+    assert.equal(response.text, '', name);
+  };
+  const P = domain.spec.primaryDomain;
+  const grade = row<{ email: string; member: string }>(
+    domain.db
+      .prepare(
+        "SELECT g.email, m.email AS member FROM groups g JOIN group_members m ON m.group_id = g.id WHERE g.description LIKE 'Students in %' AND m.type = 'USER' LIMIT 1",
+      )
+      .get(),
+  )!;
+  const staff = row<{ primary_email: string }>(
+    domain.db
+      .prepare(
+        "SELECT primary_email FROM users WHERE role = 'staff' ORDER BY ord LIMIT 1",
+      )
+      .get(),
+  )!.primary_email;
+
+  check(
+    'groups.list',
+    ['groups', 'list'],
+    await api('GET', '/groups', { query: { customer: 'my_customer' } }),
+  );
+  check(
+    'groups.list userKey',
+    ['groups', 'list'],
+    await api('GET', '/groups', { query: { userKey: grade.member } }),
+  );
+  check(
+    'groups.get',
+    ['groups', 'get'],
+    await api('GET', `/groups/${grade.email}`),
+  );
+  check(
+    'members.list',
+    ['members', 'list'],
+    await api('GET', `/groups/${grade.email}/members`),
+  );
+  check(
+    'members.list derived',
+    ['members', 'list'],
+    await api('GET', `/groups/all-students@${P}/members`, {
+      query: { includeDerivedMembership: 'true' },
+    }),
+  );
+  check(
+    'members.get',
+    ['members', 'get'],
+    await api('GET', `/groups/${grade.email}/members/${grade.member}`),
+  );
+  check(
+    'members.hasMember',
+    ['members', 'hasMember'],
+    await api('GET', `/groups/${grade.email}/hasMember/${grade.member}`),
+  );
+
+  const created = await api('POST', '/groups', {
+    body: {
+      email: `contract-team@${P}`,
+      name: 'Contract Team',
+      description: 'x',
+    },
+  });
+  check('groups.insert', ['groups', 'insert'], created);
+  const team = created.json().email as string;
+  check(
+    'groups.patch',
+    ['groups', 'patch'],
+    await api('PATCH', `/groups/${team}`, { body: { description: 'y' } }),
+  );
+  check(
+    'groups.update',
+    ['groups', 'update'],
+    await api('PUT', `/groups/${team}`, { body: { name: 'Contract' } }),
+  );
+  check(
+    'groups.aliases.insert',
+    ['groups', 'aliases', 'insert'],
+    await api('POST', `/groups/${team}/aliases`, {
+      body: { alias: `contract-alias@${P}` },
+    }),
+  );
+  check(
+    'groups.aliases.list',
+    ['groups', 'aliases', 'list'],
+    await api('GET', `/groups/${team}/aliases`),
+  );
+  empty(
+    'groups.aliases.delete',
+    await api('DELETE', `/groups/${team}/aliases/contract-alias@${P}`),
+  );
+  check(
+    'members.insert',
+    ['members', 'insert'],
+    await api('POST', `/groups/${team}/members`, {
+      body: { email: staff, role: 'MANAGER' },
+    }),
+  );
+  check(
+    'members.patch',
+    ['members', 'patch'],
+    await api('PATCH', `/groups/${team}/members/${staff}`, {
+      body: { role: 'OWNER' },
+    }),
+  );
+  check(
+    'members.update',
+    ['members', 'update'],
+    await api('PUT', `/groups/${team}/members/${staff}`, {
+      body: { delivery_settings: 'DIGEST' },
+    }),
+  );
+  empty(
+    'members.delete',
+    await api('DELETE', `/groups/${team}/members/${staff}`),
+  );
+  empty('groups.delete', await api('DELETE', `/groups/${team}`));
+});
