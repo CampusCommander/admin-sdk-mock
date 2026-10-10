@@ -41,6 +41,8 @@ export interface ServerInfo {
 export interface ServerHandle {
   readonly mock: Mock;
   info(): ServerInfo;
+  /** Record a domain that was ensured after startup, so info() and GET /info list it. */
+  addDomain(domain: EnsuredDomain): void;
   readonly controlUrl: string;
   readonly googleUrl: string;
   readonly proxy: ProxyHandle | null;
@@ -209,6 +211,18 @@ export async function startServer(
   return {
     mock,
     info,
+    addDomain(domain) {
+      const at = domains.findIndex((d) => d.customerId === domain.customerId);
+      if (at === -1) domains.push(structuredClone(domain));
+      else {
+        const previous = domains[at];
+        domains[at] = structuredClone(
+          domain.serviceAccounts.length === 0
+            ? { ...domain, serviceAccounts: previous.serviceAccounts }
+            : domain,
+        );
+      }
+    },
     controlUrl: `http://${urlHost(config.listen.control.host)}:${controlPort}`,
     googleUrl: `https://${urlHost(config.listen.google.host)}:${googlePort}`,
     proxy,
