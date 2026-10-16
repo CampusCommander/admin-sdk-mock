@@ -252,6 +252,88 @@ test('fault rules, project IDs, scope lists, and shared domain names are errors'
   );
 });
 
+test('a primaryDomain that is not a lowercase DNS name names its field', () => {
+  for (const value of ['Easton-Consulting.com', 'easton', '-easton.com', 'a.'])
+    assert.deepEqual(
+      errorsOf(() =>
+        resolveConfig({
+          cwd: '/w',
+          file: {
+            domains: [
+              { spec: { tier: 'small', seed: 'a', primaryDomain: value } },
+            ],
+          },
+        }),
+      ),
+      [
+        'domains[0].spec: primaryDomain must be a lowercase DNS name with two or more labels.',
+      ],
+      value,
+    );
+  // The schema rejects a value that is not a string before the specification reads it.
+  assert.deepEqual(
+    errorsOf(() =>
+      resolveConfig({
+        cwd: '/w',
+        file: {
+          domains: [{ spec: { tier: 'small', seed: 'a', primaryDomain: 5 } }],
+        },
+      }),
+    ),
+    ['domains[0].spec.primaryDomain must be a string.'],
+  );
+});
+
+test('two entries that share a derived domain fail, with or without primaryDomain', () => {
+  const cases: [string, Record<string, unknown>[]][] = [
+    [
+      'example.org',
+      [
+        { spec: { tier: 'small', seed: 'a', primaryDomain: 'example.org' } },
+        { spec: { tier: 'small', seed: 'b', primaryDomain: 'example.org' } },
+      ],
+    ],
+    [
+      'k12.example.org',
+      [
+        { spec: { tier: 'small', seed: 'a', primaryDomain: 'example.org' } },
+        {
+          spec: { tier: 'small', seed: 'b', primaryDomain: 'k12.example.org' },
+        },
+      ],
+    ],
+    [
+      'students.example.org',
+      [
+        // Isolation-sep picks a separate student domain, so the second entry's
+        // primary domain lands on the first entry's student domain.
+        {
+          spec: {
+            tier: 'small',
+            seed: 'isolation-sep',
+            primaryDomain: 'example.org',
+          },
+        },
+        {
+          spec: {
+            tier: 'small',
+            seed: 'b',
+            primaryDomain: 'students.example.org',
+          },
+        },
+      ],
+    ],
+  ];
+  for (const [name, domains] of cases)
+    assert.deepEqual(
+      errorsOf(() => resolveConfig({ cwd: '/w', file: { domains } })),
+      [
+        `domains[1].spec uses the domain name ${name} of domains[0]. Set another spec.name.`,
+      ],
+      name,
+    );
+});
+
 test('invalid environment values, flag values, and default settings are errors', () => {
   assert.deepEqual(
     errorsOf(() =>

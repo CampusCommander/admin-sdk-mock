@@ -129,6 +129,94 @@ test('the group rates do not change any derived identity value', () => {
   assert.equal(tuned.studentDomain, plain.studentDomain);
 });
 
+test('primaryDomain takes a lowercase DNS name of two or more labels', () => {
+  const long = `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`;
+  assert.equal(long.length, 253);
+  for (const domain of [
+    'example.com',
+    'students.example.com',
+    'a-b.example.com',
+    '0.example.org',
+    'x.example-district.test',
+    `${'a'.repeat(63)}.example.com`,
+    long,
+  ])
+    assert.equal(
+      resolveSpec({ tier: 'small', seed: 'domain', primaryDomain: domain })
+        .primaryDomain,
+      domain,
+      domain,
+    );
+  for (const bad of [
+    '',
+    'example',
+    'Example.com',
+    '-example.com',
+    'example-.com',
+    'example..com',
+    '.example.com',
+    'example.com.',
+    'exa_mple.com',
+    'example .com',
+    'example.com/path',
+    'éxample.com',
+    `${'a'.repeat(64)}.example.com`,
+    `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(62)}`,
+    5,
+    null,
+    {},
+    ['example.com'],
+  ])
+    assert.throws(
+      () => resolveSpec({ tier: 'small', seed: 'domain', primaryDomain: bad }),
+      (error: unknown) =>
+        error instanceof SpecError &&
+        error.message.startsWith('primaryDomain '),
+      JSON.stringify(bad),
+    );
+});
+
+test('primaryDomain replaces the derived domains and keeps everything else', () => {
+  const base = resolveSpec({ tier: 'small', seed: 'derived' });
+  const over = resolveSpec({
+    tier: 'small',
+    seed: 'derived',
+    primaryDomain: 'easton-consulting.com',
+  });
+  assert.equal(over.primaryDomain, 'easton-consulting.com');
+  assert.equal(over.aliasDomain, 'k12.easton-consulting.com');
+  assert.ok(
+    [over.primaryDomain, 'students.easton-consulting.com'].includes(
+      over.studentDomain,
+    ),
+  );
+  // The seed decides the separate student domain exactly as it does without the field.
+  assert.equal(
+    over.studentDomain === over.primaryDomain,
+    base.studentDomain === base.primaryDomain,
+  );
+  assert.equal(over.customerId, base.customerId);
+  assert.equal(over.districtName, base.districtName);
+  assert.equal(over.slug, base.slug);
+  assert.equal(over.layout, base.layout);
+  assert.deepEqual(over.counts, base.counts);
+  assert.deepEqual(over.rates, base.rates);
+});
+
+test('a name and a primaryDomain are independent', () => {
+  const spec = resolveSpec({
+    tier: 'empty',
+    seed: 'named',
+    name: 'Lakeview School District',
+    primaryDomain: 'lakeview.example.org',
+  });
+  assert.equal(spec.districtName, 'Lakeview School District');
+  assert.equal(spec.slug, 'lakeview-school-district');
+  assert.equal(spec.primaryDomain, 'lakeview.example.org');
+  assert.equal(spec.studentDomain, 'students.lakeview.example.org');
+  assert.equal(spec.aliasDomain, 'k12.lakeview.example.org');
+});
+
 test('the empty tier has zero counts and refuses counts and rates', () => {
   const spec = resolveSpec({ tier: 'empty', seed: 'blank' });
   assert.deepEqual(spec.counts, {

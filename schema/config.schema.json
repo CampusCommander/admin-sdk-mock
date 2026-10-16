@@ -146,6 +146,10 @@
               "type": "string",
               "description": "The district name, 1 to 60 characters. The default derives from the seed."
             },
+            "primaryDomain": {
+              "type": "string",
+              "description": "The primary domain, such as example.com. The default derives from name. Use a domain that you control."
+            },
             "layout": {
               "enum": ["role-first", "school-first"],
               "description": "The OU layout. The default derives from the seed."

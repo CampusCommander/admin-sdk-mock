@@ -35,6 +35,7 @@ export interface SeedSpec {
   tier: Tier;
   seed: string;
   name?: string;
+  primaryDomain?: string;
   layout?: LayoutFamily;
   counts?: Partial<Counts>;
   rates?: Partial<Rates>;
@@ -84,10 +85,20 @@ export class SpecError extends Error {
   }
 }
 
-const FIELDS = ['tier', 'seed', 'name', 'layout', 'counts', 'rates'];
+const FIELDS = [
+  'tier',
+  'seed',
+  'name',
+  'primaryDomain',
+  'layout',
+  'counts',
+  'rates',
+];
 const SEED_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const COUNT_LIMIT = 2_000_000;
 const SCHOOL_LIMIT = 2_000;
+const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const DOMAIN_LIMIT = 253;
 
 function numbers(
   value: unknown,
@@ -123,6 +134,15 @@ function slugify(name: string): string {
   return slug || 'district';
 }
 
+/** Whether the text is a lowercase DNS name: two or more labels, each 1 to 63 characters. */
+function isDomainName(text: string): boolean {
+  if (text.length > DOMAIN_LIMIT) return false;
+  const labels = text.split('.');
+  return (
+    labels.length >= 2 && labels.every((label) => DOMAIN_LABEL.test(label))
+  );
+}
+
 /** Validate a seed specification and derive every identity value from it. */
 export function resolveSpec(input: unknown): ResolvedSpec {
   if (input === null || typeof input !== 'object' || Array.isArray(input))
@@ -145,6 +165,14 @@ export function resolveSpec(input: unknown): ResolvedSpec {
     (typeof name !== 'string' || name.trim() === '' || name.length > 60)
   )
     throw new SpecError('name must be 1 to 60 characters.');
+  const override = spec.primaryDomain;
+  if (
+    override !== undefined &&
+    (typeof override !== 'string' || !isDomainName(override))
+  )
+    throw new SpecError(
+      'primaryDomain must be a lowercase DNS name with two or more labels.',
+    );
   const layoutInput = spec.layout;
   if (
     layoutInput !== undefined &&
@@ -203,7 +231,7 @@ export function resolveSpec(input: unknown): ResolvedSpec {
         'Community Schools',
       ])}`;
   const slug = slugify(districtName);
-  const primaryDomain = `${slug}.test`;
+  const primaryDomain = override ?? `${slug}.test`;
   return {
     tier: tier as Tier,
     seed,
@@ -212,9 +240,10 @@ export function resolveSpec(input: unknown): ResolvedSpec {
     customerId: `C0${random.fork('customer').string(7)}`,
     primaryDomain,
     studentDomain: random.fork('student-domain').chance(0.5)
-      ? `students.${slug}.test`
+      ? `students.${primaryDomain}`
       : primaryDomain,
-    aliasDomain: `${slug}-k12.test`,
+    aliasDomain:
+      override === undefined ? `${slug}-k12.test` : `k12.${override}`,
     layout:
       (layoutInput as LayoutFamily | undefined) ??
       random.fork('layout').pick<LayoutFamily>(['role-first', 'school-first']),
