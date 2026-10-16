@@ -227,6 +227,48 @@ test('init writes the starter configuration once and prints the next steps', asy
   assert.deepEqual(read('admin-sdk-mock.json'), STARTER);
 });
 
+test('config validate reports primaryDomain errors at their path', async (t) => {
+  const dir = tempDir(t);
+  writeFileSync(
+    join(dir, 'domains.json'),
+    JSON.stringify({
+      domains: [
+        {
+          spec: {
+            tier: 'small',
+            seed: 'a',
+            primaryDomain: 'Easton-Consulting.com',
+          },
+        },
+        {
+          spec: {
+            tier: 'small',
+            seed: 'b',
+            primaryDomain: 'easton-consulting.com',
+          },
+        },
+        {
+          spec: {
+            tier: 'small',
+            seed: 'c',
+            primaryDomain: 'k12.easton-consulting.com',
+          },
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    await cli(['config', 'validate', 'domains.json'], { cwd: dir }),
+    {
+      code: 2,
+      stdout: '',
+      stderr:
+        'domains[0].spec: primaryDomain must be a lowercase DNS name with two or more labels.\n' +
+        'domains[2].spec uses the domain name k12.easton-consulting.com of domains[1]. Set another spec.name.\n',
+    },
+  );
+});
+
 test('config validate prints every error of a configuration file', async (t) => {
   const dir = tempDir(t);
   await cli(['init'], { cwd: dir });
