@@ -14,13 +14,19 @@ const SPEC = {
 };
 
 test('every public surface reports the primaryDomain override', async (t) => {
-  const mock = await startMock({ config: { domains: [{ spec: SPEC }] } });
+  const events: Record<string, unknown>[] = [];
+  const mock = await startMock({
+    config: { domains: [{ spec: SPEC }] },
+    log: (event) => events.push(event),
+  });
   t.after(() => mock.close());
   const [domain] = mock.domains;
 
   // The ready event, and GET /info on the control API.
   assert.equal(domain.primaryDomain, OVERRIDE);
   assert.equal(domain.adminEmail, `admin@${OVERRIDE}`);
+  const ready = events.find((event) => event.event === 'ready');
+  assert.deepEqual(ready?.domains, mock.domains);
   const info = (await mock.control('GET', '/info')) as ServerInfo;
   assert.equal(info.domains[0].primaryDomain, OVERRIDE);
   assert.equal(info.domains[0].adminEmail, `admin@${OVERRIDE}`);
@@ -55,7 +61,11 @@ test('every public surface reports the primaryDomain override', async (t) => {
     await directory.customers.get({ customerKey: 'my_customer' })
   ).data;
   assert.equal(customer.customerDomain, OVERRIDE);
-  assert.match(customer.alternateEmail ?? '', /\.test$/);
+  // The alternate address does not follow the override, so the field stays equal.
+  assert.equal(
+    customer.alternateEmail,
+    'it-admin@surface-district-backup.test',
+  );
 
   const users = (await directory.users.list({ customer: 'my_customer' })).data
     .users;
