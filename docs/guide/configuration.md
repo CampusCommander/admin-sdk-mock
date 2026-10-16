@@ -172,14 +172,20 @@ Each entry of `domains` names a seed specification and what to do with the domai
 
 The same specification always yields the same domain: the same customer ID, names, IDs, and timestamps relative to the seed time.
 
-| Key      | Meaning                                                                                                |
-| -------- | ------------------------------------------------------------------------------------------------------ |
-| `tier`   | `small`, `medium`, `large`, `xlarge`, or `empty`.                                                      |
-| `seed`   | 1 to 64 letters, digits, hyphens, or underscores. It decides the customer ID.                          |
-| `name`   | The district name, 1 to 60 characters. It decides the primary domain, such as `example-district.test`. |
-| `layout` | `role-first` or `school-first`. The default derives from the seed.                                     |
-| `counts` | Overrides of `schools` (up to 2,000), `students`, `staff`, and `devices`, each 1 to 2,000,000.         |
-| `rates`  | Overrides of the scenario rates below.                                                                 |
+| Key             | Meaning                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `tier`          | `small`, `medium`, `large`, `xlarge`, or `empty`.                                                            |
+| `seed`          | 1 to 64 letters, digits, hyphens, or underscores. It decides the customer ID.                                |
+| `name`          | The district name, 1 to 60 characters. It decides the primary domain, unless `primaryDomain` is set.         |
+| `primaryDomain` | A lowercase DNS name of two or more labels. It replaces the primary domain, such as `easton-consulting.com`. |
+| `layout`        | `role-first` or `school-first`. The default derives from the seed.                                           |
+| `counts`        | Overrides of `schools` (up to 2,000), `students`, `staff`, and `devices`, each 1 to 2,000,000.               |
+| `rates`         | Overrides of the scenario rates below.                                                                       |
+
+The three domains derive from the district name. The primary domain is `primaryDomain` when set, and `<name slug>.test` otherwise.
+The student domain is `students.<primary domain>` when the seed picks a separate one, and the primary domain otherwise.
+The alias domain is `k12.<primary domain>` under `primaryDomain`, and `<name slug>-k12.test` otherwise.
+Use a domain that you control. Seeded data contains addresses under it.
 
 | Tier     | Schools | Students | Staff  | Devices | Groups      |
 | -------- | ------- | -------- | ------ | ------- | ----------- |

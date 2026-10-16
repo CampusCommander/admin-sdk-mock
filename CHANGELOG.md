@@ -3,6 +3,17 @@
 This file records every notable change to the project.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-10-16
+
+### Added
+
+- The seed specification field `primaryDomain`. It serves the given domain as the primary domain, and it derives the student domain and the alias domain under it. Use a domain that you control, because the seeded data holds addresses under it.
+- The `primaryDomain` key of `schema/config.schema.json`, with its row in the configuration guide and the configuration reference.
+
+### Changed
+
+- A specification without `primaryDomain` still yields the seed data of 0.1.0, byte for byte. Every seeded value, the group IDs included, is unchanged.
+
 ## [0.1.0] - 2026-10-10
 
 The first public release. It is not production ready: any 0.x release may change the configuration, the CLI, the API, or the image.
