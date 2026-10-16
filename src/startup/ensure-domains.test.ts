@@ -196,6 +196,48 @@ test('keep refuses a changed seed specification or fixtures file', (t) => {
   );
 });
 
+test('keep treats primaryDomain as a part of the specification', (t) => {
+  const cases: [Record<string, unknown>, Record<string, unknown>][] = [
+    // Added.
+    [
+      { ...EMPTY, seed: 'keep-plain' },
+      { ...EMPTY, seed: 'keep-plain', primaryDomain: 'easton-consulting.com' },
+    ],
+    // Changed.
+    [
+      { ...EMPTY, seed: 'keep-on', primaryDomain: 'easton-consulting.com' },
+      { ...EMPTY, seed: 'keep-on', primaryDomain: 'example.org' },
+    ],
+    // Removed.
+    [
+      { ...EMPTY, seed: 'keep-off', primaryDomain: 'easton-consulting.com' },
+      { ...EMPTY, seed: 'keep-off' },
+    ],
+  ];
+  for (const [first, second] of cases) {
+    const { mock, entry } = setup(t);
+    ensureDomain(mock, entry({ spec: first }), 0, {}, NOW);
+    assert.deepEqual(
+      configErrors(() =>
+        ensureDomain(mock, entry({ spec: second }), 0, {}, NOW),
+      ),
+      [
+        'domains[0].spec changed since the domain was created. Set onStart to reset or delete the data directory.',
+      ],
+      JSON.stringify(second),
+    );
+  }
+  // The same override keeps the domain.
+  const { mock, entry } = setup(t);
+  const spec = {
+    ...EMPTY,
+    seed: 'keep-same',
+    primaryDomain: 'easton-consulting.com',
+  };
+  ensureDomain(mock, entry({ spec }), 0, {}, NOW);
+  assert.equal(ensureDomain(mock, entry({ spec }), 0, {}, NOW).action, 'kept');
+});
+
 test('reset recreates the domain with the current fixtures and keeps a key of this customer', (t) => {
   const { mock, entry, writeJson } = setup(t);
   const fixtures = writeJson('fixtures.json', fixturesWith('ada'));

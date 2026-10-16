@@ -471,6 +471,41 @@ test('start exits 2 with each configuration error on standard error', async (t) 
   });
 });
 
+test('start exits 2 when keep sees a changed primaryDomain', async (t) => {
+  const dir = tempDir(t);
+  const config = join(dir, 'mock.json');
+  const write = (spec: Record<string, unknown>) =>
+    writeFileSync(
+      config,
+      JSON.stringify({
+        dataDir: './data',
+        listen: { google: { port: 0 }, control: { port: 0 } },
+        timing: { delays: false },
+        domains: [{ spec }],
+      }),
+    );
+  const spec = {
+    tier: 'small',
+    seed: 'keep-start',
+    counts: { schools: 1, students: 20, staff: 5, devices: 10 },
+  };
+  write(spec);
+  const first = spawnStart(t, ['--config', config]);
+  await eventsUntilReady(first.child);
+  first.child.kill('SIGTERM');
+  const [code] = (await once(first.child, 'exit')) as [number];
+  assert.equal(code, 0, first.output.stderr);
+
+  write({ ...spec, primaryDomain: 'easton-consulting.com' });
+  const second = spawnStart(t, ['--config', config]);
+  const [again] = (await once(second.child, 'exit')) as [number];
+  assert.equal(again, 2, second.output.stderr);
+  assert.equal(
+    second.output.stderr,
+    'domains[0].spec changed since the domain was created. Set onStart to reset or delete the data directory.\n',
+  );
+});
+
 test('start exits 2 on an invalid fault before it opens a listener or touches a domain', async (t) => {
   const dir = tempDir(t);
   const config = join(dir, 'mock.json');
