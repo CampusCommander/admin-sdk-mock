@@ -159,8 +159,15 @@ function groupWriter(ctx: SeedContext, random: Random) {
     adminCreated?: boolean;
   }): SeededGroup => {
     const email = address(input.local, input.domain);
+    // The ID keys on the derived domain, so a primaryDomain override leaves every ID alone.
+    const derived =
+      input.domain === spec.primaryDomain
+        ? `${spec.slug}.test`
+        : `students.${spec.slug}.test`;
     const id = newGroupId(
-      createRandom(`group/${spec.seed}/${email}`),
+      createRandom(
+        `group/${spec.seed}/${email.slice(0, email.indexOf('@'))}@${derived}`,
+      ),
       (candidate) => ids.has(candidate),
     );
     ids.add(id);
