@@ -14,8 +14,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import forge from 'node-forge';
+import { WRITE_SCOPES } from './auth/scopes.ts';
 import { createCertificates, ensureCertificates, GOOGLE_HOSTS } from './ca.ts';
-import { startHarness } from './testing/harness.ts';
+import {
+  googleClient,
+  grantToken,
+  seedTestDomain,
+  startHarness,
+} from './testing/harness.ts';
 
 /** The hostnames that the 0.2.0 leaf covered: every one but the Sheets host. */
 const PREDECESSOR_HOSTS = GOOGLE_HOSTS.filter(
@@ -139,11 +145,26 @@ test('a Sheets call passes hostname verification after a certificate upgrade', a
   const harness = await startHarness({ dataDir });
   t.after(() => harness.close());
   assert.equal(harness.mock.certificates.caCert, previous.caCert);
-  const sheets = await harness.request({
-    host: 'sheets.googleapis.com',
-    path: '/v4/spreadsheets/upgrade-test',
+  const domain = seedTestDomain(harness, {
+    tier: 'small',
+    seed: 'upgrade',
+    counts: { schools: 1, students: 2, staff: 1, devices: 1 },
   });
-  assert.equal(sheets.status, 401);
+  const token = grantToken(
+    harness,
+    domain,
+    WRITE_SCOPES.drive,
+    `admin@${domain.spec.primaryDomain}`,
+  );
+  const created = await googleClient(harness, token, 'sheets.googleapis.com')(
+    'POST',
+    '/v4/spreadsheets',
+    {
+      body: { properties: { title: 'Upgrade check' } },
+    },
+  );
+  assert.equal(created.status, 200);
+  assert.match(created.json().spreadsheetId, /^[A-Za-z0-9_-]{44}$/);
   const admin = await harness.request({
     host: 'admin.googleapis.com',
     path: '/admin/directory/v1/users',
