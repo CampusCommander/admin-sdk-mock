@@ -9,8 +9,8 @@ The [examples](../../examples/README.md) hold runnable Node, Python, and curl cl
 Two pieces route a client to the mock:
 
 1. The proxy. `HTTPS_PROXY` points the client at the mock's CONNECT proxy.
-   The proxy tunnels port 443 of `oauth2.googleapis.com`, `admin.googleapis.com`, `www.googleapis.com`, and `chromemanagement.googleapis.com` to the mock's Google listener.
-2. The CA. The Google listener presents a certificate for the four hostnames, signed by the mock CA. The client trusts that CA.
+   The proxy tunnels port 443 of `oauth2.googleapis.com`, `admin.googleapis.com`, `www.googleapis.com`, `chromemanagement.googleapis.com`, and `sheets.googleapis.com` to the mock's Google listener.
+2. The CA. The Google listener presents a certificate for the five hostnames, signed by the mock CA. The client trusts that CA.
 
 The proxy never decrypts traffic. It answers `403 Forbidden` to every other target unless `passthrough` is on, and then it tunnels that target unchanged.
 It answers `405 Method Not Allowed` to any request that is not `CONNECT`.
@@ -48,7 +48,7 @@ So the mock writes `ca-bundle.pem` beside `ca.pem`: the mock CA followed by the 
 ### NO_PROXY
 
 `NO_PROXY` keeps local traffic, including the control API, off the proxy.
-With `passthrough` off, the proxy refuses every target outside the four Google hostnames.
+With `passthrough` off, the proxy refuses every target outside the five Google hostnames.
 Add the other hosts of your application to `NO_PROXY`, or turn `passthrough` on. Never add a Google hostname to `NO_PROXY`.
 
 ### Output formats
@@ -141,10 +141,10 @@ On macOS and Windows, Go ignores `SSL_CERT_FILE`. Add the CA from `ca.pem` to th
 
 A client that ignores proxies reaches the mock through the hosts file instead.
 
-1. Map the four hostnames to the loopback address in `/etc/hosts`, or in `C:\Windows\System32\drivers\etc\hosts` on Windows:
+1. Map the five hostnames to the loopback address in `/etc/hosts`, or in `C:\Windows\System32\drivers\etc\hosts` on Windows:
 
    ```text
-   127.0.0.1 oauth2.googleapis.com admin.googleapis.com www.googleapis.com chromemanagement.googleapis.com
+   127.0.0.1 oauth2.googleapis.com admin.googleapis.com www.googleapis.com chromemanagement.googleapis.com sheets.googleapis.com
    ```
 
 2. Start the mock with the Google listener on port 443: `npx admin-sdk-mock start --google-port 443`. Binding port 443 needs root or a low-port capability.
@@ -158,7 +158,7 @@ The hosts file affects every program on the machine. Remove the line when the te
 Inside Docker, network aliases replace the hosts file.
 The Campus Commander overlay, `compose/campus-commander.overlay.yml`, shows the pattern:
 
-- The mock container joins the application's internal network with the four Google hostnames as network aliases. Docker DNS resolves them to the mock.
+- The mock container joins the application's internal network with the five Google hostnames as network aliases. Docker DNS resolves them to the mock.
 - The mock listens on port 443, the image default. Docker 20.10 and later let the `node` user bind it. The overlay also sets the `net.ipv4.ip_unprivileged_port_start=0` sysctl, for runtimes that do not.
 - The mock exports its CA to a shared volume. The `api` and `workers` containers mount it and trust it through `NODE_EXTRA_CA_CERTS`.
 
@@ -168,7 +168,7 @@ Combine the overlay with a rendered Campus Commander all-docker Compose file:
 docker compose -f <install>/docker-compose.yml -f compose/campus-commander.overlay.yml up --detach --wait
 ```
 
-The overlay adds no file to Campus Commander. It routes the four Google hostnames to the mock inside the `internal` network.
+The overlay adds no file to Campus Commander. It routes the five Google hostnames to the mock inside the `internal` network.
 To test local changes, build the image and point the overlay at it:
 
 ```sh

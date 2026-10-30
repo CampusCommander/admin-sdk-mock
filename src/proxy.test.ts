@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
-import { networkInterfaces } from 'node:os';
+import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import test from 'node:test';
 import { GOOGLE_HOSTS, isLoopbackHost, startProxy } from './proxy.ts';
 
@@ -37,7 +37,7 @@ function connect(
   });
 }
 
-test('the proxy tunnels the four Google hostnames on port 443 to the target', async (t) => {
+test('the proxy tunnels the five Google hostnames on port 443 to the target', async (t) => {
   const google = await echoServer('google');
   const proxy = await startProxy({
     host: '127.0.0.1',
@@ -53,6 +53,7 @@ test('the proxy tunnels the four Google hostnames on port 443 to the target', as
     'admin.googleapis.com',
     'chromemanagement.googleapis.com',
     'oauth2.googleapis.com',
+    'sheets.googleapis.com',
     'www.googleapis.com',
   ]);
   for (const host of GOOGLE_HOSTS) {
@@ -60,7 +61,7 @@ test('the proxy tunnels the four Google hostnames on port 443 to the target', as
     assert.equal(result.status, 'HTTP/1.1 200 Connection Established', host);
     assert.equal(result.body, 'google\n');
   }
-  assert.equal(proxy.accepted.length, 4);
+  assert.equal(proxy.accepted.length, 5);
   assert.match(proxy.url, /^http:\/\/127\.0\.0\.1:\d+$/);
 });
 
@@ -94,24 +95,76 @@ test('other targets get 403 without passthrough, and the proxy stays healthy', a
   );
 });
 
-/** An IPv4 address of this host that is neither loopback nor link-local, if it has one. */
-const outsideAddress = Object.values(networkInterfaces())
-  .flat()
-  .find(
-    (address) =>
-      address !== undefined &&
-      !address.internal &&
-      address.family === 'IPv4' &&
-      !address.address.startsWith('169.254.'),
-  )?.address;
+/** The IPv4 addresses of this host that are neither loopback nor link-local. */
+const outsideAddresses = [
+  ...new Set(
+    Object.values(networkInterfaces())
+      .flat()
+      .filter(
+        (address): address is NetworkInterfaceInfo =>
+          address !== undefined &&
+          !address.internal &&
+          address.family === 'IPv4' &&
+          !address.address.startsWith('169.254.'),
+      )
+      .map((address) => address.address),
+  ),
+];
+
+/** Whether a connection to `host:port` delivers a line within two seconds. */
+function answers(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, 2_000);
+    socket.setEncoding('utf8');
+    socket.on('data', () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on('error', () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * An echo server on the first outside address that accepts a connection from this
+ * host. A host can hold an address on an adapter that does not route to itself,
+ * such as a point-to-point tunnel, so the fixture proves the address works
+ * instead of trusting the first one it finds.
+ */
+async function reachableEchoServer(name: string) {
+  for (const address of outsideAddresses) {
+    const server = net.createServer((socket) => socket.end(`${name}\n`));
+    try {
+      server.listen(0, address);
+      await once(server, 'listening');
+    } catch {
+      server.close();
+      continue;
+    }
+    const port = (server.address() as AddressInfo).port;
+    if (await answers(address, port))
+      return { address, port, close: () => server.close() };
+    await new Promise((resolve) => server.close(resolve));
+  }
+  return null;
+}
 
 test('passthrough tunnels other targets to themselves', async (t) => {
-  if (!outsideAddress) {
-    t.skip('This host has no IPv4 address outside loopback and link-local.');
+  const other = await reachableEchoServer('other');
+  if (!other) {
+    t.skip(
+      'No IPv4 address outside loopback and link-local accepts a connection from this host.',
+    );
     return;
   }
   const google = await echoServer('google');
-  const other = await echoServer('other', outsideAddress);
   const proxy = await startProxy({
     host: '127.0.0.1',
     port: 0,
@@ -123,7 +176,7 @@ test('passthrough tunnels other targets to themselves', async (t) => {
     google.close();
     other.close();
   });
-  const target = `${outsideAddress}:${other.port}`;
+  const target = `${other.address}:${other.port}`;
   const result = await connect(proxy.port, target);
   assert.equal(result.status, 'HTTP/1.1 200 Connection Established');
   assert.equal(result.body, 'other\n');

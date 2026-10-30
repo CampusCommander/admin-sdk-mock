@@ -4,7 +4,7 @@ import type { Domains } from '../domains.ts';
 import type { ApiResponse, Call } from '../http/types.ts';
 import type { Registry } from '../store/registry.ts';
 import { findUser } from '../store/user-lookup.ts';
-import { TOKEN_URI } from './scopes.ts';
+import { SCOPE_PREFIX, TOKEN_URI } from './scopes.ts';
 
 const JWT_BEARER = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 const LIFETIME_SECONDS = 3599;
@@ -100,6 +100,17 @@ export function handleToken(
       'invalid_scope',
       'Empty or missing scope not allowed.',
     );
+  const refusal = requested.includes(`${SCOPE_PREFIX}drive.file`)
+    ? deps.registry.driveRefusal(customerId, subject)
+    : undefined;
+  if (refusal === 'unauthorized_client')
+    return oauthError(
+      401,
+      'unauthorized_client',
+      'Client is unauthorized to retrieve access tokens using this method, or client not authorized for any of the scopes requested.',
+    );
+  if (refusal === 'invalid_grant')
+    return oauthError(400, 'invalid_grant', 'Invalid email or User ID');
   const granted = call.overrides.grant(
     customerId,
     account.clientId,

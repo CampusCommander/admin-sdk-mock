@@ -41,7 +41,7 @@ mock credential <customerId> > mock-credential.json
 Docker runs in the implementation environment since 2026-10-10. The run still awaits the owner, who chooses the OIDC provider for a phase 3 installation.
 The owner runs the steps above and fills the pending cells. The grid must show 60,000 devices.
 
-The overlay routes the four Google hostnames to the mock on the `internal` network. The `api` service also sits on `ingress`, which reaches the internet, and a phase 3 render adds `google-egress` for `workers`.
+The overlay routes the five Google hostnames to the mock on the `internal` network. The `api` service also sits on `ingress`, which reaches the internet, and a phase 3 render adds `google-egress` for `workers`.
 Before you import the credential, run `nslookup admin.googleapis.com` inside `api` and `workers`. Both must answer with the mock's address.
 
 | Check                                                        | Result                                            |

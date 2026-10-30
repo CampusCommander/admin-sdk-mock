@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { READ_SCOPES, READ_WRITE_SCOPES } from '../../src/auth/scopes.ts';
+import {
+  READ_SCOPES,
+  READ_WRITE_SCOPES,
+  WRITE_SCOPES,
+} from '../../src/auth/scopes.ts';
+import { CSV_MIME } from '../../src/drive/store.ts';
 import { row, rows } from '../../src/store/sqlite.ts';
 import {
   directoryClient,
+  googleClient,
   grantToken,
   seedTestDomain,
   startHarness,
@@ -18,6 +24,8 @@ const load = (name: string) =>
   ) as Discovery;
 const directory = load('directory_v1');
 const chrome = load('chromemanagement_v1');
+const drive = load('drive_v3');
+const sheets = load('sheets_v4');
 const MASK =
   'name,customer,orgUnitId,deviceId,serialNumber,batteryInfo,batteryStatusReport,memoryInfo,storageInfo';
 const D = '/admin/directory/v1';
@@ -487,4 +495,138 @@ test('every milestone 3 response matches its discovery schema', async (t) => {
     await api('DELETE', `/groups/${team}/members/${staff}`),
   );
   empty('groups.delete', await api('DELETE', `/groups/${team}`));
+});
+
+const DRIVE = '/drive/v3';
+const SHEETS = '/v4';
+
+test('every Drive and Sheets response matches its discovery schema', async (t) => {
+  const harness = await startHarness();
+  t.after(() => harness.close());
+  const domain = seedTestDomain(harness, {
+    tier: 'small',
+    seed: 'contract-drive',
+    counts: { schools: 1, students: 10, staff: 2, devices: 2 },
+  });
+  const admin = `admin@${domain.spec.primaryDomain}`;
+  const token = grantToken(harness, domain, WRITE_SCOPES.drive, admin);
+  const driveApi = googleClient(harness, token, 'www.googleapis.com', DRIVE);
+  const sheetsApi = googleClient(
+    harness,
+    token,
+    'sheets.googleapis.com',
+    SHEETS,
+  );
+  const check = (
+    name: string,
+    doc: Discovery,
+    method: string[],
+    response: HarnessResponse,
+  ) => {
+    assert.equal(
+      response.status,
+      200,
+      `${name}: ${response.text.slice(0, 300)}`,
+    );
+    assert.deepEqual(
+      validate(doc, methodSchema(doc, method), response.json()),
+      [],
+      name,
+    );
+  };
+
+  const created = await sheetsApi('POST', '/spreadsheets', {
+    body: {
+      properties: { title: 'Contract devices' },
+      sheets: [
+        {
+          properties: {
+            title: 'Devices',
+            gridProperties: {
+              rowCount: 100,
+              columnCount: 5,
+              frozenRowCount: 1,
+            },
+          },
+        },
+      ],
+    },
+  });
+  check('spreadsheets.create', sheets, ['spreadsheets', 'create'], created);
+  const spreadsheetId = created.json().spreadsheetId as string;
+
+  check(
+    'spreadsheets.values.update',
+    sheets,
+    ['spreadsheets', 'values', 'update'],
+    await sheetsApi('PUT', `/spreadsheets/${spreadsheetId}/values/Devices!A1`, {
+      query: { valueInputOption: 'RAW' },
+      body: {
+        values: [
+          ['id', 'name'],
+          ['1', 'Ana'],
+        ],
+      },
+    }),
+  );
+  check(
+    'spreadsheets.values.get',
+    sheets,
+    ['spreadsheets', 'values', 'get'],
+    await sheetsApi(
+      'GET',
+      `/spreadsheets/${spreadsheetId}/values/Devices!A1:B2`,
+    ),
+  );
+  check(
+    'spreadsheets.get',
+    sheets,
+    ['spreadsheets', 'get'],
+    await sheetsApi('GET', `/spreadsheets/${spreadsheetId}`, {
+      query: { includeGridData: 'true' },
+    }),
+  );
+  check(
+    'spreadsheets.batchUpdate',
+    sheets,
+    ['spreadsheets', 'batchUpdate'],
+    await sheetsApi('POST', `/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      body: {
+        requests: [
+          {
+            repeatCell: {
+              range: { sheetId: 0 },
+              cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
+              fields: 'userEnteredFormat.numberFormat',
+            },
+          },
+        ],
+      },
+    }),
+  );
+
+  const csv = harness.mock.drive.create(domain.customerId, {
+    name: 'Devices.csv',
+    mimeType: CSV_MIME,
+    owner: admin,
+    content: 'id,name\n1,Ana\n',
+  });
+  check(
+    'files.list',
+    drive,
+    ['files', 'list'],
+    await driveApi('GET', '/files'),
+  );
+  check(
+    'files.get',
+    drive,
+    ['files', 'get'],
+    await driveApi('GET', `/files/${csv.id}`),
+  );
+  const media = await driveApi('GET', `/files/${csv.id}`, {
+    query: { alt: 'media' },
+  });
+  assert.equal(media.status, 200);
+  assert.equal(media.text, 'id,name\n1,Ana\n');
+  assert.equal(media.headers['content-type'], CSV_MIME);
 });

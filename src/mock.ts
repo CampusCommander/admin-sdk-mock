@@ -12,10 +12,12 @@ import {
   directoryError,
   internalError,
   notFoundPage,
+  rpcEnvelope,
   rpcError,
   transientError,
 } from './http/errors.ts';
 import { createFaults, type Faults } from './faults/faults.ts';
+import { createDriveStore, type DriveStore } from './drive/store.ts';
 import { matchRoute } from './http/router.ts';
 import {
   type Access,
@@ -59,6 +61,7 @@ export interface Mock {
   readonly random: Random;
   readonly limits: Limits;
   readonly faults: Faults;
+  readonly drive: DriveStore;
   readonly routes: Route[];
   pipeline: Pipeline;
   overrides: Overrides;
@@ -94,7 +97,7 @@ export function finalize(
     } catch (error) {
       if (!(error instanceof FieldsError)) throw error;
       return finalize(
-        route?.api === 'chrome'
+        route !== null && rpcEnvelope(route.api)
           ? rpcError(400, 'INVALID_ARGUMENT', error.message)
           : directoryError(400, 'invalidParameter', error.message, {
               item: { location: 'fields', locationType: 'parameter' },
@@ -124,6 +127,7 @@ export function createMock(options: MockOptions): Mock {
   const limits = createLimits({ clock, timing });
   const random = options.random ?? createRandom(`mock/${Date.now()}`);
   const delays = createDelays({ clock, timing, random, limits });
+  const drive = createDriveStore({ clock });
   const faults = createFaults({
     clock,
     timing,
@@ -141,6 +145,7 @@ export function createMock(options: MockOptions): Mock {
     random,
     limits,
     faults,
+    drive,
     routes: [],
     pipeline: {
       before: (call) => faults.before(call),
@@ -159,7 +164,12 @@ export function createMock(options: MockOptions): Mock {
       const { route, params } = match;
       let access: Access | null = null;
       let domain: OpenDomain | null = null;
-      if (route.api === 'directory' || route.api === 'chrome') {
+      if (
+        route.api === 'directory' ||
+        route.api === 'chrome' ||
+        route.api === 'drive' ||
+        route.api === 'sheets'
+      ) {
         const result = mock.authenticator.authenticate(request, route);
         if (!('access' in result)) return finalize(result, request, route);
         access = result.access;

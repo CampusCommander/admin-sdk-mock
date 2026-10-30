@@ -68,14 +68,26 @@ export function rpcError(
   };
 }
 
+/** The APIs that answer with the Google RPC error envelope. */
+export function rpcEnvelope(api: Api): boolean {
+  return api === 'chrome' || api === 'sheets';
+}
+
+/** The service that an error names in its `details`. */
+const SERVICE: Record<string, string> = {
+  chrome: 'chromemanagement.googleapis.com',
+  drive: 'drive.googleapis.com',
+  sheets: 'sheets.googleapis.com',
+};
+
 export function transientError(api: Api): ApiResponse {
-  return api === 'chrome'
+  return rpcEnvelope(api)
     ? rpcError(503, 'UNAVAILABLE', 'The service is currently unavailable.')
     : directoryError(503, 'backendError', 'Backend Error');
 }
 
 export function internalError(api: Api): ApiResponse {
-  return api === 'chrome'
+  return rpcEnvelope(api)
     ? rpcError(500, 'INTERNAL', 'Internal error encountered.')
     : directoryError(500, 'backendError', 'Backend Error');
 }
@@ -104,7 +116,7 @@ export function unauthenticated(
     kind === 'missing'
       ? `Request is missing required authentication credential. ${SIGN_IN_HELP}`
       : `Request had invalid authentication credentials. ${SIGN_IN_HELP}`;
-  if (api === 'chrome') return rpcError(401, 'UNAUTHENTICATED', message);
+  if (rpcEnvelope(api)) return rpcError(401, 'UNAUTHENTICATED', message);
   return directoryError(
     401,
     kind === 'missing' ? 'required' : 'authError',
@@ -127,14 +139,11 @@ export function insufficientScopes(api: Api): ApiResponse {
       reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT',
       domain: 'googleapis.com',
       metadata: {
-        service:
-          api === 'chrome'
-            ? 'chromemanagement.googleapis.com'
-            : 'admin.googleapis.com',
+        service: SERVICE[api] ?? 'admin.googleapis.com',
       },
     },
   ];
-  if (api === 'chrome')
+  if (rpcEnvelope(api))
     return rpcError(403, 'PERMISSION_DENIED', message, details);
   return directoryError(403, 'insufficientPermissions', message, {
     itemMessage: 'Insufficient Permission',
@@ -144,11 +153,38 @@ export function insufficientScopes(api: Api): ApiResponse {
 
 /** 403 for a subject without administrator rights or another customer's data. */
 export function notAuthorized(api: Api): ApiResponse {
-  return api === 'chrome'
+  return rpcEnvelope(api)
     ? rpcError(403, 'PERMISSION_DENIED', 'The caller does not have permission')
     : directoryError(
         403,
         'forbidden',
         'Not Authorized to access this resource/api',
       );
+}
+
+/** 400 for a request parameter that the mock cannot accept. */
+export function invalidParameter(api: Api, message: string): ApiResponse {
+  return rpcEnvelope(api)
+    ? rpcError(400, 'INVALID_ARGUMENT', message)
+    : directoryError(400, 'invalidParameter', message);
+}
+
+/** 404 for a Drive file that does not exist or that the token cannot see. */
+export function driveNotFound(fileId: string): ApiResponse {
+  const message = `File not found: ${fileId}.`;
+  return directoryError(404, 'notFound', message, { itemMessage: message });
+}
+
+/** 404 for a spreadsheet that does not exist or that the token cannot see. */
+export function sheetsNotFound(): ApiResponse {
+  return rpcError(404, 'NOT_FOUND', 'Requested entity was not found.');
+}
+
+/** 403 for the media read of a Google Sheet, which holds no downloadable bytes. */
+export function notDownloadable(): ApiResponse {
+  return directoryError(
+    403,
+    'fileNotDownloadable',
+    'Only files with binary content can be downloaded. Use Export with Docs Editors files.',
+  );
 }

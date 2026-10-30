@@ -56,3 +56,17 @@ test('a wrong host, method, or path matches nothing', () => {
 test('a malformed percent sequence matches nothing', () => {
   assert.equal(matchRoute(routes, request('/items/%E0%A4%A')), undefined);
 });
+
+test('a when predicate picks between routes that share a path and a method', () => {
+  const shared = [
+    {
+      ...route('media', /^\/files\/(?<id>[^/]+)$/),
+      when: (value: ApiRequest) => value.query.get('alt') === 'media',
+    },
+    route('metadata', /^\/files\/(?<id>[^/]+)$/),
+  ];
+  const media = request('/files/abc');
+  media.query.set('alt', 'media');
+  assert.equal(matchRoute(shared, media)?.route.id, 'media');
+  assert.equal(matchRoute(shared, request('/files/abc'))?.route.id, 'metadata');
+});

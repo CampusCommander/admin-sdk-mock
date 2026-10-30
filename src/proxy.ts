@@ -7,6 +7,7 @@ export const GOOGLE_HOSTS: readonly string[] = [
   'admin.googleapis.com',
   'www.googleapis.com',
   'chromemanagement.googleapis.com',
+  'sheets.googleapis.com',
 ];
 
 /** How many targets each list of a ProxyHandle keeps. Older targets drop off. */

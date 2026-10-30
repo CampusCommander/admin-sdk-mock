@@ -30,6 +30,9 @@ export interface StoredToken {
   expiresAt: number;
 }
 
+/** The answer that a control route makes the Drive token exchange for a subject. */
+export type DriveRefusal = 'invalid_grant' | 'unauthorized_client';
+
 export interface Registry {
   addDomain(domain: StoredDomain, names: readonly string[]): void;
   getDomain(customerId: string): StoredDomain | undefined;
@@ -48,6 +51,13 @@ export interface Registry {
   grant(customerId: string, clientId: string): string[] | undefined;
   saveToken(token: StoredToken): void;
   token(value: string): StoredToken | undefined;
+  setDriveRefusal(
+    customerId: string,
+    subject: string,
+    error: DriveRefusal,
+  ): void;
+  driveRefusal(customerId: string, subject: string): DriveRefusal | undefined;
+  clearDriveRefusals(customerId: string): void;
   close(): void;
 }
 
@@ -86,6 +96,12 @@ CREATE TABLE IF NOT EXISTS tokens (
   customer_id TEXT NOT NULL REFERENCES domains ON DELETE CASCADE,
   scopes TEXT NOT NULL,
   expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS drive_refusals (
+  customer_id TEXT NOT NULL REFERENCES domains ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  error TEXT NOT NULL,
+  PRIMARY KEY (customer_id, subject)
 );
 `;
 
@@ -251,6 +267,26 @@ export function openRegistry(path: string): Registry {
           scopes: JSON.parse(found.scopes) as string[],
           expiresAt: found.expires_at,
         }
+      );
+    },
+    setDriveRefusal(customerId, subject, error) {
+      db.prepare(
+        'INSERT INTO drive_refusals (customer_id, subject, error) VALUES (?, ?, ?) ON CONFLICT (customer_id, subject) DO UPDATE SET error = excluded.error',
+      ).run(customerId, subject.toLowerCase(), error);
+    },
+    driveRefusal(customerId, subject) {
+      const found = row<{ error: string }>(
+        db
+          .prepare(
+            'SELECT error FROM drive_refusals WHERE customer_id = ? AND subject = ?',
+          )
+          .get(customerId, subject.toLowerCase()),
+      );
+      return found?.error as DriveRefusal | undefined;
+    },
+    clearDriveRefusals(customerId) {
+      db.prepare('DELETE FROM drive_refusals WHERE customer_id = ?').run(
+        customerId,
       );
     },
     close() {

@@ -8,6 +8,7 @@ export function matchRoute(
   for (const route of routes) {
     if (!route.hosts.includes(request.host)) continue;
     if (!route.methods.includes(request.method)) continue;
+    if (route.when && !route.when(request)) continue;
     const match = route.pattern.exec(request.path);
     if (!match) continue;
     const params: Record<string, string> = {};

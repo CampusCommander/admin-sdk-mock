@@ -3,6 +3,7 @@ import type { Clock, Timing } from '../clock.ts';
 import {
   directoryError,
   internalError,
+  rpcEnvelope,
   rpcError,
   transientError,
 } from '../http/errors.ts';
@@ -168,7 +169,7 @@ export function validateFault(
 }
 
 function statusResponse(api: Api, status: number, reason: string): ApiResponse {
-  if (api === 'chrome')
+  if (rpcEnvelope(api))
     return rpcError(status, reason, `Injected fault: ${reason}`);
   return directoryError(status, reason, MESSAGES[reason] ?? reason, {
     domain: USAGE_LIMITS.has(reason) ? 'usageLimits' : 'global',
