@@ -3,6 +3,22 @@
 This file records every notable change to the project.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-10-30
+
+### Added
+
+- Drive v3 on `www.googleapis.com`: `files.list`, the metadata read of `files.get`, and the media read of `files.get` with `Range`. The media read carries the route ID `drive.files.get.media`.
+- Sheets v4 on `sheets.googleapis.com`: `spreadsheets.create`, `spreadsheets.get`, `spreadsheets.batchUpdate`, `spreadsheets.values.get`, and `spreadsheets.values.update` with `RAW`.
+- The `drive.file` scope in the read-write scope set, and a per-user Drive file store. A token reads only the files that its subject owns or that a control grant names.
+- Control routes below `/domains/{id}/drive`: seed a file, edit it, add a tab to it, delete it, grant a subject the files of a person, and refuse the Drive token of a subject with `invalid_grant` or `unauthorized_client`.
+- The public Drive v3 and Sheets v4 discovery documents under `test/contract/discovery/`. `npm run test:contract` validates every new response against them.
+- A `hang` fault on `drive.files.get.media` waits before the file lookup, so a deletion during the hold answers 404.
+- The drive and sheets entries in `docs/reference/api-coverage.md`, and the Drive and Sheets rulings in `docs/calibration.md`.
+
+### Changed
+
+- The proxy, the CA, and the Campus Commander overlay serve `sheets.googleapis.com` beside the four hosts of 0.2.0.
+
 ## [0.2.0] - 2026-10-16
 
 ### Added
