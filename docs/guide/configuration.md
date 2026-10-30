@@ -113,7 +113,7 @@ A control URL that is not an `http` or `https` URL exits with code 2.
 
 | Listener | Default          | Protocol                                          |
 | -------- | ---------------- | ------------------------------------------------- |
-| Google   | `127.0.0.1:8443` | TLS, with a certificate for the four Google hosts |
+| Google   | `127.0.0.1:8443` | TLS, with a certificate for the five Google hosts |
 | Control  | `127.0.0.1:8080` | Plain HTTP                                        |
 | Proxy    | Off              | HTTP `CONNECT`                                    |
 

@@ -45,7 +45,7 @@ In process, call `useInProcess()` before the first request. In Docker, point the
 Symptoms: curl prints `CONNECT tunnel failed, response 403`. Other clients report a `403` status from the proxy.
 The mock logs `{"event":"proxy-refused","target":"<host>:<port>"}`.
 
-Cause: the target is not port 443 of one of the four Google hostnames, and `passthrough` is off.
+Cause: the target is not port 443 of one of the five Google hostnames, and `passthrough` is off.
 The `init` starter and every configuration file default to `passthrough: false`.
 
 Fix: add the other hosts to `NO_PROXY`, or turn passthrough on with `--passthrough`, `MOCK_PROXY_PASSTHROUGH=true`, or `"listen": { "proxy": { "passthrough": true } }`.

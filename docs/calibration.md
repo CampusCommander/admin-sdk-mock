@@ -1,6 +1,6 @@
 # Calibration record
 
-Updated: 2026-10-10.
+Updated: 2026-10-30.
 
 | Value                                 | Default                         | Evidence                                                                                | Status         |
 | ------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------- | -------------- |
@@ -184,3 +184,24 @@ The `small` tier holds 106 groups and 2,713 memberships. The `medium` tier holds
 - The derived membership of `all-students` held 317,728 members over 1,589 pages at 31 ms per page.
 - A `hasMember` check down the deep chain took 4 ms and returned `true`.
 - Resident memory peaked at 1,021 MB.
+
+## Drive and Sheets rulings
+
+Live Google evidence for Drive and Sheets does not exist. The owner authorized no live Drive call for this release.
+Each value below follows Google's documentation, the Drive slice design, or the code. A live check would replace it with evidence.
+
+| Value                         | Mock behavior                                                                                                                             | Source      | Status     |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------- |
+| File visibility               | A token reads the files that its subject owns, plus the files that a control grant names. It reads no other file.                         | Design DM1  | unverified |
+| File ID form                  | 44 base64url characters for a created file. A control route may seed its own ID of 1 to 128 letters, digits, hyphens, or underscores.     | Code        | unverified |
+| `files.list` order            | Oldest first. Google publishes no order.                                                                                                  | Code        | unverified |
+| `files.list` page size        | 100 by default. A value above 1,000 clamps, and a value below 1 answers 400.                                                              | Code        | unverified |
+| `files.list` query filter     | `q` is ignored, and every visible file answers.                                                                                           | Code        | unverified |
+| Media read of a Google Sheet  | 403 `fileNotDownloadable`. The file stores no bytes.                                                                                      | Google docs | documented |
+| `Range` on the media read     | A satisfiable range answers 206 with `content-range`. A start past the end answers 416. A multi-range header is ignored, and 200 answers. | Code        | unverified |
+| New spreadsheet defaults      | Locale `en_US`, time zone `UTC`, and `autoRecalc` `ON_CHANGE`. A request without tabs gets one tab, `Sheet1`.                             | Code        | unverified |
+| `batchUpdate` request kinds   | `repeatCell` alone. Every other request kind answers 400 `INVALID_ARGUMENT`.                                                              | Code        | unverified |
+| `values.update` input options | `RAW` alone. A missing `valueInputOption` answers 400.                                                                                    | Code        | unverified |
+| `values.get` render options   | Every accepted `valueRenderOption` answers the cell text, as `formattedValue` and `userEnteredValue.stringValue`.                         | Code        | unverified |
+| A1 range without a tab title  | Reads the first tab. A range without a cell reads the whole tab.                                                                          | Code        | unverified |
+| Quota on the new routes       | No quota bucket. The configured quota covers Directory and Chrome Management alone.                                                       | Code        | unverified |

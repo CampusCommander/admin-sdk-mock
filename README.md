@@ -1,6 +1,6 @@
 # Admin SDK mock
 
-The Admin SDK mock is a local stand-in for the Google Admin SDK Directory API, the Chrome Management telemetry API, and the Google OAuth service-account flow.
+The Admin SDK mock is a local stand-in for the Google Admin SDK Directory API, the Chrome Management telemetry API, the Google Drive and Sheets subset of the Drive slice, and the Google OAuth service-account flow.
 Unmodified Google clients reach it through a built-in CONNECT proxy and a mock CA, so tests need no root access, no hosts file, and no real Google tenant.
 It serves seeded K-12 domains, from an empty domain to the 400,000-device `xlarge` tier, and it models Google's quota, latency, and search lag.
 It is test infrastructure and never serves production traffic.
@@ -139,6 +139,7 @@ The [CI guide](docs/guide/ci.md) lists every input and output, and [examples/git
 - Directory writes: Chrome device updates, moves, status changes, and commands, plus user and OU writes.
 - Groups: groups, group aliases, members, derived membership, and `hasMember`.
 - Chrome Management: the telemetry device list and get, with read masks and filters.
+- Drive and Sheets: `files.list`, the metadata read and the media read of `files.get`, and the five `spreadsheets` calls that the Drive slice needs, under the `drive.file` scope.
 - Batch: the Directory multipart batch on `www.googleapis.com` and `admin.googleapis.com`.
 
 ## Status
@@ -155,7 +156,7 @@ The Campus Commander acceptance run awaits the owner. [docs/trust.md](docs/trust
 ## Campus Commander
 
 The mock began as the scale-test backend of Campus Commander.
-A Compose overlay routes the four Google hostnames to the mock inside the Campus Commander network. The overlay adds no file to Campus Commander.
+A Compose overlay routes the five Google hostnames to the mock inside the Campus Commander network. The overlay adds no file to Campus Commander.
 [docs/campus-commander.md](docs/campus-commander.md) holds the procedure and its record. The [clients guide](docs/guide/clients.md#docker-network-aliases) explains the overlay.
 
 ## License
