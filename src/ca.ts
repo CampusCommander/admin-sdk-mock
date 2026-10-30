@@ -8,6 +8,7 @@ export const GOOGLE_HOSTS = [
   'admin.googleapis.com',
   'www.googleapis.com',
   'chromemanagement.googleapis.com',
+  'sheets.googleapis.com',
 ] as const;
 
 export interface Certificates {
@@ -35,7 +36,7 @@ function serialNumber(): string {
   return `01${randomBytes(15).toString('hex')}`;
 }
 
-/** Create a CA and one server certificate for the four Google hostnames. */
+/** Create a CA and one server certificate for the five Google hostnames. */
 export function createCertificates(
   now = new Date(),
 ): Certificates & { caKey: string } {

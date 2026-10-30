@@ -144,10 +144,39 @@ export type DirectoryClient = (
   options?: {
     query?: Record<string, string | number | boolean | undefined>;
     body?: unknown;
+    headers?: Record<string, string>;
   },
 ) => Promise<HarnessResponse>;
 
-/** Call admin.googleapis.com. Paths are relative to /admin/directory/v1. */
+/** Call one Google host with a path prefix, such as `/drive/v3`. */
+export function googleClient(
+  harness: Harness,
+  token: string,
+  host: string,
+  prefix = '',
+): DirectoryClient {
+  return (method, path, options = {}) =>
+    harness.request({
+      host,
+      method,
+      path: `${prefix}${path}`,
+      token,
+      query: options.query,
+      headers: options.headers,
+      ...(options.body === undefined
+        ? {}
+        : {
+            body:
+              typeof options.body === 'string'
+                ? options.body
+                : JSON.stringify(options.body),
+            headers: {
+              'content-type': 'application/json',
+              ...options.headers,
+            },
+          }),
+    });
+}
 export function directoryClient(
   harness: Harness,
   token: string,

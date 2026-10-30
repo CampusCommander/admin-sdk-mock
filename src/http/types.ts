@@ -2,7 +2,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ResolvedSpec } from '../seed/spec.ts';
 import type { StoredDomain, StoredToken } from '../store/registry.ts';
 
-export type Api = 'oauth' | 'directory' | 'chrome' | 'batch';
+export type Api =
+  'oauth' | 'directory' | 'chrome' | 'batch' | 'drive' | 'sheets';
 
 export interface ApiRequest {
   method: string;
@@ -85,6 +86,11 @@ export interface Route {
   hosts: readonly string[];
   methods: readonly string[];
   pattern: RegExp;
+  /**
+   * Extra match for a route that shares a path and a method with another route, such as
+   * the media read of `files.get`, which `alt=media` separates from the metadata read.
+   */
+  when?: (request: ApiRequest) => boolean;
   /** The token needs at least one of these scopes. */
   scopes: readonly string[];
   /** The delegated subject must be a super administrator. */

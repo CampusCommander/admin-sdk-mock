@@ -4,6 +4,7 @@ import { AccountError, issueServiceAccount } from '../auth/accounts.ts';
 import { MAX_SCALE } from '../clock.ts';
 import { scopesFor } from '../config/config.ts';
 import { DomainError } from '../domains.ts';
+import { DriveControlError, handleDriveControl } from '../drive/control.ts';
 import { FaultError } from '../faults/faults.ts';
 import type { Mock } from '../mock.ts';
 import type { ServerInfo } from '../server.ts';
@@ -288,11 +289,21 @@ export function createControlHandler(
       }
     }
     const id = parts[1];
+    if (parts[2] === 'drive') {
+      domainOrThrow(id);
+      const body = ['POST', 'PUT', 'DELETE'].includes(method)
+        ? await readJson(request)
+        : {};
+      const answer = handleDriveControl(mock, id, method, parts.slice(3), body);
+      return send(response, answer.status, answer.body);
+    }
     if (parts.length === 2) {
       if (method === 'GET')
         return send(response, 200, domainOrThrow(id).record);
       if (method === 'DELETE') {
         mock.faults.clear(id);
+        mock.drive.clear(id);
+        mock.registry.clearDriveRefusals(id);
         mock.domains.delete(id);
         return send(response, 204);
       }
@@ -301,6 +312,8 @@ export function createControlHandler(
       domainOrThrow(id);
       switch (`${method} ${parts[2]}`) {
         case 'POST reset':
+          mock.drive.clear(id);
+          mock.registry.clearDriveRefusals(id);
           return send(response, 200, mock.domains.reset(id, mock.clock.now()));
         case 'POST service-accounts': {
           const body = await readJson(request);
@@ -377,7 +390,11 @@ export function createControlHandler(
 
   return (request: IncomingMessage, response: ServerResponse): void => {
     route(request, response).catch((error: unknown) => {
-      if (error instanceof ControlError || error instanceof DomainError)
+      if (
+        error instanceof ControlError ||
+        error instanceof DomainError ||
+        error instanceof DriveControlError
+      )
         return send(response, error.status, { error: error.message });
       if (error instanceof AccountError || error instanceof FaultError)
         return send(response, 400, { error: error.message });

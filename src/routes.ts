@@ -5,6 +5,14 @@ import { SCOPES, WRITE_SCOPES } from './auth/scopes.ts';
 import { getTelemetry, listTelemetry } from './chrome/telemetry.ts';
 import { getCustomer } from './directory/customers.ts';
 import { getCommand, issueCommand } from './directory/commands.ts';
+import { getFile, getMedia, listFiles } from './drive/files.ts';
+import {
+  batchUpdate,
+  createSpreadsheet,
+  getSpreadsheet,
+  getValues,
+  updateValues,
+} from './drive/sheets.ts';
 import {
   batchChangeStatus,
   moveDevicesToOu,
@@ -33,8 +41,17 @@ import { memberRoutes } from './directory/member-routes.ts';
 import type { Mock } from './mock.ts';
 
 const OAUTH = ['oauth2.googleapis.com'];
+const DRIVE = ['www.googleapis.com'];
+const SHEETS = ['sheets.googleapis.com'];
 const DEVICE =
   /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/devices\/chromeos\/(?<deviceId>[^/]+)$/;
+
+const FILE = /^\/drive\/v3\/files\/(?<fileId>[^/]+)$/;
+const SPREADSHEET = /^\/v4\/spreadsheets\/(?<spreadsheetId>[^/]+)$/;
+const BATCH_UPDATE =
+  /^\/v4\/spreadsheets\/(?<spreadsheetId>[^/:]+?)(?::|%3[Aa])batchUpdate$/;
+const VALUES =
+  /^\/v4\/spreadsheets\/(?<spreadsheetId>[^/]+)\/values\/(?<range>.+)$/;
 
 const USER = /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)$/;
 const ORGUNIT =
@@ -242,6 +259,93 @@ export function buildRoutes(mock: Mock): Route[] {
       handler: getTelemetry,
     },
     {
+      id: 'drive.files.list',
+      api: 'drive',
+      hosts: DRIVE,
+      methods: ['GET'],
+      pattern: /^\/drive\/v3\/files$/,
+      scopes: SCOPES.drive,
+      admin: false,
+      handler: (call) => listFiles(mock, call),
+    },
+    {
+      // The media read shares its path with the metadata read, and the route ID that a
+      // fault targets must separate them. `when` picks this route for `alt=media`.
+      id: 'drive.files.get.media',
+      api: 'drive',
+      hosts: DRIVE,
+      methods: ['GET'],
+      pattern: FILE,
+      when: (request) => request.query.get('alt') === 'media',
+      scopes: SCOPES.drive,
+      admin: false,
+      handler: (call) => getMedia(mock, call),
+    },
+    {
+      id: 'drive.files.get',
+      api: 'drive',
+      hosts: DRIVE,
+      methods: ['GET'],
+      pattern: FILE,
+      when: (request) => request.query.get('alt') !== 'media',
+      scopes: SCOPES.drive,
+      admin: false,
+      handler: (call) => getFile(mock, call),
+    },
+    {
+      id: 'sheets.spreadsheets.create',
+      api: 'sheets',
+      hosts: SHEETS,
+      methods: ['POST'],
+      pattern: /^\/v4\/spreadsheets$/,
+      scopes: SCOPES.drive,
+      admin: false,
+      write: true,
+      handler: (call) => createSpreadsheet(mock, call),
+    },
+    {
+      id: 'sheets.spreadsheets.batchUpdate',
+      api: 'sheets',
+      hosts: SHEETS,
+      methods: ['POST'],
+      pattern: BATCH_UPDATE,
+      scopes: SCOPES.drive,
+      admin: false,
+      write: true,
+      handler: (call) => batchUpdate(mock, call),
+    },
+    {
+      id: 'sheets.spreadsheets.get',
+      api: 'sheets',
+      hosts: SHEETS,
+      methods: ['GET'],
+      pattern: SPREADSHEET,
+      scopes: SCOPES.drive,
+      admin: false,
+      handler: (call) => getSpreadsheet(mock, call),
+    },
+    {
+      id: 'sheets.spreadsheets.values.get',
+      api: 'sheets',
+      hosts: SHEETS,
+      methods: ['GET'],
+      pattern: VALUES,
+      scopes: SCOPES.drive,
+      admin: false,
+      handler: (call) => getValues(mock, call),
+    },
+    {
+      id: 'sheets.spreadsheets.values.update',
+      api: 'sheets',
+      hosts: SHEETS,
+      methods: ['PUT'],
+      pattern: VALUES,
+      scopes: SCOPES.drive,
+      admin: false,
+      write: true,
+      handler: (call) => updateValues(mock, call),
+    },
+    {
       id: 'batch.directory',
       api: 'batch',
       hosts: ['www.googleapis.com', 'admin.googleapis.com'],
@@ -254,8 +358,14 @@ export function buildRoutes(mock: Mock): Route[] {
   ];
 }
 
-/** The IDs of the Directory and Chrome routes, the routes that a fault can target. */
+/** The IDs of the routes that a fault can target: every API that authenticates. */
 export const faultTargets = (routes: readonly Route[]): string[] =>
   routes
-    .filter((route) => route.api === 'directory' || route.api === 'chrome')
+    .filter(
+      (route) =>
+        route.api === 'directory' ||
+        route.api === 'chrome' ||
+        route.api === 'drive' ||
+        route.api === 'sheets',
+    )
     .map((route) => route.id);

@@ -53,6 +53,7 @@ test('the proxy tunnels the four Google hostnames on port 443 to the target', as
     'admin.googleapis.com',
     'chromemanagement.googleapis.com',
     'oauth2.googleapis.com',
+    'sheets.googleapis.com',
     'www.googleapis.com',
   ]);
   for (const host of GOOGLE_HOSTS) {
@@ -60,7 +61,7 @@ test('the proxy tunnels the four Google hostnames on port 443 to the target', as
     assert.equal(result.status, 'HTTP/1.1 200 Connection Established', host);
     assert.equal(result.body, 'google\n');
   }
-  assert.equal(proxy.accepted.length, 4);
+  assert.equal(proxy.accepted.length, 5);
   assert.match(proxy.url, /^http:\/\/127\.0\.0\.1:\d+$/);
 });
 
