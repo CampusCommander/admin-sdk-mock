@@ -37,7 +37,7 @@ function connect(
   });
 }
 
-test('the proxy tunnels the four Google hostnames on port 443 to the target', async (t) => {
+test('the proxy tunnels the five Google hostnames on port 443 to the target', async (t) => {
   const google = await echoServer('google');
   const proxy = await startProxy({
     host: '127.0.0.1',
