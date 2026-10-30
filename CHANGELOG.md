@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - The proxy, the CA, and the Campus Commander overlay serve `sheets.googleapis.com` beside the four hosts of 0.2.0.
+- A data directory from 0.2.0 keeps its CA and receives a new server certificate for the fifth hostname. A client that trusts the old CA trusts the new leaf.
 
 ## [0.2.0] - 2026-10-16
 
