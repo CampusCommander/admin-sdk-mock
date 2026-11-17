@@ -27,6 +27,7 @@ import {
 } from './common.ts';
 import { resolveOrgUnit, targetOrgUnit } from './orgunits.ts';
 import { userResource, visibleUser } from './users.ts';
+import { mergeCustomValues } from './custom-values.ts';
 
 const MAX_NAME = 60;
 const HASH_FUNCTIONS: ReadonlySet<string> = new Set(['MD5', 'SHA-1', 'crypt']);
@@ -258,15 +259,19 @@ export function updateUser(call: Call): ApiResponse {
       rename = email;
     }
   }
-  if (sets.length > 0 || rename)
+  const custom = Object.hasOwn(body, 'customSchemas');
+  if (sets.length > 0 || rename || custom)
     transaction(domain.db, () => {
-      saveBeforeImage(
-        domain.db,
-        'users',
-        user.id,
-        call.now,
-        searchDelayMs(call),
-      );
+      if (custom)
+        mergeCustomValues(call, domain.db, user.id, body.customSchemas);
+      if (sets.length > 0 || rename)
+        saveBeforeImage(
+          domain.db,
+          'users',
+          user.id,
+          call.now,
+          searchDelayMs(call),
+        );
       if (sets.length > 0)
         domain.db
           .prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`)
