@@ -1,6 +1,6 @@
 # Calibration record
 
-Updated: 2026-10-30.
+Updated: 2026-11-16.
 
 | Value                                 | Default                         | Evidence                                                                                | Status         |
 | ------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------- | -------------- |
@@ -205,3 +205,14 @@ Each value below follows Google's documentation, the Drive slice design, or the 
 | `values.get` render options   | Every accepted `valueRenderOption` answers the cell text, as `formattedValue` and `userEnteredValue.stringValue`.                         | Code        | unverified |
 | A1 range without a tab title  | Reads the first tab. A range without a cell reads the whole tab.                                                                          | Code        | unverified |
 | Quota on the new routes       | No quota bucket. The configured quota covers Directory and Chrome Management alone.                                                       | Code        | unverified |
+
+## Custom attribute rulings
+
+Live Google evidence for the schema routes and the custom attributes does not exist. The owner authorized no live call for this release.
+Each value below follows Google's documentation, the user management design, or the code. A live check would replace it with evidence.
+
+| Value                               | Mock behavior                                                                                                                                            | Source       | Status |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------ |
+| `If-Match` on a schema write        | The header is optional. A stale value answers 412 `conditionNotMet` with `status: FAILED_PRECONDITION`. Google documents the header but not the error.   | Design A §13 | open   |
+| Removal of a field or a schema      | Removing a field with `schemas.update` deletes its values from every user. `schemas.delete` deletes every value of the schema. Google documents neither. | Design B §6  | open   |
+| Unknown custom attribute in a write | A `customSchemas` name that no schema of the customer defines answers 400 `invalid`, and so does a value of the wrong type. Google documents neither.    | Design B §8  | open   |
