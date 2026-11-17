@@ -677,3 +677,110 @@ test('a multi-value search compares one entry at a time', async (t) => {
     other.primary_email,
   ]);
 });
+
+const REVIEW = {
+  schemaName: 'ReviewInfo',
+  displayName: 'Review information',
+  fields: [
+    { fieldName: 'Code', fieldType: 'STRING', displayName: 'Code' },
+    { fieldName: 'Grade', fieldType: 'INT64', displayName: 'Grade' },
+    { fieldName: 'Flag', fieldType: 'BOOL', displayName: 'Flag' },
+  ],
+};
+const REVIEW_QUERIES = [
+  'ReviewInfo.Code=S100',
+  'ReviewInfo.Code:S1*',
+  "ReviewInfo.Code:'S100'",
+  'ReviewInfo.Grade=7',
+  'ReviewInfo.Grade:7*',
+  'ReviewInfo.Grade:7',
+  'ReviewInfo.Flag=true',
+  'ReviewInfo.Flag:true',
+];
+
+/** A user with one value of each type, a search helper, and the allowed widening. */
+async function reviewSetup(t: import('node:test').TestContext) {
+  const base = await setup(t);
+  const created = await base.api('POST', '/customer/my_customer/schemas', {
+    body: REVIEW,
+  });
+  assert.equal(created.status, 200);
+  const written = await base.patch({
+    customSchemas: { ReviewInfo: { Code: 'S100', Grade: 7, Flag: true } },
+  });
+  assert.equal(written.status, 200);
+  const search = async (query: string) => {
+    const response = await base.api('GET', '/users', {
+      query: { customer: 'my_customer', maxResults: 500, query },
+    });
+    assert.equal(response.status, 200, `${query}: ${response.text}`);
+    return ((response.json().users ?? []) as { primaryEmail: string }[]).map(
+      (user) => user.primaryEmail,
+    );
+  };
+  const narrow = async (query: string) =>
+    assert.deepEqual(await search(query), [base.student.primary_email], query);
+  const widen = async () => {
+    const response = await base.api(
+      'PUT',
+      '/customer/my_customer/schemas/ReviewInfo',
+      {
+        body: {
+          ...REVIEW,
+          fields: REVIEW.fields.map((field) => ({
+            ...field,
+            multiValued: true,
+          })),
+        },
+      },
+    );
+    assert.equal(response.status, 200);
+  };
+  return { ...base, search, narrow, widen };
+}
+
+test('a field that widens keeps its values in the entry form', async (t) => {
+  const { api, student, values, narrow, widen } = await reviewSetup(t);
+  for (const query of REVIEW_QUERIES) await narrow(query);
+  await widen();
+  // The value that a user wrote before the widening follows the entry form now.
+  const full = (await values()) as Record<string, Record<string, unknown>>;
+  assert.deepEqual(full.ReviewInfo, {
+    Code: [{ value: 'S100' }],
+    Grade: [{ value: 7 }],
+    Flag: [{ value: true }],
+  });
+  const masked = await api('GET', `/users/${student.id}`, {
+    query: { projection: 'custom', customFieldMask: 'ReviewInfo' },
+  });
+  assert.equal(masked.status, 200);
+  assert.deepEqual(masked.json().customSchemas, {
+    ReviewInfo: {
+      Code: [{ value: 'S100' }],
+      Grade: [{ value: 7 }],
+      Flag: [{ value: true }],
+    },
+  });
+});
+
+test('a field that widens keeps its values searchable', async (t) => {
+  const { patch, search, narrow, widen, student } = await reviewSetup(t);
+  for (const query of REVIEW_QUERIES) await narrow(query);
+  await widen();
+  // Every query still finds the value, without a rewrite of the user's values.
+  for (const query of REVIEW_QUERIES) await narrow(query);
+  // A list replaces the widened value, and each entry is its own value.
+  const listed = await patch({
+    customSchemas: {
+      ReviewInfo: { Code: [{ value: 'S200' }, { value: 'S300' }] },
+    },
+  });
+  assert.equal(listed.status, 200);
+  assert.deepEqual(await search('ReviewInfo.Code=S300'), [
+    student.primary_email,
+  ]);
+  assert.deepEqual(await search('ReviewInfo.Code:S2*'), [
+    student.primary_email,
+  ]);
+  assert.deepEqual(await search('ReviewInfo.Code=S100'), []);
+});

@@ -103,21 +103,30 @@ test('a multi-valued custom field matches one entry at a time', () => {
   assert.equal(equals.where.length, 1);
   assert.match(equals.where[0], /json_valid\(search_text\)/);
   assert.match(equals.where[0], /json_each\(search_text\)/);
-  assert.match(equals.where[0], /lower\(entry\.value\) = lower\(\?\)/);
+  assert.match(
+    equals.where[0],
+    /lower\(CAST\(entry\.value AS TEXT\)\) = lower\(\?\)/,
+  );
   assert.deepEqual(equals.params, ['StudentInfo', 'Programs', 'Band']);
   const prefix = parseUserQuery(
     'StudentInfo.Programs:B*',
     'user_aliases',
     multi,
   );
-  assert.match(prefix.where[0], /cc_word_prefix\(entry\.value, \?\)/);
+  assert.match(
+    prefix.where[0],
+    /cc_word_prefix\(CAST\(entry\.value AS TEXT\), \?\)/,
+  );
   assert.deepEqual(prefix.params, ['StudentInfo', 'Programs', 'B']);
   const phrase = parseUserQuery(
     "StudentInfo.Programs:'Band ELL'",
     'user_aliases',
     multi,
   );
-  assert.match(phrase.where[0], /cc_contains_words\(entry\.value, \?\)/);
+  assert.match(
+    phrase.where[0],
+    /cc_contains_words\(CAST\(entry\.value AS TEXT\), \?\)/,
+  );
   assert.deepEqual(phrase.params, ['StudentInfo', 'Programs', 'Band ELL']);
 });
 

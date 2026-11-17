@@ -38,7 +38,9 @@ function addCustomClause(
     throw new QueryError(`The field ${name} is not searchable.`);
   const where = ['schema_name = ?', 'field_name = ?'];
   const multi = known.multiValued === true;
-  const target = multi ? 'entry.value' : 'search_text';
+  // A list stores its entries as JSON strings. The cast keeps a stray scalar number or
+  // boolean from reaching the text functions, because json_each returns its native type.
+  const target = multi ? 'CAST(entry.value AS TEXT)' : 'search_text';
   const predicate =
     op === '='
       ? `lower(${target}) = lower(?)`

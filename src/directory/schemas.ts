@@ -499,6 +499,52 @@ export function insertSchema(call: Call): ApiResponse {
   };
 }
 
+/** The entry form of a value that a single-valued field held before it widened. */
+function widenedValue(value: unknown): {
+  valueJson: string;
+  searchText: string;
+} {
+  return {
+    valueJson: JSON.stringify([{ value }]),
+    searchText: JSON.stringify([String(value)]),
+  };
+}
+
+/**
+ * A single-valued field that becomes multi-valued keeps the values that users already
+ * hold. Each value becomes the single entry of its list, in storage and in the search
+ * text, so a read shows the entry form and a search still matches the value.
+ */
+function widenValues(
+  db: DatabaseSync,
+  schemaName: string,
+  fieldName: string,
+): void {
+  const found = rows<{ user_id: string; value_json: string }>(
+    db
+      .prepare(
+        'SELECT user_id, value_json FROM user_custom_values WHERE schema_name = ? AND field_name = ?',
+      )
+      .all(schemaName, fieldName),
+  );
+  const update = db.prepare(
+    'UPDATE user_custom_values SET value_json = ?, search_text = ? WHERE user_id = ? AND schema_name = ? AND field_name = ?',
+  );
+  for (const entry of found) {
+    const value = JSON.parse(entry.value_json) as unknown;
+    // A list is already in the entry form.
+    if (Array.isArray(value)) continue;
+    const next = widenedValue(value);
+    update.run(
+      next.valueJson,
+      next.searchText,
+      entry.user_id,
+      schemaName,
+      fieldName,
+    );
+  }
+}
+
 export function updateSchema(call: Call): ApiResponse {
   customerOf(call);
   const db = domainOf(call).db;
@@ -543,6 +589,13 @@ export function updateSchema(call: Call): ApiResponse {
   const kept = new Set(input.fields.map((field) => field.fieldName));
   const removed = existing.filter((field) => !kept.has(field.field_name));
   const added = input.fields.filter((field) => !byName.has(field.fieldName));
+  // A value written while the field was single-valued follows the multi-value entry form.
+  const widened = input.fields.filter((field) => {
+    const before = byName.get(field.fieldName);
+    return (
+      before !== undefined && before.multi_valued === 0 && field.multiValued
+    );
+  });
   if (fieldCount(db) - removed.length + added.length > FIELD_LIMIT)
     throw invalidArgument(call, `Limit reached: ${FIELD_LIMIT} fields.`);
   const customer = customerOf(call);
@@ -593,6 +646,8 @@ export function updateSchema(call: Call): ApiResponse {
         index,
       ),
     );
+    for (const field of widened)
+      widenValues(db, current.schema_name, field.fieldName);
   });
   const updated = findSchema(db, current.schema_id)!;
   return {
