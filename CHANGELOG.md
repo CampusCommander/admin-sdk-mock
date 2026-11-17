@@ -3,6 +3,22 @@
 This file records every notable change to the project.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-11-16
+
+### Added
+
+- The five Directory schema routes on `customer/{customerId}/schemas`: `directory.schemas.list`, `directory.schemas.get`, `directory.schemas.insert`, `directory.schemas.update`, and `directory.schemas.delete`. `{schemaKey}` takes the schema ID or the schema name. Each route also runs as a batch part and names its faults. A stale `If-Match` on a write answers 412 `conditionNotMet`.
+- The scopes `admin.directory.userschema` and `admin.directory.userschema.readonly`, with the read, write, and read-write scope sets of the schema route table.
+- The schema resource with the field defaults `multiValued` false, `indexed` true, and `readAccessType` `ALL_DOMAIN_USERS`, the 100-schema and 100-field limits, and the 500-character limit on a string value.
+- Custom schema values on a user: `projection=custom` with `customFieldMask`, the values under `projection=full`, and `customSchemas` writes through `users.patch` and `users.update`. A `null` value deletes it.
+- Queries on a searchable custom attribute: a `schemaName.fieldName` term beside the built-in fields, with `=`, `:`, and `:PREFIX*`. An unknown, a hidden, or a non-searchable attribute answers 400.
+- The opt-in seed field `customSchemas`. It writes the three categories and the ten attributes of the baseline scenario, the values of the students and the staff, the archived flag, two-step verification, and the organizations of the staff. A domain without the field keeps the data of 0.3.0, byte for byte.
+- The calibration rows for the custom attributes: the 412 on a stale `If-Match`, value removal on a field or a schema removal, and the 400 on an unknown attribute.
+
+### Changed
+
+- A `users.patch` or a `users.update` body that holds `customSchemas` merges the values in the same transaction as the field sets.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added
