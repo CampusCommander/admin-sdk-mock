@@ -198,6 +198,66 @@ test('the scenario writes the archived flag, two-step verification, and organiza
   }
 });
 
+test('the empty tier honors the opt-in seed field', async (t) => {
+  const harness = await startHarness();
+  t.after(() => harness.close());
+  const schemaNames = (db: import('node:sqlite').DatabaseSync) =>
+    rows<{ schema_name: string }>(
+      db.prepare('SELECT schema_name FROM custom_schemas ORDER BY ord').all(),
+    ).map((entry) => entry.schema_name);
+  const created = harness.mock.domains.create(
+    { tier: 'empty', seed: 'empty-opt-in', customSchemas: true },
+    SEEDED_AT,
+  );
+  const counts = {
+    orgUnits: 1,
+    users: 1,
+    devices: 0,
+    groups: 0,
+    memberships: 0,
+  };
+  assert.deepEqual(created.result.counts, counts);
+  assert.deepEqual(schemaNames(created.domain.db), [
+    'StudentInfo',
+    'StaffInfo',
+    'DeviceProgram',
+  ]);
+  const reset = harness.mock.domains.reset(
+    created.domain.customerId,
+    SEEDED_AT + 60_000,
+  );
+  assert.deepEqual(reset.counts, counts);
+  const reopened = harness.mock.domains.get(created.domain.customerId)!;
+  assert.deepEqual(schemaNames(reopened.db), [
+    'StudentInfo',
+    'StaffInfo',
+    'DeviceProgram',
+  ]);
+  const api = directoryClient(
+    harness,
+    grantToken(harness, reopened, READ_SCOPES),
+  );
+  const listed = await api('GET', '/customer/my_customer/schemas');
+  assert.equal(listed.status, 200);
+  assert.equal(listed.json().schemas.length, 3);
+  // The no-flag baseline keeps the database of 0.3.0.
+  const plain = harness.mock.domains.create(
+    { tier: 'empty', seed: 'empty-plain' },
+    SEEDED_AT,
+  );
+  assert.deepEqual(plain.result.counts, counts);
+  assert.equal(
+    row(
+      plain.domain.db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'custom_schemas'",
+        )
+        .get(),
+    ),
+    undefined,
+  );
+});
+
 test('a domain without the seed field hashes as in 0.3.0', () => {
   const cases: [Record<string, unknown>, string][] = [
     [
@@ -275,4 +335,78 @@ test('a seeded domain reads the scenario through the user routes', async (t) => 
   });
   assert.equal(searched.status, 200);
   assert.ok(searched.json().users.length > 0);
+});
+
+test('the seeded profile fields reach the user routes', async (t) => {
+  const harness = await startHarness();
+  t.after(() => harness.close());
+  const domain = seedTestDomain(harness, INPUT);
+  const api = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_SCOPES),
+  );
+  const stored = new Map(
+    rows<{
+      user_id: string;
+      archived: number;
+      enrolled_in_2sv: number;
+      organizations: string | null;
+    }>(domain.db.prepare('SELECT * FROM user_profile_extra').all()).map(
+      (entry) => [entry.user_id, entry],
+    ),
+  );
+  const users = rows<{ id: string; role: string }>(
+    domain.db.prepare('SELECT id, role FROM users ORDER BY ord').all(),
+  );
+  assert.ok(users.some((user) => stored.get(user.id)!.archived === 1));
+  assert.ok(users.some((user) => stored.get(user.id)!.enrolled_in_2sv === 1));
+  for (const user of users) {
+    const response = await api('GET', `/users/${user.id}`, {
+      query: { projection: 'full' },
+    });
+    assert.equal(response.status, 200, user.id);
+    const body = response.json();
+    const extra = stored.get(user.id)!;
+    assert.equal(body.archived, extra.archived === 1, user.id);
+    assert.equal(body.isEnrolledIn2Sv, extra.enrolled_in_2sv === 1, user.id);
+    if (extra.organizations === null) {
+      assert.equal(Object.hasOwn(body, 'organizations'), false, user.id);
+      continue;
+    }
+    assert.deepEqual(
+      body.organizations,
+      JSON.parse(extra.organizations),
+      user.id,
+    );
+  }
+  const listed = await api('GET', '/users', {
+    query: { customer: 'my_customer', maxResults: 500, projection: 'full' },
+  });
+  assert.equal(listed.status, 200);
+  const page = listed.json().users as {
+    id: string;
+    archived: boolean;
+    isEnrolledIn2Sv: boolean;
+    organizations?: unknown[];
+  }[];
+  assert.equal(page.length, users.length);
+  for (const user of page) {
+    const extra = stored.get(user.id)!;
+    assert.equal(user.archived, extra.archived === 1, user.id);
+    assert.equal(user.isEnrolledIn2Sv, extra.enrolled_in_2sv === 1, user.id);
+    if (extra.organizations === null) {
+      assert.equal(Object.hasOwn(user, 'organizations'), false, user.id);
+      continue;
+    }
+    const organizations = JSON.parse(extra.organizations) as {
+      name: string;
+      department: string;
+      title: string;
+      primary: boolean;
+    }[];
+    assert.deepEqual(user.organizations, organizations, user.id);
+    assert.equal(user.organizations[0].name, domain.spec.districtName, user.id);
+    assert.equal(typeof user.organizations[0].department, 'string', user.id);
+    assert.equal(typeof user.organizations[0].title, 'string', user.id);
+  }
 });

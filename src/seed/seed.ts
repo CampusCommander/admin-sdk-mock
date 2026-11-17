@@ -99,7 +99,11 @@ export function seedDomain(
           ord,
         ),
     );
-    if (empty) return seedAdministrator(ctx);
+    if (empty) {
+      const admin = seedAdministrator(ctx);
+      if (options.customSchemas) seedCustomScenario(ctx);
+      return admin;
+    }
     const index = seedUsers(ctx);
     seedDevices(ctx, index);
     seedGroups(ctx);
