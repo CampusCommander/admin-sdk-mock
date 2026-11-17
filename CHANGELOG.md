@@ -7,13 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- The five Directory schema routes on `customer/{customerId}/schemas`: `directory.schemas.list`, `directory.schemas.get`, `directory.schemas.insert`, `directory.schemas.update`, and `directory.schemas.delete`. `{schemaKey}` takes the schema ID or the schema name. Each route also runs as a batch part and names its faults. A stale `If-Match` on a write answers 412 `conditionNotMet`.
+- The five Directory schema routes on `customer/{customerId}/schemas`: `directory.schemas.list`, `directory.schemas.get`, `directory.schemas.insert`, `directory.schemas.update`, and `directory.schemas.delete`. `{schemaKey}` takes the schema ID or the schema name. Each route also runs as a batch part and names its faults. A reused schema name answers 412 `conditionNotMet`. An update ignores `If-Match`. A stale `If-Match` on a delete answers 412 `conditionNotMet`. A schema display name of 200 or more characters answers 400 `invalid`. A schema ID has 24 characters and ends in `==`.
 - The scopes `admin.directory.userschema` and `admin.directory.userschema.readonly`, with the read, write, and read-write scope sets of the schema route table.
 - The schema resource with the field defaults `multiValued` false, `indexed` true, and `readAccessType` `ALL_DOMAIN_USERS`, the 100-schema and 100-field limits, and the 500-character limit on a string value.
-- Custom schema values on a user: `projection=custom` with `customFieldMask`, the values under `projection=full`, and `customSchemas` writes through `users.patch` and `users.update`. A `null` value deletes it.
+- Custom schema values on a user: `projection=custom` with `customFieldMask`, the values under `projection=full`, and `customSchemas` writes through `users.patch` and `users.update`. A `null` value deletes it on `users.update` and changes nothing on `users.patch`. A `customFieldMask` that names a missing schema answers 400 `invalid`. A write answer holds `customSchemas`.
 - Queries on a searchable custom attribute: a `schemaName.fieldName` term beside the built-in fields, with `=`, `:`, and `:PREFIX*`. An unknown, a hidden, or a non-searchable attribute answers 400.
 - The opt-in seed field `customSchemas`. It writes the three categories and the ten attributes of the baseline scenario, the values of the students and the staff, the archived flag, two-step verification, and the organizations of the staff. A domain without the field keeps the data of 0.3.0, byte for byte.
-- The calibration rows for the custom attributes: the 412 on a stale `If-Match`, value removal on a field or a schema removal, and the 400 on an unknown attribute.
+- The calibration rows for the custom attributes: the answers of live checks L2 and L3, the 412 on a stale `If-Match` of a delete, value removal on a schema removal, `null` on `users.update`, and the 400 on an unknown attribute.
 
 ### Changed
 

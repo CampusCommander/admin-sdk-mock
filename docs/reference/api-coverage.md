@@ -169,10 +169,10 @@ See the [milestone 2 rulings](../calibration.md#milestone-2-rulings).
 | `directory.schemas.update`                  | The complete schema: `schemaName`, `displayName`, and every kept field with its `fieldId`. A removed field is absent. |
 
 The mock assigns `schemaId` and `fieldId`. The field defaults are `multiValued` false, `indexed` true, and `readAccessType` `ALL_DOMAIN_USERS`.
-A reused `schemaName` answers `409`. A customer holds at most 100 schemas and 100 fields. A bad name, a missing key, a broken lock, or a full limit answers `400`.
+A reused `schemaName` answers `412`. A customer holds at most 100 schemas and 100 fields. A bad name, a missing key, a broken lock, or a full limit answers `400`.
 A field type cannot change, a multi-valued field cannot become single-valued, and neither a schema nor a field can be renamed.
-A stale `If-Match` on an update or on a delete answers `412`. An update that leaves out a field, or a delete, removes those values from every user.
-The `users` resource returns `customSchemas` with `projection=full`, or with `projection=custom` and `customFieldMask`. A `users.patch` or `users.update` body merges `customSchemas` by schema and by field, and `null` deletes a value.
+An update ignores `If-Match`. A stale `If-Match` on a delete answers `412`. An update that leaves out a field, or a delete, removes those values from every user.
+The `users` resource returns `customSchemas` with `projection=full`, or with `projection=custom` and `customFieldMask`. A `users.patch` or a `users.update` body merges `customSchemas` by schema and by field. `null` deletes a value on `users.update` and changes nothing on `users.patch`. A `customFieldMask` that names a missing schema answers `400`.
 See the [custom attribute rulings](../calibration.md#custom-attribute-rulings).
 
 ### Groups
