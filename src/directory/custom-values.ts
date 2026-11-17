@@ -239,9 +239,15 @@ function readValue(
   if (field.multi_valued === 1) {
     if (!Array.isArray(value))
       throw invalidArgument(call, `Invalid Input: ${label}`);
-    return value.map((entry, index) =>
-      multiEntry(call, entry, `${label}[${index}]`),
-    );
+    const single = { ...field, multi_valued: 0 };
+    return value.map((entry, index) => {
+      const at = `${label}[${index}]`;
+      const checked = multiEntry(call, entry, at) as Record<string, unknown>;
+      return {
+        ...checked,
+        value: readValue(call, single, checked.value, `${at}.value`),
+      };
+    });
   }
   if (Array.isArray(value))
     throw invalidArgument(call, `Invalid Input: ${label}`);

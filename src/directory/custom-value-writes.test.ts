@@ -413,3 +413,66 @@ test('a query on an unknown or an unsearchable custom field answers 400', async 
   assert.equal(existing.status, 200);
   void student;
 });
+
+test('a string value stops at 500 characters', async (t) => {
+  const { api, values, patch } = await setup(t);
+  const fifty = 'a'.repeat(500);
+  const accepted = await patch({
+    customSchemas: { StudentInfo: { StudentID: fifty } },
+  });
+  assert.equal(accepted.status, 200);
+  assert.equal((await values())!.StudentInfo.StudentID, fifty);
+  const refused = await patch({
+    customSchemas: { StudentInfo: { StudentID: 'a'.repeat(501) } },
+  });
+  assert.equal(refused.status, 400);
+  assert.equal(refused.json().error.errors[0].reason, 'invalid');
+  assert.equal((await values())!.StudentInfo.StudentID, fifty);
+  const multi = await patch({
+    customSchemas: { StudentInfo: { Programs: [{ value: 'a'.repeat(501) }] } },
+  });
+  assert.equal(multi.status, 400);
+  const name = await api('POST', '/customer/my_customer/schemas', {
+    body: { ...SCHEMA, schemaName: 'LongInfo', displayName: 'x' },
+  });
+  assert.equal(name.status, 200);
+  const limit = await patch({
+    customSchemas: { LongInfo: { StudentID: 'b'.repeat(501) } },
+  });
+  assert.equal(limit.status, 400);
+  void api;
+});
+
+test('a multi-valued entry follows the type of its field', async (t) => {
+  const { api, values, patch } = await setup(t);
+  const created = await api('POST', '/customer/my_customer/schemas', {
+    body: {
+      schemaName: 'Scores',
+      displayName: 'Scores',
+      fields: [
+        {
+          fieldName: 'Points',
+          fieldType: 'INT64',
+          displayName: 'Points',
+          multiValued: true,
+        },
+      ],
+    },
+  });
+  assert.equal(created.status, 200);
+  const refused = await patch({
+    customSchemas: { Scores: { Points: [{ value: 'seven' }] } },
+  });
+  assert.equal(refused.status, 400);
+  assert.equal(refused.json().error.errors[0].reason, 'invalid');
+  const accepted = await patch({
+    customSchemas: { Scores: { Points: [{ value: 7 }, { value: '9' }] } },
+  });
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(
+    ((await values())!.Scores.Points as { value: number }[]).map(
+      (entry) => entry.value,
+    ),
+    [7, 9],
+  );
+});
