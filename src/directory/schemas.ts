@@ -49,10 +49,6 @@ CREATE TABLE IF NOT EXISTS custom_schemas (
   revision INTEGER NOT NULL,
   ord INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS custom_schema_incarnations (
-  schema_name TEXT PRIMARY KEY,
-  incarnations INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS custom_schema_fields (
   schema_id TEXT NOT NULL,
   field_id TEXT NOT NULL,
@@ -420,14 +416,17 @@ export function getSchema(call: Call): ApiResponse {
 /** How many incarnations of a schema name the domain has created so far. */
 function storedIncarnations(db: DatabaseSync, schemaName: string): number {
   return Number(
-    row<{ incarnations: number }>(
+    row<{ value: string }>(
       db
-        .prepare(
-          'SELECT incarnations FROM custom_schema_incarnations WHERE schema_name = ?',
-        )
-        .get(schemaName),
-    )?.incarnations ?? 0,
+        .prepare('SELECT value FROM meta WHERE key = ?')
+        .get(incarnationKey(schemaName)),
+    )?.value ?? 0,
   );
+}
+
+/** The meta key that counts the incarnations of one schema name. */
+function incarnationKey(schemaName: string): string {
+  return `custom-schema-incarnation/${schemaName}`;
 }
 
 /** The next incarnation of a schema name: a recreate never reuses the ID of the deleted one. */
@@ -468,8 +467,8 @@ export function insertSchema(call: Call): ApiResponse {
   });
   transaction(db, () => {
     db.prepare(
-      'INSERT INTO custom_schema_incarnations (schema_name, incarnations) VALUES (?, ?) ON CONFLICT (schema_name) DO UPDATE SET incarnations = excluded.incarnations',
-    ).run(input.schemaName, incarnation);
+      'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+    ).run(incarnationKey(input.schemaName), String(incarnation));
     db.prepare(
       'INSERT INTO custom_schemas (schema_id, schema_name, display_name, revision, ord) VALUES (?, ?, ?, 1, ?)',
     ).run(schemaId, input.schemaName, input.displayName, schemaCount(db));
