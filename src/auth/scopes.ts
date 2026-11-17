@@ -25,6 +25,10 @@ export const SCOPES = {
     `${P}cloud-platform`,
   ],
   group: [`${P}admin.directory.group`, `${P}admin.directory.group.readonly`],
+  schema: [
+    `${P}admin.directory.userschema`,
+    `${P}admin.directory.userschema.readonly`,
+  ],
   member: [
     `${P}admin.directory.group`,
     `${P}admin.directory.group.readonly`,
@@ -47,6 +51,7 @@ export const READ_SCOPES: readonly string[] = [
   `${P}admin.directory.device.chromeos.readonly`,
   `${P}admin.directory.user.readonly`,
   `${P}admin.directory.group.readonly`,
+  `${P}admin.directory.userschema.readonly`,
   `${P}chrome.management.telemetry.readonly`,
 ];
 
@@ -57,6 +62,7 @@ export const WRITE_SCOPES = {
   orgunit: [`${P}admin.directory.orgunit`],
   group: [`${P}admin.directory.group`],
   member: [`${P}admin.directory.group`, `${P}admin.directory.group.member`],
+  schema: [`${P}admin.directory.userschema`],
   /** The Drive and Sheets scope. It creates files, so it is not in the read set. */
   drive: [`${P}drive.file`],
 } as const;
@@ -68,5 +74,6 @@ export const READ_WRITE_SCOPES: readonly string[] = [
   ...WRITE_SCOPES.user,
   ...WRITE_SCOPES.orgunit,
   ...WRITE_SCOPES.group,
+  ...WRITE_SCOPES.schema,
   ...WRITE_SCOPES.drive,
 ];

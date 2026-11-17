@@ -50,6 +50,11 @@ The route ID is also the `method` name that a fault rule takes. See [Faults](../
 | `directory.orgunits.list`                   | GET       | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/orgunits`                                         | `admin.directory.orgunit`, `admin.directory.orgunit.readonly`                                                                      | yes         |
 | `directory.orgunits.patch`                  | PATCH     | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/orgunits/{orgUnitPath}`                           | `admin.directory.orgunit`                                                                                                          | yes         |
 | `directory.orgunits.update`                 | PUT       | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/orgunits/{orgUnitPath}`                           | `admin.directory.orgunit`                                                                                                          | yes         |
+| `directory.schemas.delete`                  | DELETE    | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/schemas/{schemaKey}`                              | `admin.directory.userschema`                                                                                                       | yes         |
+| `directory.schemas.get`                     | GET       | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/schemas/{schemaKey}`                              | `admin.directory.userschema`, `admin.directory.userschema.readonly`                                                                | yes         |
+| `directory.schemas.insert`                  | POST      | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/schemas`                                          | `admin.directory.userschema`                                                                                                       | yes         |
+| `directory.schemas.list`                    | GET       | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/schemas`                                          | `admin.directory.userschema`, `admin.directory.userschema.readonly`                                                                | yes         |
+| `directory.schemas.update`                  | PUT       | `admin.googleapis.com`                       | `/admin/directory/v1/customer/{customerId}/schemas/{schemaKey}`                              | `admin.directory.userschema`                                                                                                       | yes         |
 | `directory.users.delete`                    | DELETE    | `admin.googleapis.com`                       | `/admin/directory/v1/users/{userKey}`                                                        | `admin.directory.user`                                                                                                             | yes         |
 | `directory.users.get`                       | GET       | `admin.googleapis.com`                       | `/admin/directory/v1/users/{userKey}`                                                        | `admin.directory.user`, `admin.directory.user.readonly`, `cloud-platform`                                                          | no          |
 | `directory.users.insert`                    | POST      | `admin.googleapis.com`                       | `/admin/directory/v1/users`                                                                  | `admin.directory.user`                                                                                                             | yes         |
@@ -153,6 +158,22 @@ The [calibration record](../calibration.md#calibration-record) holds the page ma
 `query` takes no field, `name`, `email`, `givenName`, `familyName`, `isAdmin`, `isSuspended`, `externalId`, and `orgUnitPath`, with the operators `=`, `:`, and `:PREFIX*`.
 User creations have a limit of 10 per second per domain. A deleted user stays recoverable for 20 days.
 See the [milestone 2 rulings](../calibration.md#milestone-2-rulings).
+
+### Schemas
+
+| Route                                       | Parameters                                                                                                            |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `directory.schemas.list`                    | `customerId`.                                                                                                         |
+| `directory.schemas.get`, `update`, `delete` | `schemaKey` as the schema ID or the schema name.                                                                      |
+| `directory.schemas.insert`                  | A body with `schemaName`, `displayName`, and `fields`.                                                                |
+| `directory.schemas.update`                  | The complete schema: `schemaName`, `displayName`, and every kept field with its `fieldId`. A removed field is absent. |
+
+The mock assigns `schemaId` and `fieldId`. The field defaults are `multiValued` false, `indexed` true, and `readAccessType` `ALL_DOMAIN_USERS`.
+A reused `schemaName` answers `409`. A customer holds at most 100 schemas and 100 fields. A bad name, a missing key, a broken lock, or a full limit answers `400`.
+A field type cannot change, a multi-valued field cannot become single-valued, and neither a schema nor a field can be renamed.
+A stale `If-Match` on an update or on a delete answers `412`. An update that leaves out a field, or a delete, removes those values from every user.
+The `users` resource returns `customSchemas` with `projection=full`, or with `projection=custom` and `customFieldMask`. A `users.patch` or `users.update` body merges `customSchemas` by schema and by field, and `null` deletes a value.
+See the [user schema rulings](../calibration.md#user-schema-rulings).
 
 ### Groups
 
