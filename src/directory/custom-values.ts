@@ -12,6 +12,9 @@ import {
   type FieldType,
 } from './schemas.ts';
 
+/** The entry types of a multi-valued field. */
+const ENTRY_TYPES = ['work', 'home', 'other', 'custom'] as const;
+
 /** The values of one user: `schemaName` to `{ fieldName: value }`. */
 export type CustomValues = Record<string, Record<string, unknown>>;
 
@@ -38,12 +41,15 @@ export interface UserExtra {
   organizations?: unknown[];
 }
 
-/** The text that a custom query matches. A list joins the entries with a newline. */
+/**
+ * The text that a custom query matches. A list stores its entries as a JSON array, so a
+ * predicate compares one entry at a time instead of a flattened list.
+ */
 export function valueSearchText(value: unknown): string {
   if (Array.isArray(value))
-    return value
-      .map((entry) => String((entry as { value?: unknown }).value ?? ''))
-      .join('\n');
+    return JSON.stringify(
+      value.map((entry) => String((entry as { value?: unknown }).value ?? '')),
+    );
   return String(value);
 }
 
@@ -103,9 +109,15 @@ export function customValuesFor(
   );
   for (const entry of found) {
     let schemas = out.get(entry.user_id);
-    if (!schemas) out.set(entry.user_id, (schemas = {}));
+    if (!schemas)
+      out.set(entry.user_id, (schemas = Object.create(null) as CustomValues));
     let fields = schemas[entry.schema_name];
-    if (!fields) schemas[entry.schema_name] = fields = {};
+    // A schema or a field may legally be named `__proto__` or `constructor`.
+    if (!fields)
+      schemas[entry.schema_name] = fields = Object.create(null) as Record<
+        string,
+        unknown
+      >;
     fields[entry.field_name] = JSON.parse(entry.value_json) as unknown;
   }
   return out;
@@ -217,16 +229,35 @@ function multiEntry(call: Call, value: unknown, label: string): unknown {
   const entry = value as Record<string, unknown>;
   if (!Object.hasOwn(entry, 'value'))
     throw invalidArgument(call, `Invalid Input: ${label}`);
-  for (const key of ['type', 'customType']) {
-    const extra = entry[key];
-    if (
-      extra !== undefined &&
-      extra !== null &&
-      (typeof extra !== 'string' || extra.trim() === '')
-    )
-      throw invalidArgument(call, `Invalid Input: ${label}.${key}`);
-  }
+  const type = entry.type;
+  if (
+    type !== undefined &&
+    type !== null &&
+    (typeof type !== 'string' ||
+      !ENTRY_TYPES.includes(type as (typeof ENTRY_TYPES)[number]))
+  )
+    throw invalidArgument(call, `Invalid Input: ${label}.type`);
+  const customType = entry.customType;
+  if (
+    customType !== undefined &&
+    customType !== null &&
+    (typeof customType !== 'string' || customType.trim() === '')
+  )
+    throw invalidArgument(call, `Invalid Input: ${label}.customType`);
   return entry;
+}
+
+/** True for a real calendar date: the month and the day exist in that year. */
+function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12) return false;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= days[month - 1];
 }
 
 /** One value of a field, checked against its info type. */
@@ -277,11 +308,15 @@ function readValue(
         throw invalidArgument(call, `Invalid Input: ${label}`);
       return value;
     case 'DATE':
-      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+      if (typeof value !== 'string' || !isCalendarDate(value))
         throw invalidArgument(call, `Invalid Input: ${label}`);
       return value;
     case 'EMAIL':
-      if (typeof value !== 'string' || !/^[^@\s]+@[^@\s]+$/.test(value))
+      if (
+        typeof value !== 'string' ||
+        [...value].length > MAX_VALUE_TEXT ||
+        !/^[^@\s]+@[^@\s]+$/.test(value)
+      )
         throw invalidArgument(call, `Invalid Input: ${label}`);
       return value;
     default: {

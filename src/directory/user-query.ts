@@ -7,13 +7,13 @@ import {
 import { QueryError } from './device-query.ts';
 
 const CLAUSE =
-  /([A-Za-z][A-Za-z0-9_.-]*)(=|:)('(?:[^'\\]|\\.)*'|\S*)|('(?:[^'\\]|\\.)*'|\S+)/g;
+  /([A-Za-z0-9_-][A-Za-z0-9_.-]*)(=|:)('(?:[^'\\]|\\.)*'|\S*)|('(?:[^'\\]|\\.)*'|\S+)/g;
 
 /** A custom field that a query names: schemaName.fieldName. */
 export type CustomLookup = (
   schemaName: string,
   fieldName: string,
-) => { indexed: number } | undefined;
+) => { indexed: number; multiValued?: boolean } | undefined;
 
 const unquote = (value: string): string =>
   value.length >= 2 && value.startsWith("'") && value.endsWith("'")
@@ -37,17 +37,25 @@ function addCustomClause(
   if (known.indexed !== 1)
     throw new QueryError(`The field ${name} is not searchable.`);
   const where = ['schema_name = ?', 'field_name = ?'];
-  const params: (string | number)[] = [schema, field];
-  if (op === '=') {
-    where.push('lower(search_text) = lower(?)');
-    params.push(value);
-  } else if (value.endsWith('*')) {
-    where.push('cc_word_prefix(search_text, ?)');
-    params.push(value.slice(0, -1));
-  } else {
-    where.push('cc_contains_words(search_text, ?)');
-    params.push(value);
-  }
+  const multi = known.multiValued === true;
+  const target = multi ? 'entry.value' : 'search_text';
+  const predicate =
+    op === '='
+      ? `lower(${target}) = lower(?)`
+      : value.endsWith('*')
+        ? `cc_word_prefix(${target}, ?)`
+        : `cc_contains_words(${target}, ?)`;
+  const params: (string | number)[] = [
+    schema,
+    field,
+    op === ':' && value.endsWith('*') ? value.slice(0, -1) : value,
+  ];
+  // A list holds its entries as a JSON array. Each entry is its own value.
+  where.push(
+    multi
+      ? `json_valid(search_text) AND EXISTS (SELECT 1 FROM json_each(search_text) AS entry WHERE ${predicate})`
+      : predicate,
+  );
   filter.where.push(
     `id IN (SELECT user_id FROM user_custom_values WHERE ${where.join(' AND ')})`,
   );

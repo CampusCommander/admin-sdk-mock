@@ -92,3 +92,44 @@ test('an unknown or unsearchable custom field fails', () => {
     QueryError,
   );
 });
+
+test('a multi-valued custom field matches one entry at a time', () => {
+  const multi = () => ({ indexed: 1, multiValued: true });
+  const equals = parseUserQuery(
+    'StudentInfo.Programs=Band',
+    'user_aliases',
+    multi,
+  );
+  assert.equal(equals.where.length, 1);
+  assert.match(equals.where[0], /json_valid\(search_text\)/);
+  assert.match(equals.where[0], /json_each\(search_text\)/);
+  assert.match(equals.where[0], /lower\(entry\.value\) = lower\(\?\)/);
+  assert.deepEqual(equals.params, ['StudentInfo', 'Programs', 'Band']);
+  const prefix = parseUserQuery(
+    'StudentInfo.Programs:B*',
+    'user_aliases',
+    multi,
+  );
+  assert.match(prefix.where[0], /cc_word_prefix\(entry\.value, \?\)/);
+  assert.deepEqual(prefix.params, ['StudentInfo', 'Programs', 'B']);
+  const phrase = parseUserQuery(
+    "StudentInfo.Programs:'Band ELL'",
+    'user_aliases',
+    multi,
+  );
+  assert.match(phrase.where[0], /cc_contains_words\(entry\.value, \?\)/);
+  assert.deepEqual(phrase.params, ['StudentInfo', 'Programs', 'Band ELL']);
+});
+
+test('a schema name may start with a digit, an underscore, or a hyphen', () => {
+  for (const name of ['_Info', '1Info', '-Info']) {
+    const parsed = parseUserQuery(`${name}.Code=S100`, 'user_aliases', () => ({
+      indexed: 1,
+    }));
+    assert.equal(parsed.where.length, 1, name);
+    assert.deepEqual(parsed.params, [name, 'Code', 'S100'], name);
+  }
+  // A bare term still takes the free-text branch.
+  const free = parseUserQuery('2026');
+  assert.deepEqual(free.params, ['2026', '2026', '2026']);
+});

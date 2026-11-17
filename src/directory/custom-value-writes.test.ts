@@ -476,3 +476,204 @@ test('a multi-valued entry follows the type of its field', async (t) => {
     [7, 9],
   );
 });
+
+test('a schema and a field named like a prototype key round-trip', async (t) => {
+  const { api, student, values } = await setup(t);
+  const proto = await api('POST', '/customer/my_customer/schemas', {
+    body: {
+      schemaName: '__proto__',
+      displayName: 'Prototype names',
+      fields: [
+        { fieldName: 'reviewMarker', fieldType: 'STRING', displayName: 'Mark' },
+      ],
+    },
+  });
+  assert.equal(proto.status, 200);
+  const fieldNames = await api('POST', '/customer/my_customer/schemas', {
+    body: {
+      schemaName: 'FieldNames',
+      displayName: 'Field names',
+      fields: [
+        { fieldName: '__proto__', fieldType: 'STRING', displayName: 'Proto' },
+        {
+          fieldName: 'constructor',
+          fieldType: 'STRING',
+          displayName: 'Constructor',
+        },
+      ],
+    },
+  });
+  assert.equal(fieldNames.status, 200);
+  const written = await api('PATCH', `/users/${student.id}`, {
+    // A JSON document, because an object literal would set the prototype instead.
+    body: '{"customSchemas":{"__proto__":{"reviewMarker":"schema-key"},"FieldNames":{"__proto__":"field-key","constructor":"own-key"}}}',
+  });
+  assert.equal(written.status, 200);
+  const full = (await values()) as Record<string, Record<string, unknown>>;
+  assert.equal(Object.hasOwn(full, '__proto__'), true);
+  assert.equal(full.__proto__.reviewMarker, 'schema-key');
+  assert.equal(Object.hasOwn(full.FieldNames, '__proto__'), true);
+  assert.equal(full.FieldNames.__proto__, 'field-key');
+  assert.equal(full.FieldNames.constructor, 'own-key');
+  // The read must not write a key into the prototype chain.
+  assert.equal(Object.hasOwn(Object.prototype, 'reviewMarker'), false);
+  assert.equal(({} as Record<string, unknown>).reviewMarker, undefined);
+  const masked = await api('GET', `/users/${student.id}`, {
+    query: { projection: 'custom', customFieldMask: '__proto__' },
+  });
+  assert.equal(masked.status, 200);
+  assert.deepEqual(Object.keys(masked.json().customSchemas), ['__proto__']);
+  const listed = await api('GET', '/users', {
+    query: { customer: 'my_customer', projection: 'full', maxResults: 500 },
+  });
+  const row = (
+    listed.json().users as {
+      id: string;
+      customSchemas?: Record<string, unknown>;
+    }[]
+  ).find((user) => user.id === student.id)!;
+  assert.equal(Object.hasOwn(row.customSchemas!, '__proto__'), true);
+  assert.deepEqual(
+    (row.customSchemas as Record<string, Record<string, unknown>>).__proto__,
+    { reviewMarker: 'schema-key' },
+  );
+});
+
+test('a bad date, a long email, and a bad entry type answer 400', async (t) => {
+  const { values, patch } = await setup(t);
+  const accepted = await patch({
+    customSchemas: {
+      StudentInfo: {
+        HireDate: '2028-02-29',
+        GuardianEmail: 'guardian@example.org',
+        Programs: [
+          { value: 'Band', type: 'work' },
+          { value: 'ELL', type: 'home', customType: 'evening' },
+          { value: 'Robotics', type: 'other' },
+          { value: 'Yearbook', type: 'custom' },
+        ],
+      },
+    },
+  });
+  assert.equal(accepted.status, 200);
+  const before = await values();
+  const cases: Record<string, unknown>[] = [
+    { StudentInfo: { HireDate: '2026-02-31' } },
+    { StudentInfo: { HireDate: '2026-13-01' } },
+    { StudentInfo: { HireDate: '2026-02-29' } },
+    { StudentInfo: { GuardianEmail: `${'a'.repeat(501)}@example.org` } },
+    { StudentInfo: { Programs: [{ value: 'Band', type: 'arbitrary' }] } },
+    { StudentInfo: { Programs: [{ value: 'Band', type: '' }] } },
+  ];
+  for (const [index, customSchemas] of cases.entries()) {
+    const response = await patch({ customSchemas });
+    assert.equal(response.status, 400, `case ${index}`);
+    assert.equal(
+      response.json().error.errors[0].reason,
+      'invalid',
+      `case ${index}`,
+    );
+  }
+  // A refusal leaves every stored value as it was.
+  assert.deepEqual(await values(), before);
+  const longest = `${'a'.repeat(488)}@example.org`;
+  assert.equal([...longest].length, 500);
+  const boundary = await patch({
+    customSchemas: { StudentInfo: { GuardianEmail: longest } },
+  });
+  assert.equal(boundary.status, 200);
+  assert.equal((await values())!.StudentInfo.GuardianEmail, longest);
+});
+
+test('a custom query accepts every legal schema name', async (t) => {
+  const { api, student } = await setup(t);
+  const names = ['_Info', '1Info', '-Info'];
+  for (const name of names) {
+    const created = await api('POST', '/customer/my_customer/schemas', {
+      body: {
+        schemaName: name,
+        displayName: `Info ${name}`,
+        fields: [
+          { fieldName: 'Code', fieldType: 'STRING', displayName: 'Code' },
+          {
+            fieldName: 'Nickname',
+            fieldType: 'STRING',
+            displayName: 'Nickname',
+            indexed: false,
+          },
+        ],
+      },
+    });
+    assert.equal(created.status, 200, name);
+    const written = await api('PATCH', `/users/${student.id}`, {
+      body: { customSchemas: { [name]: { Code: 'S100' } } },
+    });
+    assert.equal(written.status, 200, name);
+  }
+  const search = async (query: string) => {
+    const response = await api('GET', '/users', {
+      query: { customer: 'my_customer', maxResults: 500, query },
+    });
+    assert.equal(response.status, 200, `${query}: ${response.text}`);
+    return (response.json().users as { primaryEmail: string }[]).map(
+      (user) => user.primaryEmail,
+    );
+  };
+  for (const name of names)
+    assert.deepEqual(await search(`${name}.Code=S100`), [
+      student.primary_email,
+    ]);
+  for (const query of [
+    '_Info.Missing=1',
+    '1Info.Missing=1',
+    '-Info.Missing=1',
+    '_Info.Nickname=Ana',
+    '1Info.Nickname=Ana',
+    '-Info.Nickname=Ana',
+  ]) {
+    const response = await api('GET', '/users', {
+      query: { customer: 'my_customer', query },
+    });
+    assert.equal(response.status, 400, query);
+    assert.equal(response.json().error.errors[0].reason, 'invalid', query);
+  }
+});
+
+test('a multi-value search compares one entry at a time', async (t) => {
+  const { api, student, other, patch } = await setup(t);
+  await patch({
+    customSchemas: {
+      StudentInfo: { Programs: [{ value: 'Band' }, { value: 'ELL' }] },
+    },
+  });
+  await patch(
+    { customSchemas: { StudentInfo: { Programs: [{ value: 'Band ELL' }] } } },
+    other.id,
+  );
+  const search = async (query: string) => {
+    const response = await api('GET', '/users', {
+      query: { customer: 'my_customer', maxResults: 500, query },
+    });
+    assert.equal(response.status, 200, `${query}: ${response.text}`);
+    return (response.json().users as { primaryEmail: string }[]).map(
+      (user) => user.primaryEmail,
+    );
+  };
+  assert.deepEqual(await search('StudentInfo.Programs=Band'), [
+    student.primary_email,
+  ]);
+  assert.deepEqual(await search('StudentInfo.Programs=ELL'), [
+    student.primary_email,
+  ]);
+  assert.deepEqual(await search("StudentInfo.Programs='Band ELL'"), [
+    other.primary_email,
+  ]);
+  assert.deepEqual(await search('StudentInfo.Programs:B*'), [
+    student.primary_email,
+    other.primary_email,
+  ]);
+  // The phrase spans two separate entries of the first user, so it names neither.
+  assert.deepEqual(await search("StudentInfo.Programs:'Band ELL'"), [
+    other.primary_email,
+  ]);
+});

@@ -191,9 +191,15 @@ export function listUsers(call: Call): ApiResponse {
   const text = query.get('query');
   if (text) {
     try {
-      const parsed = parseUserQuery(text, aliasTable, (schema, field) =>
-        customField(domain.db, schema, field),
-      );
+      const parsed = parseUserQuery(text, aliasTable, (schema, field) => {
+        const found = customField(domain.db, schema, field);
+        return (
+          found && {
+            indexed: found.indexed,
+            multiValued: found.multi_valued === 1,
+          }
+        );
+      });
       filter.where.push(...parsed.where);
       filter.params.push(...parsed.params);
     } catch (error) {
