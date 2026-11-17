@@ -26,6 +26,7 @@ import {
 import { QueryError } from './device-query.ts';
 import { parseUserQuery } from './user-query.ts';
 import {
+  customField,
   customFieldMask,
   userExtras,
   type UserExtra,
@@ -190,7 +191,9 @@ export function listUsers(call: Call): ApiResponse {
   const text = query.get('query');
   if (text) {
     try {
-      const parsed = parseUserQuery(text, aliasTable);
+      const parsed = parseUserQuery(text, aliasTable, (schema, field) =>
+        customField(domain.db, schema, field),
+      );
       filter.where.push(...parsed.where);
       filter.params.push(...parsed.params);
     } catch (error) {

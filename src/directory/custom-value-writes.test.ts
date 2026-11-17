@@ -337,3 +337,79 @@ test('a delete removes every value of the schema from every user', async (t) => 
   assert.equal(await values(), undefined);
   assert.equal(await values(other.id), undefined);
 });
+
+test('users.list searches a searchable custom field', async (t) => {
+  const { api, student, other, patch } = await setup(t);
+  await patch({
+    customSchemas: {
+      StudentInfo: {
+        StudentID: 'S100',
+        GradeLevel: 7,
+        Programs: [{ value: 'Band' }],
+      },
+    },
+  });
+  await patch(
+    { customSchemas: { StudentInfo: { StudentID: 'S101', GradeLevel: 9 } } },
+    other.id,
+  );
+  const search = async (query: string) => {
+    const response = await api('GET', '/users', {
+      query: { customer: 'my_customer', maxResults: 500, query },
+    });
+    assert.equal(response.status, 200, response.text.slice(0, 200));
+    return (response.json().users as { primaryEmail: string }[]).map(
+      (user) => user.primaryEmail,
+    );
+  };
+  assert.deepEqual(await search('StudentInfo.StudentID=S100'), [
+    student.primary_email,
+  ]);
+  assert.deepEqual(
+    (await search('StudentInfo.StudentID:S10*')).sort(),
+    [student.primary_email, other.primary_email].sort(),
+  );
+  assert.deepEqual(
+    await search('StudentInfo.StudentID:S10* StudentInfo.GradeLevel=9'),
+    [other.primary_email],
+  );
+  assert.deepEqual(await search('StudentInfo.Programs:Band'), [
+    student.primary_email,
+  ]);
+});
+
+test('a query on an unknown or an unsearchable custom field answers 400', async (t) => {
+  const { api, student } = await setup(t);
+  const added = await api('PUT', '/customer/my_customer/schemas/StudentInfo', {
+    body: {
+      ...SCHEMA,
+      fields: [
+        ...SCHEMA.fields,
+        {
+          fieldName: 'Nickname',
+          fieldType: 'STRING',
+          displayName: 'Nickname',
+          indexed: false,
+        },
+      ],
+    },
+  });
+  assert.equal(added.status, 200);
+  const cases = [
+    'Robotics.Team=blue',
+    'StudentInfo.Grade=7',
+    'StudentInfo.Nickname=Ana',
+  ];
+  for (const query of cases) {
+    const response = await api('GET', '/users', {
+      query: { customer: 'my_customer', query },
+    });
+    assert.equal(response.status, 400, query);
+    assert.equal(response.json().error.errors[0].reason, 'invalid', query);
+  }
+  const existing = await api('GET', '/users', {
+    query: { customer: 'my_customer', query: 'StudentInfo.StudentID=S100' },
+  });
+  assert.equal(existing.status, 200);
+  void student;
+});

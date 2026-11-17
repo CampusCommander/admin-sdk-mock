@@ -45,3 +45,50 @@ test('unsupported fields and bad booleans fail', () => {
   ])
     assert.throws(() => parseUserQuery(text), QueryError, text);
 });
+
+test('a custom field name builds a value subquery', () => {
+  const searchable = () => ({ indexed: 1 });
+  const equals = parseUserQuery(
+    'StudentInfo.StudentID=S100',
+    'user_aliases',
+    searchable,
+  );
+  assert.deepEqual(equals.where, [
+    'id IN (SELECT user_id FROM user_custom_values WHERE schema_name = ? AND field_name = ? AND lower(search_text) = lower(?))',
+  ]);
+  assert.deepEqual(equals.params, ['StudentInfo', 'StudentID', 'S100']);
+  const prefix = parseUserQuery(
+    'StudentInfo.StudentID:S10*',
+    'user_aliases',
+    searchable,
+  );
+  assert.match(prefix.where[0], /cc_word_prefix\(search_text, \?\)/);
+  assert.deepEqual(prefix.params, ['StudentInfo', 'StudentID', 'S10']);
+  const contains = parseUserQuery(
+    'StudentInfo.Programs:Band',
+    'user_aliases',
+    searchable,
+  );
+  assert.match(contains.where[0], /cc_contains_words\(search_text, \?\)/);
+  assert.deepEqual(contains.params, ['StudentInfo', 'Programs', 'Band']);
+});
+
+test('an unknown or unsearchable custom field fails', () => {
+  assert.throws(
+    () =>
+      parseUserQuery('StudentInfo.Missing=1', 'user_aliases', () => undefined),
+    QueryError,
+  );
+  assert.throws(
+    () =>
+      parseUserQuery('StudentInfo.StudentID=1', 'user_aliases', () => ({
+        indexed: 0,
+      })),
+    QueryError,
+  );
+  assert.throws(
+    () =>
+      parseUserQuery('StudentInfo=1', 'user_aliases', () => ({ indexed: 1 })),
+    QueryError,
+  );
+});
