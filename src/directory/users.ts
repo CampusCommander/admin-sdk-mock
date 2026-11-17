@@ -25,6 +25,11 @@ import {
 } from './common.ts';
 import { QueryError } from './device-query.ts';
 import { parseUserQuery } from './user-query.ts';
+import {
+  customFieldMask,
+  userExtras,
+  type UserExtra,
+} from './custom-values.ts';
 
 type View = 'admin_view' | 'domain_public';
 const VIEW = {
@@ -64,6 +69,7 @@ export function userResource(
   aliases: readonly string[],
   customerId: string,
   deletedAt?: number,
+  extra?: UserExtra,
 ): Record<string, unknown> {
   const name = {
     givenName: user.given_name,
@@ -97,7 +103,7 @@ export function userResource(
     ...(user.suspended === 1
       ? { suspensionReason: user.suspension_reason ?? 'ADMIN' }
       : {}),
-    archived: false,
+    archived: extra?.archived ?? false,
     changePasswordAtNextLogin: user.change_password_at_next_login === 1,
     ipWhitelisted: false,
     emails,
@@ -110,9 +116,11 @@ export function userResource(
     customerId,
     orgUnitPath: user.org_unit_path,
     isMailboxSetup: true,
-    isEnrolledIn2Sv: false,
+    isEnrolledIn2Sv: extra?.isEnrolledIn2Sv ?? false,
     isEnforcedIn2Sv: false,
     includeInGlobalAddressList: true,
+    ...(extra?.organizations ? { organizations: extra.organizations } : {}),
+    ...(extra?.customSchemas ? { customSchemas: extra.customSchemas } : {}),
   });
 }
 
@@ -175,7 +183,8 @@ export function listUsers(call: Call): ApiResponse {
     min: 1,
     max: 500,
   });
-  enumParam(call, 'projection', PROJECTION, 'basic');
+  const projection = enumParam(call, 'projection', PROJECTION, 'basic');
+  const mask = projection === 'custom' ? customFieldMask(call) : undefined;
   const sort = SORT[enumParam(call, 'orderBy', ORDER_BY, 'email')];
   const descending = enumParam(call, 'sortOrder', SORT_ORDER, 'ASC') === 'DESC';
   const text = query.get('query');
@@ -243,6 +252,12 @@ export function listUsers(call: Call): ApiResponse {
     found.length > maxResults && last
       ? encodePageToken(fp, [last.sort_key, last.id])
       : undefined;
+  const extras = userExtras(
+    domain.db,
+    page.map((user) => user.id),
+    projection,
+    mask,
+  );
   const users = page.map((user) =>
     userResource(
       user,
@@ -250,6 +265,7 @@ export function listUsers(call: Call): ApiResponse {
       aliases.get(user.id) ?? [],
       domain.customerId,
       deleted ? user.deleted_at : undefined,
+      extras.get(user.id),
     ),
   );
   return {
@@ -277,7 +293,10 @@ export function visibleUser(call: Call, key: string): UserRow {
 export function getUser(call: Call): ApiResponse {
   const domain = domainOf(call);
   const view = viewOf(call);
+  const projection = enumParam(call, 'projection', PROJECTION, 'basic');
+  const mask = projection === 'custom' ? customFieldMask(call) : undefined;
   const user = visibleUser(call, call.params.userKey);
+  const extras = userExtras(domain.db, [user.id], projection, mask);
   return {
     status: 200,
     items: 1,
@@ -286,6 +305,8 @@ export function getUser(call: Call): ApiResponse {
       view,
       aliasesFor(domain.db, [user.id]).get(user.id) ?? [],
       domain.customerId,
+      undefined,
+      extras.get(user.id),
     ),
   };
 }
