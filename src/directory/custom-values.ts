@@ -331,17 +331,19 @@ function readValue(
 
 /**
  * Merge a `customSchemas` body into the values of one user. A field that the body leaves
- * out stays, and `null` deletes a value or every value of a category. An attribute that
- * the domain does not know answers 400, a marked hypothesis until checks L2 and L3.
+ * out stays. `null` deletes a value or every value of a category on `users.update`, and
+ * changes nothing on `users.patch`, as live check L3 found. An attribute that the domain
+ * does not know answers 400, a marked hypothesis until checks L2 and L3.
  */
 export function mergeCustomValues(
   call: Call,
   db: DatabaseSync,
   userId: string,
   body: unknown,
+  nullDeletes: boolean,
 ): void {
   if (body === null) {
-    if (hasCustomTables(db))
+    if (nullDeletes && hasCustomTables(db))
       db.prepare('DELETE FROM user_custom_values WHERE user_id = ?').run(
         userId,
       );
@@ -354,6 +356,7 @@ export function mergeCustomValues(
     body as Record<string, unknown>,
   )) {
     if (fields === null) {
+      if (!nullDeletes) continue;
       db.prepare(
         'DELETE FROM user_custom_values WHERE user_id = ? AND schema_name = ?',
       ).run(userId, schemaName);
@@ -371,7 +374,7 @@ export function mergeCustomValues(
           `Invalid Input: customSchemas.${schemaName}.${fieldName}`,
         );
       if (value === null) {
-        deleteCustomValue(db, userId, schemaName, fieldName);
+        if (nullDeletes) deleteCustomValue(db, userId, schemaName, fieldName);
         continue;
       }
       putCustomValue(
@@ -388,4 +391,20 @@ export function mergeCustomValues(
       );
     }
   }
+}
+
+/**
+ * A `projection=custom` read names schemas that the customer holds. A name that no
+ * schema of the customer holds answers 400, as live check L3 found.
+ */
+export function assertCustomFieldMask(
+  call: Call,
+  db: DatabaseSync,
+  mask: readonly string[],
+): void {
+  if (
+    !hasCustomTables(db) ||
+    mask.some((name) => findSchema(db, name) === undefined)
+  )
+    throw invalidArgument(call, 'Invalid Input: customFieldMask');
 }

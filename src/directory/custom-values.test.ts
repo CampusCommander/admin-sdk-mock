@@ -104,7 +104,23 @@ test('custom returns only the schemas that the mask names', async (t) => {
   const other = await read('GET', `/users/${students[0].id}`, {
     query: { projection: 'custom', customFieldMask: 'StaffInfo' },
   });
-  assert.equal(Object.hasOwn(other.json(), 'customSchemas'), false);
+  assert.equal(other.status, 400);
+  assert.equal(other.json().error.errors[0].reason, 'invalid');
+  const listed = await read('GET', '/users', {
+    query: {
+      customer: 'my_customer',
+      maxResults: 500,
+      projection: 'custom',
+      customFieldMask: 'StaffInfo',
+    },
+  });
+  assert.equal(listed.status, 200);
+  assert.equal(
+    (listed.json().users as object[]).every(
+      (user) => !Object.hasOwn(user, 'customSchemas'),
+    ),
+    true,
+  );
   const unmasked = await read('GET', `/users/${students[0].id}`, {
     query: { projection: 'custom' },
   });
@@ -166,6 +182,12 @@ test('a domain without the custom tables keeps the resource of 0.3.0', async (t)
   });
   assert.equal(response.status, 200);
   assert.equal(Object.hasOwn(response.json(), 'customSchemas'), false);
+  // A domain without custom tables holds no schema, so a mask name answers 400.
+  const masked = await read('GET', `/users/${user.id}`, {
+    query: { projection: 'custom', customFieldMask: 'StudentInfo' },
+  });
+  assert.equal(masked.status, 400);
+  assert.equal(masked.json().error.errors[0].reason, 'invalid');
   assert.equal(response.json().archived, false);
   assert.equal(response.json().isEnrolledIn2Sv, false);
   assert.equal(Object.hasOwn(response.json(), 'organizations'), false);

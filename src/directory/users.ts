@@ -26,6 +26,7 @@ import {
 import { QueryError } from './device-query.ts';
 import { parseUserQuery } from './user-query.ts';
 import {
+  assertCustomFieldMask,
   customField,
   customFieldMask,
   userExtras,
@@ -304,6 +305,8 @@ export function getUser(call: Call): ApiResponse {
   const view = viewOf(call);
   const projection = enumParam(call, 'projection', PROJECTION, 'basic');
   const mask = projection === 'custom' ? customFieldMask(call) : undefined;
+  // Live check L3: a mask that names a missing schema answers 400 in a user read.
+  if (mask !== undefined) assertCustomFieldMask(call, domain.db, mask);
   const user = visibleUser(call, call.params.userKey);
   const extras = userExtras(domain.db, [user.id], projection, mask);
   return {

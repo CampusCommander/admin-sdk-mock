@@ -27,7 +27,7 @@ import {
 } from './common.ts';
 import { resolveOrgUnit, targetOrgUnit } from './orgunits.ts';
 import { userResource, visibleUser } from './users.ts';
-import { mergeCustomValues } from './custom-values.ts';
+import { customValuesFor, mergeCustomValues } from './custom-values.ts';
 
 const MAX_NAME = 60;
 const HASH_FUNCTIONS: ReadonlySet<string> = new Set(['MD5', 'SHA-1', 'crypt']);
@@ -133,7 +133,7 @@ export function readExternalIds(
   };
 }
 
-/** Render a user after a write, with its current aliases. */
+/** Render a user after a write, with its current aliases and custom values. */
 export function writtenUser(call: Call, id: string): Record<string, unknown> {
   const domain = domainOf(call);
   const user = row<UserRow>(
@@ -146,7 +146,16 @@ export function writtenUser(call: Call, id: string): Record<string, unknown> {
       )
       .all(id),
   ).map((entry) => entry.alias);
-  return userResource(user, 'admin_view', aliases, domain.customerId);
+  // Live check L3: a write answer holds every custom value that the user holds.
+  const custom = customValuesFor(domain.db, [id]).get(id);
+  return userResource(
+    user,
+    'admin_view',
+    aliases,
+    domain.customerId,
+    undefined,
+    custom ? { customSchemas: custom } : undefined,
+  );
 }
 
 function newUserId(call: Call, email: string): string {
@@ -260,10 +269,18 @@ export function updateUser(call: Call): ApiResponse {
     }
   }
   const custom = Object.hasOwn(body, 'customSchemas');
+  // Live check L3: null deletes on users.update, and changes nothing on users.patch.
+  const nullDeletes = call.route.id === 'directory.users.update';
   if (sets.length > 0 || rename || custom)
     transaction(domain.db, () => {
       if (custom)
-        mergeCustomValues(call, domain.db, user.id, body.customSchemas);
+        mergeCustomValues(
+          call,
+          domain.db,
+          user.id,
+          body.customSchemas,
+          nullDeletes,
+        );
       if (sets.length > 0 || rename)
         saveBeforeImage(
           domain.db,

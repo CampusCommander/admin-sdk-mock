@@ -119,19 +119,182 @@ test('users.update merges custom values too', async (t) => {
   assert.deepEqual(await values(), { StudentInfo: { StudentID: 'S200' } });
 });
 
-test('null deletes a value, and a null category deletes every value', async (t) => {
+test('users.update with null deletes a value, and a null category deletes every value', async (t) => {
   const { values, patch } = await setup(t);
   await patch({
     customSchemas: { StudentInfo: { StudentID: 'S100', GradeLevel: 7 } },
   });
-  const one = await patch({
-    customSchemas: { StudentInfo: { GradeLevel: null } },
-  });
+  const one = await patch(
+    { customSchemas: { StudentInfo: { GradeLevel: null } } },
+    undefined,
+    'PUT',
+  );
   assert.equal(one.status, 200);
   assert.deepEqual(await values(), { StudentInfo: { StudentID: 'S100' } });
-  const all = await patch({ customSchemas: { StudentInfo: null } });
+  const all = await patch(
+    { customSchemas: { StudentInfo: null } },
+    undefined,
+    'PUT',
+  );
   assert.equal(all.status, 200);
   assert.equal(await values(), undefined);
+});
+
+test('users.patch keeps a value, a category, or every value that it names with null', async (t) => {
+  const { values, patch } = await setup(t);
+  await patch({
+    customSchemas: { StudentInfo: { StudentID: 'S100', GradeLevel: 7 } },
+  });
+  const before = await values();
+  for (const customSchemas of [
+    { StudentInfo: { GradeLevel: null } },
+    { StudentInfo: null },
+    null,
+  ]) {
+    const response = await patch({ customSchemas });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await values(), before);
+  }
+});
+
+test('a users.patch batch part keeps every value that it names with null', async (t) => {
+  const { harness, domain, student, values, patch } = await setup(t);
+  await patch({
+    customSchemas: { StudentInfo: { StudentID: 'S100', GradeLevel: 7 } },
+  });
+  const token = grantToken(harness, domain, READ_WRITE_SCOPES);
+  const path = `/admin/directory/v1/users/${student.id}`;
+  const response = await harness.request({
+    host: 'www.googleapis.com',
+    path: '/batch/admin/directory_v1',
+    method: 'POST',
+    token,
+    headers: { 'content-type': 'multipart/mixed; boundary=b' },
+    body: batchBody(
+      [
+        {
+          id: 'field',
+          method: 'PATCH',
+          path,
+          body: { customSchemas: { StudentInfo: { GradeLevel: null } } },
+        },
+        {
+          id: 'category',
+          method: 'PATCH',
+          path,
+          body: { customSchemas: { StudentInfo: null } },
+        },
+        {
+          id: 'all',
+          method: 'PATCH',
+          path,
+          body: { customSchemas: null },
+        },
+      ],
+      'b',
+    ),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual([...batchStatuses(response.text).entries()].sort(), [
+    ['all', 200],
+    ['category', 200],
+    ['field', 200],
+  ]);
+  assert.deepEqual(await values(), {
+    StudentInfo: { GradeLevel: 7, StudentID: 'S100' },
+  });
+});
+
+test('a users.update batch part deletes the values that it names with null', async (t) => {
+  const { harness, domain, student, values, patch } = await setup(t);
+  await patch({
+    customSchemas: { StudentInfo: { StudentID: 'S100', GradeLevel: 7 } },
+  });
+  const token = grantToken(harness, domain, READ_WRITE_SCOPES);
+  const path = `/admin/directory/v1/users/${student.id}`;
+  const send = async (id: string, body: unknown) => {
+    const response = await harness.request({
+      host: 'www.googleapis.com',
+      path: '/batch/admin/directory_v1',
+      method: 'POST',
+      token,
+      headers: { 'content-type': 'multipart/mixed; boundary=b' },
+      body: batchBody([{ id, method: 'PUT', path, body }], 'b'),
+    });
+    assert.equal(response.status, 200, id);
+    assert.deepEqual([...batchStatuses(response.text).entries()], [[id, 200]]);
+  };
+  await send('field', { customSchemas: { StudentInfo: { GradeLevel: null } } });
+  assert.deepEqual(await values(), { StudentInfo: { StudentID: 'S100' } });
+  await send('category', { customSchemas: { StudentInfo: null } });
+  assert.equal(await values(), undefined);
+  await patch({
+    customSchemas: { StudentInfo: { StudentID: 'S100', GradeLevel: 7 } },
+  });
+  await send('all', { customSchemas: null });
+  assert.equal(await values(), undefined);
+});
+
+test('a custom read answers 400 when the mask names a schema that the customer does not hold', async (t) => {
+  const { api, student } = await setup(t);
+  for (const customFieldMask of ['Robotics', 'StudentInfo,Robotics']) {
+    const missing = await api('GET', `/users/${student.id}`, {
+      query: { projection: 'custom', customFieldMask },
+    });
+    assert.equal(missing.status, 400, customFieldMask);
+    assert.equal(
+      missing.json().error.errors[0].reason,
+      'invalid',
+      customFieldMask,
+    );
+  }
+  const held = await api('GET', `/users/${student.id}`, {
+    query: { projection: 'custom', customFieldMask: 'StudentInfo' },
+  });
+  assert.equal(held.status, 200);
+  // users.list keeps its answer, as live check L3 sent no such call.
+  const listed = await api('GET', '/users', {
+    query: {
+      customer: 'my_customer',
+      maxResults: 500,
+      projection: 'custom',
+      customFieldMask: 'Robotics',
+    },
+  });
+  assert.equal(listed.status, 200);
+});
+
+test('a value write answer holds customSchemas', async (t) => {
+  const { other, values, patch } = await setup(t);
+  const patched = await patch({
+    customSchemas: { StudentInfo: { StudentID: 'S100' } },
+  });
+  assert.equal(patched.status, 200);
+  assert.deepEqual(patched.json().customSchemas, {
+    StudentInfo: { StudentID: 'S100' },
+  });
+  const updated = await patch(
+    { customSchemas: { StudentInfo: { GradeLevel: 7 } } },
+    undefined,
+    'PUT',
+  );
+  assert.equal(updated.status, 200);
+  assert.deepEqual(updated.json().customSchemas, {
+    StudentInfo: { GradeLevel: 7, StudentID: 'S100' },
+  });
+  assert.deepEqual(await values(), {
+    StudentInfo: { GradeLevel: 7, StudentID: 'S100' },
+  });
+  const cleared = await patch({ customSchemas: null }, undefined, 'PUT');
+  assert.equal(cleared.status, 200);
+  assert.equal(Object.hasOwn(cleared.json(), 'customSchemas'), false);
+  const empty = await patch(
+    { name: { givenName: 'Grace', familyName: 'Hopper' } },
+    other.id,
+    'PUT',
+  );
+  assert.equal(empty.status, 200);
+  assert.equal(Object.hasOwn(empty.json(), 'customSchemas'), false);
 });
 
 test('a multi-valued field takes the entry list', async (t) => {
