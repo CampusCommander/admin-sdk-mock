@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { READ_WRITE_SCOPES } from '../auth/scopes.ts';
 import { faultTargets } from '../routes.ts';
+import { row } from '../store/sqlite.ts';
 import { batchBody, batchStatuses } from '../testing/batch.ts';
 import {
   directoryClient,
@@ -343,6 +345,89 @@ test('the locks answer 400', async (t) => {
   assert.equal(kept.json().schemaName, 'StudentInfo');
 });
 
+test('a field rename with its own ID answers 400', async (t) => {
+  const { read, write } = await setup(t);
+  const inserted = (await write('POST', '', { body: body() })).json();
+  const first = inserted.fields[0] as { fieldId: string; fieldName: string };
+  const renamed = await write('PUT', '/StudentInfo', {
+    body: {
+      schemaName: 'StudentInfo',
+      displayName: 'Student information',
+      fields: [
+        {
+          fieldId: first.fieldId,
+          fieldName: 'LearnerID',
+          fieldType: 'STRING',
+          displayName: 'Student ID',
+        },
+        { fieldName: 'Homeroom', fieldType: 'STRING', displayName: 'Homeroom' },
+      ],
+    },
+  });
+  assert.equal(renamed.status, 400);
+  assert.equal(renamed.json().error.errors[0].reason, 'invalid');
+  const unchanged = await read('GET', '/StudentInfo');
+  assert.equal(unchanged.json().fields.length, 3);
+  assert.equal(
+    unchanged
+      .json()
+      .fields.find(
+        (field: { fieldId: string }) => field.fieldId === first.fieldId,
+      ).fieldName,
+    'StudentID',
+  );
+});
+
+test('a single-valued field may become multi-valued', async (t) => {
+  const { read, write } = await setup(t);
+  const inserted = (await write('POST', '', { body: body() })).json();
+  const first = inserted.fields[0] as { fieldId: string };
+  const widened = await write('PUT', '/StudentInfo', {
+    body: {
+      schemaName: 'StudentInfo',
+      displayName: 'Student information',
+      fields: [
+        {
+          fieldId: first.fieldId,
+          fieldName: 'StudentID',
+          fieldType: 'STRING',
+          displayName: 'Student ID',
+          multiValued: true,
+        },
+        {
+          fieldName: 'GradeLevel',
+          fieldType: 'INT64',
+          displayName: 'Grade level',
+          numericIndexingSpec: { minValue: 0, maxValue: 12 },
+        },
+        {
+          fieldName: 'Programs',
+          fieldType: 'STRING',
+          displayName: 'Programs',
+          multiValued: true,
+        },
+      ],
+    },
+  });
+  assert.equal(widened.status, 200);
+  const schema = widened.json();
+  const field = schema.fields.find(
+    (entry: { fieldName: string }) => entry.fieldName === 'StudentID',
+  );
+  assert.equal(field.multiValued, true);
+  assert.equal(field.fieldId, first.fieldId);
+  assert.notEqual(schema.etag, inserted.etag);
+  const reread = await read('GET', '/StudentInfo');
+  assert.equal(
+    reread
+      .json()
+      .fields.find(
+        (entry: { fieldName: string }) => entry.fieldName === 'StudentID',
+      ).multiValued,
+    true,
+  );
+});
+
 test('a customer holds at most 100 schemas', async (t) => {
   const { read, write } = await setup(t);
   for (let index = 0; index < 100; index++) {
@@ -494,6 +579,118 @@ test('each schema route runs as a batch part', async (t) => {
     ['list', 200],
     ['update', 200],
   ]);
+});
+
+test('a refused first custom write leaves the domain usable', async (t) => {
+  const harness = await startHarness();
+  t.after(() => harness.close());
+  const domain = seedTestDomain(harness, SPEC);
+  const api = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_WRITE_SCOPES),
+  );
+  const student = row<{ id: string }>(
+    domain.db
+      .prepare(
+        "SELECT id FROM users WHERE role = 'student' ORDER BY ord LIMIT 1",
+      )
+      .get(),
+  )!;
+  assert.equal(
+    row(
+      domain.db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'custom_schemas'",
+        )
+        .get(),
+    ),
+    undefined,
+  );
+  const refused = await api('PATCH', `/users/${student.id}`, {
+    body: { customSchemas: { Missing: { Code: 'S100' } } },
+  });
+  assert.equal(refused.status, 400);
+  assert.equal(refused.json().error.errors[0].reason, 'invalid');
+  // The rolled-back tables are gone, so the reads answer as a domain of 0.3.0.
+  const read = await api('GET', `/users/${student.id}`, {
+    query: { projection: 'full' },
+  });
+  assert.equal(read.status, 200);
+  assert.equal(Object.hasOwn(read.json(), 'customSchemas'), false);
+  const list = await api('GET', '/customer/my_customer/schemas');
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.json().schemas, []);
+  const created = await api('POST', '/customer/my_customer/schemas', {
+    body: body(),
+  });
+  assert.equal(created.status, 200);
+  assert.equal(
+    (await api('GET', '/customer/my_customer/schemas/StudentInfo')).status,
+    200,
+  );
+  const written = await api('PATCH', `/users/${student.id}`, {
+    body: { customSchemas: { StudentInfo: { StudentID: 'S200' } } },
+  });
+  assert.equal(written.status, 200);
+});
+
+test('a recreated schema gets a new ID and a new etag', async (t) => {
+  const { read, write } = await setup(t);
+  const first = (await write('POST', '', { body: body() })).json();
+  assert.equal((await write('DELETE', '/StudentInfo')).status, 204);
+  const second = (
+    await write('POST', '', {
+      body: body({ displayName: 'Student information again' }),
+    })
+  ).json();
+  assert.notEqual(second.schemaId, first.schemaId);
+  assert.notEqual(second.etag, first.etag);
+  for (const [index, field] of second.fields.entries())
+    assert.notEqual(field.fieldId, first.fields[index].fieldId);
+  // The old ID names nothing, and the old etag cannot delete the replacement.
+  assert.equal((await read('GET', `/${first.schemaId}`)).status, 404);
+  const stale = await write('DELETE', '/StudentInfo', {
+    headers: { 'if-match': first.etag },
+  });
+  assert.equal(stale.status, 412);
+  assert.equal(
+    (
+      await write('PUT', '/StudentInfo', {
+        body: body({ displayName: 'Third name' }),
+        headers: { 'if-match': first.etag },
+      })
+    ).status,
+    412,
+  );
+  const live = await read('GET', '/StudentInfo');
+  assert.equal(live.status, 200);
+  assert.equal(live.json().schemaId, second.schemaId);
+  assert.equal(live.json().displayName, 'Student information again');
+});
+
+test('a schema named like a prototype key round-trips through every route', async (t) => {
+  const { read, write } = await setup(t);
+  const created = await write('POST', '', {
+    body: {
+      schemaName: '__proto__',
+      displayName: 'Prototype names',
+      fields: [
+        { fieldName: 'reviewMarker', fieldType: 'STRING', displayName: 'Mark' },
+      ],
+    },
+  });
+  assert.equal(created.status, 200);
+  const list = await read('GET');
+  assert.equal(list.status, 200);
+  assert.deepEqual(
+    list
+      .json()
+      .schemas.map((schema: { schemaName: string }) => schema.schemaName),
+    ['__proto__'],
+  );
+  const got = await read('GET', '/__proto__');
+  assert.equal(got.status, 200);
+  assert.equal(got.json().schemaName, '__proto__');
 });
 
 test('each schema route is a fault target, and a status fault names the route', async (t) => {

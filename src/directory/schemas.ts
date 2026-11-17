@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS custom_schemas (
   revision INTEGER NOT NULL,
   ord INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS custom_schema_incarnations (
+  schema_name TEXT PRIMARY KEY,
+  incarnations INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS custom_schema_fields (
   schema_id TEXT NOT NULL,
   field_id TEXT NOT NULL,
@@ -83,11 +87,14 @@ CREATE TABLE IF NOT EXISTS user_profile_extra (
 
 const READY = new WeakSet<DatabaseSync>();
 
-/** Create the custom tables when they are missing. */
+/**
+ * Create the custom tables when they are missing. DDL inside a transaction disappears
+ * again on a rollback, so such a call leaves the readiness cache alone.
+ */
 export function ensureCustomTables(db: DatabaseSync): void {
   if (READY.has(db)) return;
   db.exec(CUSTOM_TABLES);
-  READY.add(db);
+  if (!db.isTransaction) READY.add(db);
 }
 
 /** True when the domain holds the custom tables. Reads use it, so they create nothing. */
@@ -101,7 +108,7 @@ export function hasCustomTables(db: DatabaseSync): boolean {
         )
         .get(),
     ) !== undefined;
-  if (found) READY.add(db);
+  if (found && !db.isTransaction) READY.add(db);
   return found;
 }
 
@@ -410,6 +417,29 @@ export function getSchema(call: Call): ApiResponse {
   };
 }
 
+/** How many incarnations of a schema name the domain has created so far. */
+function storedIncarnations(db: DatabaseSync, schemaName: string): number {
+  return Number(
+    row<{ incarnations: number }>(
+      db
+        .prepare(
+          'SELECT incarnations FROM custom_schema_incarnations WHERE schema_name = ?',
+        )
+        .get(schemaName),
+    )?.incarnations ?? 0,
+  );
+}
+
+/** The next incarnation of a schema name: a recreate never reuses the ID of the deleted one. */
+function nextIncarnation(db: DatabaseSync, schemaName: string): number {
+  return storedIncarnations(db, schemaName) + 1;
+}
+
+/** The incarnation of a live schema. A schema that the seed wrote has no row yet. */
+function incarnationOf(db: DatabaseSync, schemaName: string): number {
+  return storedIncarnations(db, schemaName) || 1;
+}
+
 export function insertSchema(call: Call): ApiResponse {
   const customer = customerOf(call);
   const db = domainOf(call).db;
@@ -420,22 +450,26 @@ export function insertSchema(call: Call): ApiResponse {
     throw invalidArgument(call, `Limit reached: ${SCHEMA_LIMIT} schemas.`);
   if (fieldCount(db) + input.fields.length > FIELD_LIMIT)
     throw invalidArgument(call, `Limit reached: ${FIELD_LIMIT} fields.`);
+  const incarnation = nextIncarnation(db, input.schemaName);
   const schemaId = newId(
     call,
-    `schema/${customer}/${input.schemaName}`,
+    `schema/${customer}/${input.schemaName}/${incarnation}`,
     (id) => findSchema(db, id) !== undefined,
   );
   const takenFields = new Set<string>();
   const fieldIds = input.fields.map((field) => {
     const id = newId(
       call,
-      `field/${customer}/${input.schemaName}/${field.fieldName}`,
+      `field/${customer}/${input.schemaName}/${incarnation}/${field.fieldName}`,
       (candidate) => takenFields.has(candidate),
     );
     takenFields.add(id);
     return id;
   });
   transaction(db, () => {
+    db.prepare(
+      'INSERT INTO custom_schema_incarnations (schema_name, incarnations) VALUES (?, ?) ON CONFLICT (schema_name) DO UPDATE SET incarnations = excluded.incarnations',
+    ).run(input.schemaName, incarnation);
     db.prepare(
       'INSERT INTO custom_schemas (schema_id, schema_name, display_name, revision, ord) VALUES (?, ?, ?, 1, ?)',
     ).run(schemaId, input.schemaName, input.displayName, schemaCount(db));
@@ -513,13 +547,14 @@ export function updateSchema(call: Call): ApiResponse {
   if (fieldCount(db) - removed.length + added.length > FIELD_LIMIT)
     throw invalidArgument(call, `Limit reached: ${FIELD_LIMIT} fields.`);
   const customer = customerOf(call);
+  const incarnation = incarnationOf(db, current.schema_name);
   const takenFields = new Set(existing.map((field) => field.field_id));
   const fieldIds = input.fields.map((field) => {
     const current = byName.get(field.fieldName);
     if (current) return current.field_id;
     const id = newId(
       call,
-      `field/${customer}/${input.schemaName}/${field.fieldName}`,
+      `field/${customer}/${input.schemaName}/${incarnation}/${field.fieldName}`,
       (candidate) => takenFields.has(candidate),
     );
     takenFields.add(id);
