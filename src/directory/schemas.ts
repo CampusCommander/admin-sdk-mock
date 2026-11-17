@@ -338,17 +338,25 @@ function readSchema(call: Call, body: Record<string, unknown>): SchemaInput {
   };
 }
 
-/** A unique ID for a schema or a field, derived from the domain seed and the name. */
+/** A unique ID for a schema or a field, derived from a source string and a label. */
+export function makeId(
+  source: string,
+  label: string,
+  taken: (id: string) => boolean,
+): string {
+  const random = createRandom(`custom/${source}/${label}`);
+  for (;;) {
+    const id = random.string(12, IDS);
+    if (!taken(id)) return id;
+  }
+}
+
 function newId(
   call: Call,
   label: string,
   taken: (id: string) => boolean,
 ): string {
-  const random = createRandom(`custom/${domainOf(call).spec.seed}/${label}`);
-  for (;;) {
-    const id = random.string(12, IDS);
-    if (!taken(id)) return id;
-  }
+  return makeId(domainOf(call).spec.seed, label, taken);
 }
 
 /** A stale `If-Match` answers 412. The header is optional, as Google documents it. */
