@@ -238,6 +238,62 @@ test('keep treats primaryDomain as a part of the specification', (t) => {
   assert.equal(ensureDomain(mock, entry({ spec }), 0, {}, NOW).action, 'kept');
 });
 
+test('keep treats the opt-in custom scenario as part of the specification', (t) => {
+  const changed: [Record<string, unknown>, Record<string, unknown>][] = [
+    // Added.
+    [
+      { ...EMPTY, seed: 'opt-in-added' },
+      { ...EMPTY, seed: 'opt-in-added', customSchemas: true },
+    ],
+    // Removed.
+    [
+      { ...EMPTY, seed: 'opt-in-removed', customSchemas: true },
+      { ...EMPTY, seed: 'opt-in-removed' },
+    ],
+    // Switched on from an explicit false.
+    [
+      { ...EMPTY, seed: 'opt-in-switched', customSchemas: false },
+      { ...EMPTY, seed: 'opt-in-switched', customSchemas: true },
+    ],
+  ];
+  for (const [first, second] of changed) {
+    const { mock, entry } = setup(t);
+    ensureDomain(mock, entry({ spec: first }), 0, {}, NOW);
+    assert.deepEqual(
+      configErrors(() =>
+        ensureDomain(mock, entry({ spec: second }), 0, {}, NOW),
+      ),
+      [
+        'domains[0].spec changed since the domain was created. Set onStart to reset or delete the data directory.',
+      ],
+      JSON.stringify(second),
+    );
+  }
+  const same: [Record<string, unknown>, Record<string, unknown>][] = [
+    [
+      { ...EMPTY, seed: 'opt-in-absent' },
+      { ...EMPTY, seed: 'opt-in-absent' },
+    ],
+    [
+      { ...EMPTY, seed: 'opt-in-false', customSchemas: false },
+      { ...EMPTY, seed: 'opt-in-false', customSchemas: false },
+    ],
+    [
+      { ...EMPTY, seed: 'opt-in-true', customSchemas: true },
+      { ...EMPTY, seed: 'opt-in-true', customSchemas: true },
+    ],
+  ];
+  for (const [first, second] of same) {
+    const { mock, entry } = setup(t);
+    ensureDomain(mock, entry({ spec: first }), 0, {}, NOW);
+    assert.equal(
+      ensureDomain(mock, entry({ spec: second }), 0, {}, NOW).action,
+      'kept',
+      JSON.stringify(second),
+    );
+  }
+});
+
 test('reset recreates the domain with the current fixtures and keeps a key of this customer', (t) => {
   const { mock, entry, writeJson } = setup(t);
   const fixtures = writeJson('fixtures.json', fixturesWith('ada'));

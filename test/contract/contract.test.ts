@@ -7,6 +7,7 @@ import {
   WRITE_SCOPES,
 } from '../../src/auth/scopes.ts';
 import { CSV_MIME } from '../../src/drive/store.ts';
+import { putCustomValue } from '../../src/directory/custom-values.ts';
 import { row, rows } from '../../src/store/sqlite.ts';
 import {
   directoryClient,
@@ -629,4 +630,99 @@ test('every Drive and Sheets response matches its discovery schema', async (t) =
   assert.equal(media.status, 200);
   assert.equal(media.text, 'id,name\n1,Ana\n');
   assert.equal(media.headers['content-type'], CSV_MIME);
+});
+
+test('every user schema response matches its discovery schema', async (t) => {
+  const harness = await startHarness();
+  t.after(() => harness.close());
+  const domain = seedTestDomain(harness, {
+    tier: 'small',
+    seed: 'contract-schemas',
+    counts: { schools: 1, students: 12, staff: 3, devices: 5 },
+  });
+  const api = directoryClient(
+    harness,
+    grantToken(harness, domain, READ_WRITE_SCOPES),
+  );
+  const check = (name: string, method: string[], response: HarnessResponse) => {
+    assert.equal(
+      response.status,
+      200,
+      `${name}: ${response.text.slice(0, 300)}`,
+    );
+    assert.deepEqual(
+      validate(directory, methodSchema(directory, method), response.json()),
+      [],
+      name,
+    );
+  };
+  const schemas = '/customer/my_customer/schemas';
+  const body = {
+    schemaName: 'StudentInfo',
+    displayName: 'Student information',
+    fields: [
+      {
+        fieldName: 'StudentID',
+        fieldType: 'STRING',
+        displayName: 'Student ID',
+      },
+      {
+        fieldName: 'GradeLevel',
+        fieldType: 'INT64',
+        displayName: 'Grade level',
+        numericIndexingSpec: { minValue: 0, maxValue: 12 },
+      },
+      {
+        fieldName: 'Programs',
+        fieldType: 'STRING',
+        displayName: 'Programs',
+        multiValued: true,
+      },
+    ],
+  };
+  check(
+    'schemas.insert',
+    ['schemas', 'insert'],
+    await api('POST', schemas, { body }),
+  );
+  check('schemas.list', ['schemas', 'list'], await api('GET', schemas));
+  check(
+    'schemas.get',
+    ['schemas', 'get'],
+    await api('GET', `${schemas}/StudentInfo`),
+  );
+  check(
+    'schemas.update',
+    ['schemas', 'update'],
+    await api('PUT', `${schemas}/StudentInfo`, {
+      body: { ...body, displayName: 'Student records' },
+    }),
+  );
+  const student = row<{ id: string }>(
+    domain.db
+      .prepare("SELECT id FROM users WHERE role = 'student' LIMIT 1")
+      .get(),
+  )!;
+  putCustomValue(domain.db, student.id, 'StudentInfo', 'StudentID', 'S100');
+  putCustomValue(domain.db, student.id, 'StudentInfo', 'GradeLevel', 7);
+  putCustomValue(domain.db, student.id, 'StudentInfo', 'Programs', [
+    { value: 'Band' },
+  ]);
+  check(
+    'users.get full',
+    ['users', 'get'],
+    await api('GET', `/users/${student.id}`, {
+      query: { projection: 'full' },
+    }),
+  );
+  check(
+    'users.list full',
+    ['users', 'list'],
+    await api('GET', '/users', {
+      query: { customer: 'my_customer', projection: 'full' },
+    }),
+  );
+  const deleted = await api('DELETE', `${schemas}/StudentInfo`);
+  assert.equal(deleted.status, 204);
+  assert.equal(deleted.text, '');
 });

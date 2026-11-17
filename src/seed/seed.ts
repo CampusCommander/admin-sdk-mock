@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { createRandom } from '../random.ts';
 import { row, transaction } from '../store/sqlite.ts';
 import { DAY_MS, type SeedContext } from './context.ts';
+import { seedCustomScenario } from './custom-scenario.ts';
 import { seedDevices } from './devices.ts';
 import { seedGroups } from './groups.ts';
 import { buildLayout } from './layout.ts';
@@ -56,6 +57,7 @@ export function seedDomain(
   db: DatabaseSync,
   spec: ResolvedSpec,
   seededAt: number,
+  options: { customSchemas?: boolean } = {},
 ): SeedResult {
   const started = performance.now();
   const layout = buildLayout(spec);
@@ -97,10 +99,15 @@ export function seedDomain(
           ord,
         ),
     );
-    if (empty) return seedAdministrator(ctx);
+    if (empty) {
+      const admin = seedAdministrator(ctx);
+      if (options.customSchemas) seedCustomScenario(ctx);
+      return admin;
+    }
     const index = seedUsers(ctx);
     seedDevices(ctx, index);
     seedGroups(ctx);
+    if (options.customSchemas) seedCustomScenario(ctx);
     return index.adminEmail;
   });
   return {

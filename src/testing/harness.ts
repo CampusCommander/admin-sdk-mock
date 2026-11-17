@@ -188,6 +188,7 @@ export function directoryClient(
       path: `/admin/directory/v1${path}`,
       token,
       query: options.query,
+      headers: options.headers,
       ...(options.body === undefined
         ? {}
         : {
@@ -195,7 +196,10 @@ export function directoryClient(
               typeof options.body === 'string'
                 ? options.body
                 : JSON.stringify(options.body),
-            headers: { 'content-type': 'application/json' },
+            headers: {
+              'content-type': 'application/json',
+              ...options.headers,
+            },
           }),
     });
 }

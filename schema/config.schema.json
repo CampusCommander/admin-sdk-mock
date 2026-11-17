@@ -161,6 +161,10 @@
             "rates": {
               "type": "object",
               "description": "Overrides of the scenario rates."
+            },
+            "customSchemas": {
+              "type": "boolean",
+              "description": "Seed the three custom attribute categories and their values. The default seeds no custom data."
             }
           },
           "description": "The seed specification. The same specification always yields the same data."

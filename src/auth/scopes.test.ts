@@ -34,6 +34,20 @@ test('the test scope sets include group reads and group writes', () => {
   assert.ok(READ_WRITE_SCOPES.includes(`${P}admin.directory.group.readonly`));
 });
 
+test('the schema scopes follow the discovery document', () => {
+  assert.deepEqual(SCOPES.schema, [
+    `${P}admin.directory.userschema`,
+    `${P}admin.directory.userschema.readonly`,
+  ]);
+  assert.deepEqual(WRITE_SCOPES.schema, [`${P}admin.directory.userschema`]);
+  assert.ok(READ_SCOPES.includes(`${P}admin.directory.userschema.readonly`));
+  assert.ok(!READ_SCOPES.includes(`${P}admin.directory.userschema`));
+  assert.ok(READ_WRITE_SCOPES.includes(`${P}admin.directory.userschema`));
+  assert.ok(
+    READ_WRITE_SCOPES.includes(`${P}admin.directory.userschema.readonly`),
+  );
+});
+
 test('drive.file is a write scope, and both Drive hosts accept it', () => {
   assert.deepEqual(SCOPES.drive, [`${P}drive.file`]);
   assert.deepEqual(WRITE_SCOPES.drive, [`${P}drive.file`]);

@@ -10,7 +10,7 @@ import { DomainError } from '../domains.ts';
 import { FaultError } from '../faults/faults.ts';
 import type { Mock } from '../mock.ts';
 import { loadFixtures } from '../seed/fixtures.ts';
-import { resolveSpec } from '../seed/spec.ts';
+import { customScenario, resolveSpec } from '../seed/spec.ts';
 import { DEFAULT_SETTINGS, mergeSettings } from '../settings.ts';
 import type { StoredServiceAccount } from '../store/registry.ts';
 import { row } from '../store/sqlite.ts';
@@ -101,9 +101,11 @@ export function ensureDomain(
       mock.registry.addServiceAccount(account);
     action = 'reset';
   } else {
+    // The opt-in flag is not part of the resolved specification, so compare it on its own.
     const sameSpec =
       JSON.stringify(resolveSpec(existing.record.spec)) ===
-      JSON.stringify(spec);
+        JSON.stringify(spec) &&
+      customScenario(existing.record.spec) === customScenario(entry.spec);
     if (!sameSpec) throw restart(path, 'spec');
     const stored = row<{ value: string }>(
       existing.db

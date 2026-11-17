@@ -39,6 +39,8 @@ export interface SeedSpec {
   layout?: LayoutFamily;
   counts?: Partial<Counts>;
   rates?: Partial<Rates>;
+  /** Seed the three custom categories and their values. The default seeds none. */
+  customSchemas?: boolean;
 }
 
 export interface ResolvedSpec {
@@ -93,6 +95,7 @@ const FIELDS = [
   'layout',
   'counts',
   'rates',
+  'customSchemas',
 ];
 const SEED_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const COUNT_LIMIT = 2_000_000;
@@ -180,6 +183,9 @@ export function resolveSpec(input: unknown): ResolvedSpec {
     layoutInput !== 'school-first'
   )
     throw new SpecError('layout must be role-first or school-first.');
+  const customSchemas = spec.customSchemas;
+  if (customSchemas !== undefined && typeof customSchemas !== 'boolean')
+    throw new SpecError('customSchemas must be true or false.');
 
   if (
     tier === 'empty' &&
@@ -250,4 +256,13 @@ export function resolveSpec(input: unknown): ResolvedSpec {
     counts,
     rates,
   };
+}
+
+/** Whether the caller asked for the custom attribute scenario. */
+export function customScenario(input: unknown): boolean {
+  return (
+    input !== null &&
+    typeof input === 'object' &&
+    (input as Record<string, unknown>).customSchemas === true
+  );
 }

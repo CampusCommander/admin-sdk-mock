@@ -34,6 +34,13 @@ import {
   updateUser,
 } from './directory/user-writes.ts';
 import { getUser, listUsers } from './directory/users.ts';
+import {
+  deleteSchema,
+  getSchema,
+  insertSchema,
+  listSchemas,
+  updateSchema,
+} from './directory/schemas.ts';
 import type { Route } from './http/types.ts';
 import { directoryRoute, writeRoute } from './route-helpers.ts';
 import { groupRoutes } from './directory/group-routes.ts';
@@ -54,6 +61,8 @@ const VALUES =
   /^\/v4\/spreadsheets\/(?<spreadsheetId>[^/]+)\/values\/(?<range>.+)$/;
 
 const USER = /^\/admin\/directory\/v1\/users\/(?<userKey>[^/]+)$/;
+const SCHEMA_KEY =
+  /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/schemas\/(?<schemaKey>[^/]+)$/;
 const ORGUNIT =
   /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/orgunits\/(?<orgUnitPath>.+)$/;
 
@@ -124,6 +133,39 @@ export function buildRoutes(mock: Mock): Route[] {
       false,
     ),
     directoryRoute('directory.users.get', USER, SCOPES.user, getUser, false),
+    directoryRoute(
+      'directory.schemas.list',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/schemas$/,
+      SCOPES.schema,
+      listSchemas,
+    ),
+    directoryRoute(
+      'directory.schemas.get',
+      SCHEMA_KEY,
+      SCOPES.schema,
+      getSchema,
+    ),
+    writeRoute(
+      'directory.schemas.insert',
+      'POST',
+      /^\/admin\/directory\/v1\/customer\/(?<customerId>[^/]+)\/schemas$/,
+      WRITE_SCOPES.schema,
+      insertSchema,
+    ),
+    writeRoute(
+      'directory.schemas.update',
+      'PUT',
+      SCHEMA_KEY,
+      WRITE_SCOPES.schema,
+      updateSchema,
+    ),
+    writeRoute(
+      'directory.schemas.delete',
+      'DELETE',
+      SCHEMA_KEY,
+      WRITE_SCOPES.schema,
+      deleteSchema,
+    ),
     writeRoute(
       'directory.users.insert',
       'POST',

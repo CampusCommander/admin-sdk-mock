@@ -5,6 +5,7 @@ import type { OpenDomain } from './http/types.ts';
 import { applyFixtures, type Fixtures } from './seed/fixtures.ts';
 import { domainCounts, seedDomain, type SeedResult } from './seed/seed.ts';
 import {
+  customScenario,
   resolveSpec,
   SpecError,
   type ResolvedSpec,
@@ -141,7 +142,9 @@ export function createDomains(dataDir: string, registry: Registry): Domains {
       const db = openDomainDb(fileFor(spec.customerId));
       let result: SeedResult;
       try {
-        result = seedDomain(db, spec, now);
+        result = seedDomain(db, spec, now, {
+          customSchemas: customScenario(input),
+        });
         if (options?.fixtures)
           result = addFixtures(db, spec, now, options.fixtures, result);
       } catch (error) {
@@ -179,7 +182,9 @@ export function createDomains(dataDir: string, registry: Registry): Domains {
       let remains = 'the schema only';
       let result: SeedResult;
       try {
-        result = seedDomain(db, spec, now);
+        result = seedDomain(db, spec, now, {
+          customSchemas: customScenario(record.spec),
+        });
         remains = 'the seed without its fixtures';
         if (fixtures) result = addFixtures(db, spec, now, fixtures, result);
       } catch (error) {

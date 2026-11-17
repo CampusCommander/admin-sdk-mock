@@ -7,12 +7,62 @@ import {
 import { QueryError } from './device-query.ts';
 
 const CLAUSE =
-  /([A-Za-z]+)(=|:)('(?:[^'\\]|\\.)*'|\S*)|('(?:[^'\\]|\\.)*'|\S+)/g;
+  /([A-Za-z0-9_-][A-Za-z0-9_.-]*)(=|:)('(?:[^'\\]|\\.)*'|\S*)|('(?:[^'\\]|\\.)*'|\S+)/g;
+
+/** A custom field that a query names: schemaName.fieldName. */
+export type CustomLookup = (
+  schemaName: string,
+  fieldName: string,
+) => { indexed: number; multiValued?: boolean } | undefined;
 
 const unquote = (value: string): string =>
   value.length >= 2 && value.startsWith("'") && value.endsWith("'")
     ? value.slice(1, -1).replace(/\\(.)/g, '$1')
     : value;
+
+/** A `schemaName.fieldName` term matches the stored value of a searchable field. */
+function addCustomClause(
+  filter: SqlFilter,
+  name: string,
+  op: '=' | ':',
+  value: string,
+  lookup: CustomLookup,
+): void {
+  const parts = name.split('.');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] === '')
+    throw new QueryError(`Unsupported query field: ${name}`);
+  const [schema, field] = parts;
+  const known = lookup(schema, field);
+  if (!known) throw new QueryError(`Unsupported query field: ${name}`);
+  if (known.indexed !== 1)
+    throw new QueryError(`The field ${name} is not searchable.`);
+  const where = ['schema_name = ?', 'field_name = ?'];
+  const multi = known.multiValued === true;
+  // A list stores its entries as JSON strings. The cast keeps a stray scalar number or
+  // boolean from reaching the text functions, because json_each returns its native type.
+  const target = multi ? 'CAST(entry.value AS TEXT)' : 'search_text';
+  const predicate =
+    op === '='
+      ? `lower(${target}) = lower(?)`
+      : value.endsWith('*')
+        ? `cc_word_prefix(${target}, ?)`
+        : `cc_contains_words(${target}, ?)`;
+  const params: (string | number)[] = [
+    schema,
+    field,
+    op === ':' && value.endsWith('*') ? value.slice(0, -1) : value,
+  ];
+  // A list holds its entries as a JSON array. Each entry is its own value.
+  where.push(
+    multi
+      ? `json_valid(search_text) AND EXISTS (SELECT 1 FROM json_each(search_text) AS entry WHERE ${predicate})`
+      : predicate,
+  );
+  filter.where.push(
+    `id IN (SELECT user_id FROM user_custom_values WHERE ${where.join(' AND ')})`,
+  );
+  filter.params.push(...params);
+}
 
 function addClause(
   filter: SqlFilter,
@@ -20,7 +70,12 @@ function addClause(
   op: '=' | ':',
   value: string,
   aliases: string,
+  custom?: CustomLookup,
 ): void {
+  if (custom && field.includes('.')) {
+    addCustomClause(filter, field, op, value, custom);
+    return;
+  }
   const text = (column: string) => {
     if (op === '=') {
       filter.where.push(`lower(${column}) = lower(?)`);
@@ -91,6 +146,7 @@ function addClause(
 export function parseUserQuery(
   query: string,
   aliases = 'user_aliases',
+  custom?: CustomLookup,
 ): SqlFilter {
   const filter = emptyFilter();
   for (const match of query.matchAll(CLAUSE)) {
@@ -101,6 +157,7 @@ export function parseUserQuery(
         match[2] as '=' | ':',
         unquote(match[3]),
         aliases,
+        custom,
       );
     else {
       const value = unquote(match[4]);
