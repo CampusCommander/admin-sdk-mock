@@ -173,7 +173,7 @@ A reused `schemaName` answers `409`. A customer holds at most 100 schemas and 10
 A field type cannot change, a multi-valued field cannot become single-valued, and neither a schema nor a field can be renamed.
 A stale `If-Match` on an update or on a delete answers `412`. An update that leaves out a field, or a delete, removes those values from every user.
 The `users` resource returns `customSchemas` with `projection=full`, or with `projection=custom` and `customFieldMask`. A `users.patch` or `users.update` body merges `customSchemas` by schema and by field, and `null` deletes a value.
-See the [user schema rulings](../calibration.md#user-schema-rulings).
+See the [custom attribute rulings](../calibration.md#custom-attribute-rulings).
 
 ### Groups
 
