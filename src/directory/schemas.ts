@@ -5,7 +5,6 @@ import { createRandom } from '../random.ts';
 import { row, rows, transaction } from '../store/sqlite.ts';
 import {
   domainOf,
-  duplicate,
   etag,
   invalidArgument,
   jsonBody,
@@ -35,6 +34,11 @@ export const FIELD_LIMIT = 100;
 /** The Google guide limits a single value to 500 characters. */
 export const MAX_VALUE_TEXT = 500;
 const MAX_TEXT = 2000;
+/** Live check L2 refused a schema display name of 200 characters, and accepted 21. */
+const MAX_SCHEMA_DISPLAY_NAME = 199;
+/** A schema ID holds 22 letters or digits, then the `==` that live check L2 found. */
+const SCHEMA_ID_LENGTH = 22;
+const SCHEMA_ID_SUFFIX = '==';
 
 /**
  * The tables of the schemas resource and the custom values. They are created on the
@@ -235,6 +239,14 @@ function text(call: Call, value: unknown, label: string): string {
   return value;
 }
 
+/** A schema display name. Live check L2 refused 200 characters with 400 `invalid`. */
+function schemaDisplayName(call: Call, value: unknown): string {
+  const name = text(call, value, 'displayName');
+  if ([...name].length > MAX_SCHEMA_DISPLAY_NAME)
+    throw invalidArgument(call, 'Invalid Input: displayName is too long.');
+  return name;
+}
+
 function name(call: Call, value: unknown, label: string): string {
   const value$ = text(call, value, label);
   if (!NAME.test(value$))
@@ -336,12 +348,15 @@ function readSchema(call: Call, body: Record<string, unknown>): SchemaInput {
   }
   return {
     schemaName: name(call, body.schemaName, 'schemaName'),
-    displayName: text(call, body.displayName, 'displayName'),
+    displayName: schemaDisplayName(call, body.displayName),
     fields,
   };
 }
 
-/** A unique ID for a schema or a field, derived from a source string and a label. */
+/**
+ * A unique ID for a field, derived from a source string and a label. A schema ID uses
+ * `makeSchemaId` instead, because live check L2 found a different form for it.
+ */
 export function makeId(
   source: string,
   label: string,
@@ -354,12 +369,42 @@ export function makeId(
   }
 }
 
+/** A schema ID: 22 letters or digits, then the `==` padding that live check L2 found. */
+export function makeSchemaId(
+  source: string,
+  label: string,
+  taken: (id: string) => boolean,
+): string {
+  const random = createRandom(`custom/${source}/${label}`);
+  for (;;) {
+    const id = `${random.string(SCHEMA_ID_LENGTH, IDS)}${SCHEMA_ID_SUFFIX}`;
+    if (!taken(id)) return id;
+  }
+}
+
 function newId(
   call: Call,
   label: string,
   taken: (id: string) => boolean,
 ): string {
   return makeId(domainOf(call).spec.seed, label, taken);
+}
+
+function newSchemaId(
+  call: Call,
+  label: string,
+  taken: (id: string) => boolean,
+): string {
+  return makeSchemaId(domainOf(call).spec.seed, label, taken);
+}
+
+/** The 412 answer of a write whose condition the resource does not meet. */
+function preconditionFailed(): ApiError {
+  return new ApiError(
+    directoryError(412, 'conditionNotMet', 'Precondition Failed', {
+      extra: { status: 'FAILED_PRECONDITION' },
+    }),
+  );
 }
 
 /** A stale `If-Match` answers 412. The header is optional, as Google documents it. */
@@ -371,11 +416,7 @@ function checkIfMatch(call: Call, schema: SchemaRow): void {
     etag({ schemaId: schema.schema_id, revision: schema.revision })
   )
     return;
-  throw new ApiError(
-    directoryError(412, 'conditionNotMet', 'Precondition Failed', {
-      extra: { status: 'FAILED_PRECONDITION' },
-    }),
-  );
+  throw preconditionFailed();
 }
 
 function customerOf(call: Call): string {
@@ -444,13 +485,14 @@ export function insertSchema(call: Call): ApiResponse {
   const db = domainOf(call).db;
   ensureCustomTables(db);
   const input = readSchema(call, jsonBody(call));
-  if (findSchema(db, input.schemaName)) throw duplicate();
+  // Live check L2: a reused schema name answers 412, not the 409 of the Google guide.
+  if (findSchema(db, input.schemaName)) throw preconditionFailed();
   if (schemaCount(db) >= SCHEMA_LIMIT)
     throw invalidArgument(call, `Limit reached: ${SCHEMA_LIMIT} schemas.`);
   if (fieldCount(db) + input.fields.length > FIELD_LIMIT)
     throw invalidArgument(call, `Limit reached: ${FIELD_LIMIT} fields.`);
   const incarnation = nextIncarnation(db, input.schemaName);
-  const schemaId = newId(
+  const schemaId = newSchemaId(
     call,
     `schema/${customer}/${input.schemaName}/${incarnation}`,
     (id) => findSchema(db, id) !== undefined,
@@ -551,7 +593,7 @@ export function updateSchema(call: Call): ApiResponse {
   ensureCustomTables(db);
   const current = findSchema(db, call.params.schemaKey);
   if (!current) throw notFound('schemaKey');
-  checkIfMatch(call, current);
+  // Live check L2: Google applied an update with a stale etag, so the mock ignores the header.
   const body = jsonBody(call);
   const existing = fieldsOf(db, current.schema_id);
   const input = readSchema(call, {

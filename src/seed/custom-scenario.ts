@@ -1,5 +1,9 @@
 import { putCustomValue } from '../directory/custom-values.ts';
-import { ensureCustomTables, makeId } from '../directory/schemas.ts';
+import {
+  ensureCustomTables,
+  makeId,
+  makeSchemaId,
+} from '../directory/schemas.ts';
 import { createRandom } from '../random.ts';
 import { rows } from '../store/sqlite.ts';
 import { DAY_MS, type SeedContext } from './context.ts';
@@ -105,7 +109,7 @@ export function seedCustomScenario({ spec, seededAt, db }: SeedContext): void {
   );
   const schemaIds = new Map<string, string>();
   SCHEMAS.forEach((schema, index) => {
-    const schemaId = makeId(
+    const schemaId = makeSchemaId(
       spec.seed,
       `schema/${spec.customerId}/${schema.schemaName}`,
       (id) => [...schemaIds.values()].includes(id),

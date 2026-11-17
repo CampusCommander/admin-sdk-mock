@@ -114,7 +114,7 @@ test('insert returns the resource with the mock IDs and the field defaults', asy
   assert.equal(schema.kind, 'admin#directory#schema');
   assert.equal(schema.schemaName, 'StudentInfo');
   assert.equal(schema.displayName, 'Student information');
-  assert.match(schema.schemaId, /^[A-Za-z0-9_-]{4,}$/);
+  assert.match(schema.schemaId, /^[A-Za-z0-9]{22}==$/);
   assert.match(schema.etag, /^".+"$/);
   assert.deepEqual(
     schema.fields.map(
@@ -175,6 +175,12 @@ test('get reads a schema by its ID or by its name', async (t) => {
   const byId = await read('GET', `/${inserted.schemaId}`);
   assert.equal(byId.status, 200);
   assert.equal(byId.json().schemaName, 'StudentInfo');
+  const byEncoded = await read(
+    'GET',
+    `/${encodeURIComponent(inserted.schemaId)}`,
+  );
+  assert.equal(byEncoded.status, 200);
+  assert.equal(byEncoded.json().schemaId, inserted.schemaId);
   const list = await read('GET');
   assert.equal(list.status, 200);
   assert.equal(list.json().kind, 'admin#directory#schemas');
@@ -182,14 +188,141 @@ test('get reads a schema by its ID or by its name', async (t) => {
   assert.equal(list.json().schemas[0].schemaId, inserted.schemaId);
 });
 
-test('a reused schema name answers 409', async (t) => {
-  const { write } = await setup(t);
+test('get, update, and delete accept the raw ID, the encoded ID, and the name', async (t) => {
+  const { read, write } = await setup(t);
+  let ordinal = 0;
+  const create = async () => {
+    const schemaName = `Key${ordinal++}`;
+    const response = await write('POST', '', {
+      body: body({
+        schemaName,
+        fields: [
+          { fieldName: 'Field', fieldType: 'STRING', displayName: 'Field' },
+        ],
+      }),
+    });
+    assert.equal(response.status, 200);
+    return { schemaName, schemaId: response.json().schemaId as string };
+  };
+  for (const form of ['raw', 'encoded', 'name'] as const) {
+    const schema = await create();
+    const key =
+      form === 'raw'
+        ? schema.schemaId
+        : form === 'encoded'
+          ? encodeURIComponent(schema.schemaId)
+          : schema.schemaName;
+    const got = await read('GET', `/${key}`);
+    assert.equal(got.status, 200, `get by ${form}`);
+    assert.equal(got.json().schemaId, schema.schemaId, `get by ${form}`);
+    const updated = await write('PUT', `/${key}`, {
+      body: body({
+        schemaName: schema.schemaName,
+        displayName: `Updated by ${form}`,
+        fields: [
+          { fieldName: 'Field', fieldType: 'STRING', displayName: 'Field' },
+        ],
+      }),
+    });
+    assert.equal(updated.status, 200, `update by ${form}`);
+    assert.equal(updated.json().displayName, `Updated by ${form}`);
+    const deleted = await write('DELETE', `/${key}`);
+    assert.equal(deleted.status, 204, `delete by ${form}`);
+    assert.equal((await read('GET', `/${schema.schemaId}`)).status, 404);
+  }
+});
+
+test('a schema key resolves by raw ID and encoded ID in a batch part', async (t) => {
+  const { harness, domain, write } = await setup(t);
+  const created = (await write('POST', '', { body: body() })).json();
+  const token = grantToken(harness, domain, [...SCHEMA_READ, ...SCHEMA_WRITE]);
+  const prefix = `/admin/directory/v1/customer/${domain.customerId}/schemas`;
+  const encoded = encodeURIComponent(created.schemaId);
+  const response = await harness.request({
+    host: 'www.googleapis.com',
+    path: '/batch/admin/directory_v1',
+    method: 'POST',
+    token,
+    headers: { 'content-type': 'multipart/mixed; boundary=b' },
+    body: batchBody(
+      [
+        { id: 'raw', method: 'GET', path: `${prefix}/${created.schemaId}` },
+        { id: 'encoded', method: 'GET', path: `${prefix}/${encoded}` },
+        {
+          id: 'update',
+          method: 'PUT',
+          path: `${prefix}/${encoded}`,
+          body: body({ displayName: 'Batch update' }),
+        },
+      ],
+      'b',
+    ),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual([...batchStatuses(response.text).entries()].sort(), [
+    ['encoded', 200],
+    ['raw', 200],
+    ['update', 200],
+  ]);
+  const deleted = await harness.request({
+    host: 'www.googleapis.com',
+    path: '/batch/admin/directory_v1',
+    method: 'POST',
+    token,
+    headers: { 'content-type': 'multipart/mixed; boundary=b' },
+    body: batchBody(
+      [
+        {
+          id: 'delete',
+          method: 'DELETE',
+          path: `${prefix}/${created.schemaId}`,
+        },
+      ],
+      'b',
+    ),
+  });
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(
+    [...batchStatuses(deleted.text).entries()],
+    [['delete', 204]],
+  );
+});
+
+test('a reused schema name answers 412, and another name still inserts', async (t) => {
+  const { harness, domain, write } = await setup(t);
   assert.equal((await write('POST', '', { body: body() })).status, 200);
   const again = await write('POST', '', {
     body: body({ displayName: 'Other' }),
   });
-  assert.equal(again.status, 409);
-  assert.equal(again.json().error.message, 'Entity already exists.');
+  assert.equal(again.status, 412);
+  assert.equal(again.json().error.errors[0].reason, 'conditionNotMet');
+  assert.equal(again.json().error.status, 'FAILED_PRECONDITION');
+  const token = grantToken(harness, domain, [...SCHEMA_READ, ...SCHEMA_WRITE]);
+  const prefix = `/admin/directory/v1/customer/${domain.customerId}/schemas`;
+  const response = await harness.request({
+    host: 'www.googleapis.com',
+    path: '/batch/admin/directory_v1',
+    method: 'POST',
+    token,
+    headers: { 'content-type': 'multipart/mixed; boundary=b' },
+    body: batchBody(
+      [
+        { id: 'reused', method: 'POST', path: prefix, body: body() },
+        {
+          id: 'fresh',
+          method: 'POST',
+          path: prefix,
+          body: body({ schemaName: 'StaffInfo' }),
+        },
+      ],
+      'b',
+    ),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual([...batchStatuses(response.text).entries()].sort(), [
+    ['fresh', 200],
+    ['reused', 412],
+  ]);
 });
 
 test('a bad name, a missing key, or a bad field answers 400', async (t) => {
@@ -246,6 +379,44 @@ test('a bad name, a missing key, or a bad field answers 400', async (t) => {
       `case ${index}`,
     );
   }
+});
+
+test('a schema display name of 200 characters answers 400, and 21 characters is accepted', async (t) => {
+  const { read, write } = await setup(t);
+  const tooLong = 'D'.repeat(200);
+  const refusedInsert = await write('POST', '', {
+    body: body({ displayName: tooLong }),
+  });
+  assert.equal(refusedInsert.status, 400);
+  assert.equal(refusedInsert.json().error.errors[0].reason, 'invalid');
+  assert.deepEqual((await read('GET')).json().schemas, []);
+  const displayName = 'D'.repeat(21);
+  const created = await write('POST', '', { body: body({ displayName }) });
+  assert.equal(created.status, 200);
+  const refusedUpdate = await write('PUT', '/StudentInfo', {
+    body: body({ displayName: tooLong }),
+  });
+  assert.equal(refusedUpdate.status, 400);
+  assert.equal(refusedUpdate.json().error.errors[0].reason, 'invalid');
+  assert.equal(
+    (await read('GET', '/StudentInfo')).json().displayName,
+    displayName,
+  );
+  // The limit applies to the schema, so a 200-character field display name passes.
+  const field = await write('PUT', '/StudentInfo', {
+    body: body({
+      displayName,
+      fields: [
+        {
+          fieldName: 'Field',
+          fieldType: 'STRING',
+          displayName: 'F'.repeat(200),
+        },
+      ],
+    }),
+  });
+  assert.equal(field.status, 200);
+  assert.equal(field.json().fields[0].displayName, 'F'.repeat(200));
 });
 
 test('an update gives the schema a new etag and keeps the field IDs', async (t) => {
@@ -485,23 +656,31 @@ test('a customer holds at most 100 fields', async (t) => {
   assert.equal(second.status, 400);
 });
 
-test('a stale If-Match answers 412 and changes nothing', async (t) => {
+test('an update applies whatever If-Match holds and answers a new etag', async (t) => {
   const { read, write } = await setup(t);
   const inserted = (await write('POST', '', { body: body() })).json();
-  const stale = await write('PUT', '/StudentInfo', {
+  const stale = await write('PUT', `/${inserted.schemaId}`, {
     body: body({ displayName: 'Changed' }),
     headers: { 'if-match': '"stale"' },
   });
-  assert.equal(stale.status, 412);
-  assert.equal(stale.json().error.errors[0].reason, 'conditionNotMet');
+  assert.equal(stale.status, 200);
+  assert.equal(stale.json().displayName, 'Changed');
+  assert.notEqual(stale.json().etag, inserted.etag);
   assert.equal(
     (await read('GET', '/StudentInfo')).json().displayName,
-    'Student information',
+    'Changed',
   );
+});
+
+test('a stale If-Match on a delete answers 412 and keeps the schema', async (t) => {
+  const { read, write } = await setup(t);
+  const inserted = (await write('POST', '', { body: body() })).json();
   const refused = await write('DELETE', '/StudentInfo', {
     headers: { 'if-match': '"stale"' },
   });
   assert.equal(refused.status, 412);
+  assert.equal(refused.json().error.errors[0].reason, 'conditionNotMet');
+  assert.equal(refused.json().error.status, 'FAILED_PRECONDITION');
   assert.equal((await read('GET', '/StudentInfo')).status, 200);
   const fresh = await write('DELETE', '/StudentInfo', {
     headers: { 'if-match': inserted.etag },
@@ -644,6 +823,7 @@ test('a recreated schema gets a new ID and a new etag', async (t) => {
     })
   ).json();
   assert.notEqual(second.schemaId, first.schemaId);
+  assert.match(second.schemaId, /^[A-Za-z0-9]{22}==$/);
   assert.notEqual(second.etag, first.etag);
   for (const [index, field] of second.fields.entries())
     assert.notEqual(field.fieldId, first.fields[index].fieldId);
@@ -653,19 +833,18 @@ test('a recreated schema gets a new ID and a new etag', async (t) => {
     headers: { 'if-match': first.etag },
   });
   assert.equal(stale.status, 412);
-  assert.equal(
-    (
-      await write('PUT', '/StudentInfo', {
-        body: body({ displayName: 'Third name' }),
-        headers: { 'if-match': first.etag },
-      })
-    ).status,
-    412,
-  );
+  const updated = await write('PUT', '/StudentInfo', {
+    body: body({ displayName: 'Third name' }),
+    headers: { 'if-match': first.etag },
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.json().schemaId, second.schemaId);
+  assert.equal(updated.json().displayName, 'Third name');
+  assert.notEqual(updated.json().etag, second.etag);
   const live = await read('GET', '/StudentInfo');
   assert.equal(live.status, 200);
   assert.equal(live.json().schemaId, second.schemaId);
-  assert.equal(live.json().displayName, 'Student information again');
+  assert.equal(live.json().displayName, 'Third name');
 });
 
 test('a schema named like a prototype key round-trips through every route', async (t) => {
